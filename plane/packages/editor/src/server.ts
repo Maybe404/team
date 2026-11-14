@@ -10,6 +10,7 @@ import { generateHTML, generateJSON } from "@tiptap/html/server";
 import { createDocumentCodecs } from "./helpers/document-codecs";
 
 export const {
+  applyHTMLToDocumentEditorYDoc,
   TITLE_EDITOR_EXTENSIONS,
   applyUpdates,
   convertBinaryDataToBase64String,

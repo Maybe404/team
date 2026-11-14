@@ -1,0 +1,37 @@
+# 本地开发只用 Docker 起基础设施，Plane 应用本身从源码启动。
+# 端口统一用 47xxx 段，避免和其他服务冲突。
+name: team-dev
+services:
+  db:
+    image: postgres:15.7-alpine
+    command: postgres -c 'max_connections=1000'
+    environment:
+      POSTGRES_USER: plane
+      POSTGRES_PASSWORD: plane
+      POSTGRES_DB: plane
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["127.0.0.1:47432:5432"]
+  redis:
+    image: valkey/valkey:7.2.11-alpine
+    volumes: [redisdata:/data]
+    ports: ["127.0.0.1:47379:6379"]
+  mq:
+    image: rabbitmq:3.13.6-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: plane
+      RABBITMQ_DEFAULT_PASS: plane
+      RABBITMQ_DEFAULT_VHOST: plane
+    volumes: [mqdata:/var/lib/rabbitmq]
+    ports: ["127.0.0.1:47672:5672"]
+  minio:
+    image: docker.io/pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    entrypoint: >
+      /bin/sh -c "mkdir -p /export/uploads && silo server /export --console-address ':9090' & sleep 5 &&
+      mc alias set local http://localhost:9000 plane-access plane-secret-key &&
+      mc mb local/uploads -p || true && tail -f /dev/null"
+    environment:
+      MINIO_ROOT_USER: plane-access
+      MINIO_ROOT_PASSWORD: plane-secret-key
+    volumes: [uploads:/export]
+    ports: ["127.0.0.1:47900:9000", "127.0.0.1:47901:9090"]
+volumes: {pgdata: {}, redisdata: {}, mqdata: {}, uploads: {}}

@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "plane", "runtimeExecutable": "dev/run.sh", "runtimeArgs": [], "port": 47300 }
+  ]
+}

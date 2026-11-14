@@ -7,7 +7,7 @@
 import { Buffer } from "buffer";
 import type { Extensions, JSONContent } from "@tiptap/core";
 import { getSchema } from "@tiptap/core";
-import { prosemirrorJSONToYDoc, yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
+import { prosemirrorJSONToYDoc, updateYFragment, yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 // extensions
 import type { TDocumentPayload } from "@plane/types";
@@ -260,7 +260,23 @@ export const createDocumentCodecs = ({ generateHTML, generateJSON }: HTMLCodec) 
     return sanitizedText.trim() || ""; // trim the string to remove leading and trailing whitespaces
   };
 
+  /**
+   * [team 二开] 把 HTML 以增量编辑的方式写进已有的文档 Y.Doc。
+   * 与 getBinaryDataFromDocumentEditorHTMLString 生成全新文档不同，这里对原文档做 diff，
+   * 产生的是普通的 Yjs 更新：在线编辑器和浏览器本地缓存都能正常合并，不会出现内容重复。
+   */
+  const applyHTMLToDocumentEditorYDoc = (yDoc: Y.Doc, descriptionHTML: string): void => {
+    const contentJSON = generateJSON(descriptionHTML || "<p></p>", DOCUMENT_EDITOR_EXTENSIONS);
+    const node = documentEditorSchema.nodeFromJSON(contentJSON);
+    const fragment = yDoc.getXmlFragment("default");
+    // 不带 origin：hocuspocus 不会为这次更新触发防抖存储（调用方自行落库），但仍会广播给在线编辑器
+    yDoc.transact(() => {
+      updateYFragment(yDoc, fragment, node, { mapping: new Map(), isOMark: new Map() });
+    });
+  };
+
   return {
+    applyHTMLToDocumentEditorYDoc,
     TITLE_EDITOR_EXTENSIONS,
     applyUpdates,
     convertBinaryDataToBase64String,
