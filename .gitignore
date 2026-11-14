@@ -1,0 +1,7 @@
+node_modules/
+dist/
+data/
+.impeccable/
+.DS_Store
+.env
+*.local.env
