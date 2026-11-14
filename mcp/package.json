@@ -4,13 +4,19 @@
   "description": "团队协作 MCP：Plane 任务与文档、经验库、定时回顾，所有写入经过统一的规范闸门",
   "private": true,
   "type": "module",
-  "bin": { "team-mcp": "dist/index.js" },
-  "engines": { "node": ">=22" },
+  "bin": {
+    "team-mcp": "dist/index.js",
+    "team-review": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc -p .",
     "dev": "node --experimental-strip-types src/index.ts",
     "test": "node --experimental-strip-types --test test/*.test.ts",
-    "e2e": "node --experimental-strip-types test/e2e.ts"
+    "e2e": "node --experimental-strip-types test/e2e.ts",
+    "review": "node --experimental-strip-types --no-warnings src/cli.ts"
   },
   "dependencies": {
     "@joplin/turndown-plugin-gfm": "1.0.71",
@@ -23,5 +29,9 @@
     "@types/node": "24.19.2",
     "@types/turndown": "5.0.6",
     "typescript": "7.0.2"
-  }
+  },
+  "files": [
+    "dist",
+    "skills"
+  ]
 }

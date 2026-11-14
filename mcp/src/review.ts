@@ -1,5 +1,6 @@
 // 定时回顾：扫出需要人关注的任务，生成一份 Markdown 日报。
 import { getLessonProject } from "./lessons.ts";
+import { mdToHtml } from "./markdown.ts";
 import type { Plane, WorkItem } from "./plane.ts";
 
 type Row = { key: string; name: string; state: string; days: number; url: string; project: string };
@@ -9,7 +10,8 @@ const DAY = 86_400_000;
 export async function buildDigest(plane: Plane, opts: { staleDays: number; onlyMine: boolean }) {
   const me = await plane.me();
   const lessonProject = await getLessonProject(plane);
-  const projects = (await plane.listProjects()).filter((p) => p.id !== lessonProject.id);
+  const reviewIdent = (process.env.TEAM_REVIEW_PROJECT || "REVIEW").toUpperCase();
+  const projects = (await plane.listProjects()).filter((p) => p.id !== lessonProject.id && p.identifier !== reviewIdent);
   const now = Date.now();
 
   const needsYou: Row[] = [];
@@ -61,7 +63,7 @@ export async function buildDigest(plane: Plane, opts: { staleDays: number; onlyM
         : empty
     }`;
 
-  const date = new Date().toISOString().slice(0, 10);
+  const date = new Date().toLocaleDateString("sv-SE");
   const total = needsYou.length + blocked.length + review.length + stale.length + pendingLessons.length;
   const md = [
     `${date} 回顾：${total ? `有 ${total} 项需要关注` : "没有需要关注的事项"}。`,
@@ -78,4 +80,26 @@ export async function buildDigest(plane: Plane, opts: { staleDays: number; onlyM
   ].join("\n\n");
 
   return { md, total };
+}
+
+// ---------- 发布到 Plane ----------
+
+export async function getReviewProject(plane: Plane) {
+  const ident = (process.env.TEAM_REVIEW_PROJECT || "REVIEW").toUpperCase();
+  const hit = (await plane.listProjects()).find((p) => p.identifier === ident);
+  return hit ?? (await plane.createProject("每日回顾", ident, "team-mcp 每天生成的回顾，列出需要人关注的任务和待审核的经验。"));
+}
+
+/** 生成当天的回顾并写成 Page；同一天重复执行会更新同一篇。 */
+export async function publishDigest(plane: Plane, opts: { staleDays: number; onlyMine: boolean; webUrl: (p: string) => string }) {
+  const { md, total } = await buildDigest(plane, opts);
+  const project = await getReviewProject(plane);
+  const date = new Date().toLocaleDateString("sv-SE");
+  const title = `回顾 ${date}`;
+  const html = mdToHtml(md);
+  const existing = (await plane.listPages(project.id)).find((p) => p.name === title);
+  const page = existing
+    ? await plane.updatePage(project.id, existing.id, { description_html: html })
+    : await plane.createPage(project.id, title, html);
+  return { md, total, url: opts.webUrl(`projects/${project.id}/pages/${page.id}`), title, updated: Boolean(existing) };
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 从源码启动 Plane 全部服务（基础设施用 dev/infra.compose.yml 起在 Docker 里）。
-# 用法：dev/run.sh            启动 api/worker/beat/live/web/admin/space
+# 用法：dev/run.sh            启动 api/worker/beat/live/web/admin/space/review
 #       dev/run.sh api web     只启动指定服务
 # 日志写到 dev/logs/<服务>.log，Ctrl+C 停止全部。
 set -uo pipefail
@@ -8,7 +8,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/dev/ports.env"
 P="$ROOT/plane"
 LOGS="$ROOT/dev/logs"; mkdir -p "$LOGS"
-SERVICES=("$@"); [ ${#SERVICES[@]} -eq 0 ] && SERVICES=(api worker beat live web admin space)
+SERVICES=("$@"); [ ${#SERVICES[@]} -eq 0 ] && SERVICES=(api worker beat live web admin space review)
 
 docker compose -f "$ROOT/dev/infra.compose.yml" up -d >/dev/null 2>&1 || { echo "基础设施启动失败，检查 Docker"; exit 1; }
 [ -f "$P/apps/api/.env" ] || "$ROOT/dev/setup-env.sh"
@@ -35,6 +35,12 @@ for s in "${SERVICES[@]}"; do
     web)    start web    bash -c "cd '$P/apps/web' && pnpm exec react-router dev --port $WEB_PORT --strictPort" ;;
     admin)  start admin  bash -c "cd '$P/apps/admin' && pnpm exec react-router dev --port $ADMIN_PORT --strictPort" ;;
     space)  start space  bash -c "cd '$P/apps/space' && pnpm exec react-router dev --port $SPACE_PORT --strictPort" ;;
+    review) # 定时回顾（team-review --daemon），需要先 dev/seed.sh 生成 Token
+            if grep -q '^PLANE_API_TOKEN=' "$ROOT/dev/.secrets" 2>/dev/null; then
+              start review bash -c "set -a && source '$ROOT/dev/.secrets' && set +a && cd '$ROOT/mcp' && PLANE_BASE_URL=http://localhost:$API_PORT PLANE_WEB_URL=http://localhost:$WEB_PORT node --experimental-strip-types --no-warnings src/cli.ts --daemon --at \${TEAM_REVIEW_AT:-09:00}"
+            else
+              echo "· review 跳过：还没有 dev/.secrets，先运行 dev/seed.sh"
+            fi ;;
     *) echo "未知服务：$s" ;;
   esac
 done

@@ -15,7 +15,7 @@
 
 ```bash
 dev/setup-env.sh   # 生成各应用 .env（首次）
-dev/run.sh         # 启动全部服务，日志在 dev/logs/
+dev/run.sh         # 启动全部服务（含定时回顾），日志在 dev/logs/
 dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.secrets
 ```
 
@@ -27,5 +27,6 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 
 - Pages 公开 API：`plane/apps/api/plane/api/views/team_page.py`、`urls/team_page.py`
 - 增量写入协同文档：`plane/apps/live/src/controllers/team-page.controller.ts`、`plane/packages/editor/src/helpers/document-codecs.ts`
+- 去掉付费升级弹窗和外链：升级徽章与弹窗、Billing 设置、侧边栏 Community 徽章、顶栏 GitHub Star、帮助菜单里的文档/论坛/联系销售、命令面板的文档/论坛/报 bug、设置页和登录页的官网链接。改动文件可以用 `grep -rl "team 二开" plane/apps/web plane/packages/constants` 找到。
 
 同步上游：`git subtree pull --prefix=plane <上游地址> preview --squash`

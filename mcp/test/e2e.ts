@@ -80,13 +80,15 @@ let docId = "";
 
 await step("工具、资源、提示词都已注册", async () => {
   const tools = (await client.listTools()).tools.map((t) => t.name);
-  for (const t of ["create_task", "write_doc", "propose_lesson", "search_lessons", "review_digest", "check_text"]) {
+  for (const t of ["create_task", "write_doc", "propose_lesson", "search_lessons", "review_digest", "check_text", "analyze_tone"]) {
     expect(tools.includes(t), `缺少工具 ${t}`);
   }
   const res = await client.readResource({ uri: "team://guide/writing" });
   expect(String((res.contents[0] as { text: string }).text).includes("团队写作规范"), "写作规范资源为空");
   const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
-  expect(prompts.includes("team-write"), "缺少 team-write 提示词");
+  expect(prompts.includes("team-write") && prompts.includes("less-ai-tone"), "缺少提示词");
+  const skill = await client.readResource({ uri: "team://skills/less-ai-tone" });
+  expect(String((skill.contents[0] as { text: string }).text).includes("去AI味"), "skill 资源为空");
   return `${tools.length} 个工具`;
 });
 
@@ -102,10 +104,10 @@ await step("带套话的任务被拒绝", async () => {
   const r = await call("create_task", {
     project: PROJECT,
     title: "修复订单分页",
-    description: `${goodTask}\n值得注意的是，这个问题至关重要 🚀`,
+    description: `${goodTask}\n说白了，问题不是分页参数，而是游标没有排序 🚀`,
   });
   expect(r.isError, "应该被拒绝");
-  expect(r.text.includes("套话") && r.text.includes("emoji"), r.text);
+  expect(r.text.includes("翻案腔") && r.text.includes("起手式") && r.text.includes("emoji"), r.text);
 });
 
 await step("合规任务创建成功", async () => {
@@ -216,6 +218,22 @@ await step("私人经验存本机并能查到", async () => {
 await step("review_digest 生成回顾", async () => {
   const r = await call("review_digest", { stale_days: 1 });
   expect(!r.isError && r.text.includes("待审核的经验") && r.text.includes(lessonTitle), r.text);
+  expect(r.text.includes(`http://localhost:${ports.WEB_PORT}/`), "链接应指向网页地址");
+});
+
+await step("review_digest 发布为当天文档，重复执行只更新", async () => {
+  const first = await call("review_digest", { publish: true });
+  expect(!first.isError && /已(发布|更新)「回顾 \d{4}-\d{2}-\d{2}」/.test(first.text), first.text);
+  const second = await call("review_digest", { publish: true });
+  expect(second.text.includes("已更新"), second.text);
+  return first.text.match(/http\S+/)?.[0];
+});
+
+await step("analyze_tone 对长文出整篇报告，短文提示字数不够", async () => {
+  const short = await call("analyze_tone", { markdown: goodDesign });
+  expect(short.text.includes("汉字过少"), short.text);
+  const long = await call("analyze_tone", { markdown: Array(6).fill(goodDesign).join("\n") });
+  expect(!long.isError && /翻案腔|A|B/.test(long.text) && long.text.length > 200, long.text.slice(0, 300));
 });
 
 console.log(`\n${passed} 通过，${failed} 失败。测试项目：${PROJECT}`);

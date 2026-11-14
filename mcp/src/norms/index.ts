@@ -1,5 +1,6 @@
 // 规范闸门：所有写入工具在调用 Plane 之前都要经过 gate()。
 import { checkStyle, type Issue } from "./style.ts";
+import { checkTone } from "./tone.ts";
 import { checkComment, checkTemplate, TEMPLATES, type CommentKind, type DocType } from "./templates.ts";
 
 export { TEMPLATES, COMMENT_KINDS, type DocType, type CommentKind } from "./templates.ts";
@@ -8,9 +9,11 @@ export type { Issue } from "./style.ts";
 export type GateResult = { ok: boolean; errors: Issue[]; warnings: Issue[] };
 
 export function gate(markdown: string, type: DocType, opts: { commentKind?: CommentKind; title?: string } = {}): GateResult {
-  const issues: Issue[] = [...checkStyle(markdown)];
+  const issues: Issue[] = [...checkStyle(markdown), ...checkTone(markdown)];
   if (opts.title) {
-    issues.push(...checkStyle(opts.title).map((i) => ({ ...i, message: `标题：${i.message}`, line: undefined })));
+    issues.push(
+      ...[...checkStyle(opts.title), ...checkTone(opts.title)].map((i) => ({ ...i, message: `标题：${i.message}`, line: undefined })),
+    );
   }
   issues.push(...(type === "comment" ? checkComment(opts.commentKind ?? "进展", markdown) : checkTemplate(type, markdown)));
   const errors = issues.filter((i) => i.level === "error");
@@ -34,15 +37,27 @@ export const WRITING_GUIDE = `# 团队写作规范
 
 1. 结论先行：第一段或第一行直接给结论，细节放后面。
 2. 写事实和证据，不写感受：说“跑了 \`pnpm test\`，42 个用例全部通过”，不说“测试情况良好”。
-3. 一个意思说一次。不写引子，不写结尾总结，不写客套话。
+3. 一个意思说一次。不写引子和客套话。
 4. 读者可能是人，也可能是另一个 Agent：路径、命令、编号写全，不用“上面提到的那个”。
 
-## 不要出现的写法（会被拒绝）
+## 去 AI 味
 
-- 套话：“值得注意的是”“让我们深入探讨”“总而言之”“综上所述”“希望对你有帮助”“如有问题请随时联系”
-- 空泛形容：“至关重要”“无缝”“赋能”“闭环”“一站式”
-- “首先/其次/最后”式铺陈：改用编号列表
-- 模型自述：“作为 AI”“我为你……”“以下是……的总结：”
+句式检查用第三方 skill「去 AI 味 v2」（lieflat-less-ai-tone，CC BY-NC 4.0，规则基于 629 篇对照和 270 对配对实测）。完整说明见资源 \`team://skills/less-ai-tone\`。
+
+会被拒绝的（两轮实测同向、改动不碰语义）：
+
+- 翻案腔：先立一个读者没有的误解再推翻。「不是……而是……」「与其说……不如说……」。直接正面下判断。
+- 提示语冒号：「一句话总结：」「核心是：」「原因如下：」。删掉提示语直接写，前半句承接上文时只换标点。
+- 起手式：「说白了，」「说穿了，」「先说结论，」。删掉。
+
+会提示、不阻止的：「当……时，」前置从句、「对于……来说」话题壳、段首「然而，/因此，/此外，」、一句里三项以上顿号并列、过长前置定语、破折号过密。
+
+不要为了"像人写的"去改这些（实测不是 AI 味）：序数词小标题、「这意味着」、冒号引出列表、「首先/其次」、「赋能/闭环」这类词、句长长短。
+
+另外，文档里不出现对话助手的残留：
+
+- 客套话：「希望对你有帮助」「如有问题请随时联系」「让我们深入探讨」
+- 模型自述：「作为 AI」「我为你……」「以下是……的总结：」
 - emoji
 - 大量加粗：每千字不超过 8 处，只给关键结论加粗
 

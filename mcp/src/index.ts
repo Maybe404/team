@@ -4,12 +4,16 @@
 // 所有写入都要先过规范闸门（norms），不合规的会被退回给调用方 Agent 修改。
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import { formatLessons, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
 import { htmlToMd, mdToHtml } from "./markdown.ts";
 import { COMMENT_KINDS, formatGate, gate, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
 import { Plane, type Project, type WorkItem } from "./plane.ts";
-import { buildDigest } from "./review.ts";
+import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
+import { buildDigest, publishDigest } from "./review.ts";
 import { agentCanSet, ensureStates, findState, HUMAN_ONLY_HINT, TASK_STATES } from "./workflow.ts";
 
 function requireEnv(name: string): string {
@@ -22,9 +26,9 @@ const plane = new Plane({
   baseUrl: process.env.PLANE_BASE_URL || "http://localhost:47800",
   token: requireEnv("PLANE_API_TOKEN"),
   workspace: requireEnv("PLANE_WORKSPACE"),
+  webUrl: process.env.PLANE_WEB_URL || "http://localhost:47300",
 });
-const WEB_URL = process.env.PLANE_WEB_URL || "http://localhost:47300";
-const webUrl = (path: string) => `${WEB_URL.replace(/\/$/, "")}/${plane.workspace}/${path.replace(/^\//, "")}`;
+const webUrl = (path: string) => plane.webUrl(path);
 
 const server = new McpServer(
   { name: "team-mcp", version: "0.1.0" },
@@ -87,6 +91,72 @@ server.registerPrompt(
   ({ type }) => ({
     messages: [{ role: "user", content: { type: "text", text: `${WRITING_GUIDE}\n\n${templateGuide(type)}\n\n按上面的规范和模板写。` } }],
   }),
+);
+
+server.registerResource(
+  "skill-less-ai-tone",
+  "team://skills/less-ai-tone",
+  { title: "去 AI 味 v2（lieflat-less-ai-tone，CC BY-NC 4.0）", mimeType: "text/markdown" },
+  async (uri) => ({
+    contents: [{ uri: uri.href, mimeType: "text/markdown", text: readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8") }],
+  }),
+);
+server.registerResource(
+  "skill-less-ai-tone-criteria",
+  "team://skills/less-ai-tone/semantic-criteria",
+  { title: "去 AI 味：语义层判据", mimeType: "text/markdown" },
+  async (uri) => ({
+    contents: [
+      { uri: uri.href, mimeType: "text/markdown", text: readFileSync(join(SKILL_DIR, "references", "semantic-criteria.md"), "utf8") },
+    ],
+  }),
+);
+
+server.registerPrompt(
+  "less-ai-tone",
+  {
+    title: "去 AI 味（成稿清理）",
+    description: "按 lieflat-less-ai-tone 的流程：先检测出报告，等用户回复后再改写",
+    argsSchema: { doc: z.string().describe("要清理的文档：Plane 文档 ID，或直接贴正文") },
+  },
+  ({ doc }) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: `${readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8")}\n\n---\n\n按上面的 skill 处理这篇文档：${doc}\n\n脚本检测用 team-mcp 的 analyze_tone 工具代替 \`python3 scripts/detect.py\`；语义层判据读资源 team://skills/less-ai-tone/semantic-criteria。先交付改前报告，等我回复再改。`,
+        },
+      },
+    ],
+  }),
+);
+
+server.registerTool(
+  "analyze_tone",
+  {
+    title: "去 AI 味整篇检测",
+    description:
+      "对一篇长文（≥500 汉字）跑 less-ai-tone 的整篇检测，返回分级报告（A/B/C/F/X）。用于成稿清理，配合提示词 less-ai-tone 使用。短文本的逐句检查已经内置在所有写入工具里。",
+    inputSchema: {
+      markdown: z.string().optional().describe("正文"),
+      project: z.string().optional().describe("读取 Plane 文档时的项目"),
+      doc_id: z.string().optional().describe("读取 Plane 文档时的文档 ID"),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ markdown, project, doc_id }) =>
+    run(async () => {
+      let md = markdown;
+      if (!md && project && doc_id) {
+        const p = await plane.resolveProject(project);
+        md = htmlToMd((await plane.getPage(p.id, doc_id)).description_html);
+      }
+      if (!md) return fail("传 markdown，或者 project + doc_id");
+      const file = join(mkdtempSync(join(tmpdir(), "team-tone-")), "doc.md");
+      writeFileSync(file, md, "utf8");
+      return text(fullToneReport(md, file));
+    }),
 );
 
 server.registerTool(
@@ -438,15 +508,21 @@ server.registerTool(
   "review_digest",
   {
     title: "生成回顾",
-    description: "扫一遍所有项目，列出等你决定、阻塞、待审查、长期没动的任务和待审核的经验。适合每天跑一次。",
+    description:
+      "扫一遍所有项目，列出等你决定、阻塞、待审查、长期没动的任务和待审核的经验。publish=true 时写成「每日回顾」项目里当天的一篇文档（同一天重复执行会更新）。定时执行见 team-review 命令。",
     inputSchema: {
       stale_days: z.number().int().min(1).max(60).optional().describe("多少天没更新算“没动”，默认 3"),
       only_mine: z.boolean().optional().describe("只看指派给我或未指派的任务"),
+      publish: z.boolean().optional().describe("写成 Plane 文档"),
     },
-    annotations: { readOnlyHint: true },
   },
-  async ({ stale_days, only_mine }) =>
-    run(async () => text((await buildDigest(plane, { staleDays: stale_days ?? 3, onlyMine: only_mine ?? false })).md)),
+  async ({ stale_days, only_mine, publish }) =>
+    run(async () => {
+      const opts = { staleDays: stale_days ?? 3, onlyMine: only_mine ?? false };
+      if (!publish) return text((await buildDigest(plane, opts)).md);
+      const r = await publishDigest(plane, { ...opts, webUrl });
+      return text(`${r.updated ? "已更新" : "已发布"}「${r.title}」：${r.url}\n\n${r.md}`);
+    }),
 );
 
 await server.connect(new StdioServerTransport());

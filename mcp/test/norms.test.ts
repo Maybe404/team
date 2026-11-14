@@ -21,13 +21,36 @@ test("章节别名也算数", () => {
   assert.equal(r.ok, true, JSON.stringify(r.errors));
 });
 
-test("套话和模型自述被拒绝", () => {
-  const md = `${goodTask}\n值得注意的是，这个问题至关重要。总而言之，希望对你有帮助。作为 AI，我为你整理了方案。`;
+test("翻案腔、提示语冒号、起手式被拒绝（less-ai-tone）", () => {
+  const md = `${goodTask}\n说白了，真正的瓶颈不是数据库，而是缓存失效。一句话总结：先修缓存。`;
   const r = gate(md, "task");
   const rules = r.errors.map((e) => e.rule);
-  assert.ok(rules.includes("套话"));
-  assert.ok(rules.includes("模型自述"));
-  assert.ok(r.errors.some((e) => e.excerpt === "值得注意的是，"));
+  assert.ok(rules.includes("翻案腔"), JSON.stringify(rules));
+  assert.ok(rules.includes("提示语冒号"), JSON.stringify(rules));
+  assert.ok(rules.includes("起手式"), JSON.stringify(rules));
+});
+
+test("翻译腔和顿号罗列只提示不拒绝", () => {
+  const r = gate(`${goodTask}\n对于早期团队来说，招人最难。\n\n然而，当负载升高时，延迟、错误率、超时数都会上升。`, "task");
+  assert.equal(r.ok, true, JSON.stringify(r.errors));
+  const rules = r.warnings.map((w) => w.rule);
+  assert.ok(rules.includes("前置话题壳") && rules.includes("句首连接词") && rules.includes("当…时从句"), JSON.stringify(rules));
+});
+
+test("实测不是 AI 味的写法不拦（X 级）", () => {
+  const r = gate(`${goodTask}\n## 一、背景\n\n首先，这意味着赋能闭环。其次，改动有两处。\n\n- 一\n- 二\n`, "task");
+  assert.equal(r.ok, true, JSON.stringify(r.errors));
+});
+
+test("对话助手残留和模型自述被拒绝", () => {
+  const r = gate(`${goodTask}\n希望对你有帮助。作为 AI，我为你整理了方案。`, "task");
+  const rules = r.errors.map((e) => e.rule);
+  assert.ok(rules.includes("套话") && rules.includes("模型自述"), JSON.stringify(rules));
+});
+
+test("列表和标题里的冒号、引文不检查", () => {
+  const r = gate(`${goodTask}\n## 原因：缓存\n\n- 核心是：缓存\n\n> 说白了，不是 A 而是 B\n`, "task");
+  assert.ok(!r.errors.some((e) => e.rule === "提示语冒号" || e.rule === "翻案腔"), JSON.stringify(r.errors));
 });
 
 test("emoji 被拒绝", () => {
@@ -35,8 +58,8 @@ test("emoji 被拒绝", () => {
   assert.ok(r.errors.some((e) => e.rule === "emoji"));
 });
 
-test("代码块里的内容不检查", () => {
-  const r = gate(`${goodTask}\n\`\`\`js\n// 值得注意的是 🚀\n\`\`\`\n`, "task");
+test("代码块和行内代码不检查", () => {
+  const r = gate(`${goodTask}\n\`\`\`js\n// 说白了，不是 A 而是 B 🚀\n\`\`\`\n用 \`不是x而是y\` 匹配。\n`, "task");
   assert.equal(r.ok, true, JSON.stringify(r.errors));
 });
 

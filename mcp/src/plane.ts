@@ -1,6 +1,6 @@
 // Plane REST 客户端（/api/v1，API Token 认证）。只封装 MCP 用得到的接口。
 
-export type PlaneConfig = { baseUrl: string; token: string; workspace: string };
+export type PlaneConfig = { baseUrl: string; token: string; workspace: string; webUrl?: string };
 
 export type Project = { id: string; name: string; identifier: string; description?: string };
 export type State = { id: string; name: string; group: string; color: string; sequence?: number };
@@ -56,7 +56,8 @@ export class Plane {
   }
 
   webUrl(path: string) {
-    return `${this.cfg.baseUrl.replace(/\/$/, "")}/${this.cfg.workspace}/${path.replace(/^\//, "")}`;
+    const base = (this.cfg.webUrl || this.cfg.baseUrl).replace(/\/$/, "");
+    return `${base}/${this.cfg.workspace}/${path.replace(/^\//, "")}`;
   }
 
   private async req<T>(method: string, path: string, body?: unknown): Promise<T> {
