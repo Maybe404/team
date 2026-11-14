@@ -92,7 +92,8 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
           </IconButton>
         </Tooltip>
         <HelpMenuRoot />
-        <StarUsOnGitHubLink />
+        {/* [team 二开] 去掉 Star us on GitHub */}
+        {false && <StarUsOnGitHubLink />}
         <UserMenuRoot />
       </div>
     </div>

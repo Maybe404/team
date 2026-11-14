@@ -30,6 +30,11 @@ const BRAND_LOGOS: {
 ];
 
 export function AuthFooter() {
+  // [team 二开] 去掉登录页的客户 logo 墙
+  return null;
+}
+
+export function UpstreamAuthFooter() {
   return (
     <div className="flex flex-col items-center gap-6">
       <span className="text-body-xs-regular whitespace-nowrap text-tertiary">

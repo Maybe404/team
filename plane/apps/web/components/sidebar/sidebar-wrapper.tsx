@@ -83,7 +83,8 @@ export const SidebarWrapper = observer(function SidebarWrapper(props: TSidebarWr
           </ScrollArea>
         </div>
         {/* Help Section */}
-        <div className="flex h-12 items-center justify-between border-t border-subtle bg-surface-1 p-3">
+        {/* [team 二开] 去掉底部的 Community（付费套餐）入口 */}
+        <div className="hidden">
           <WorkspaceEditionBadge />
           {/* TODO: To be checked if we need this */}
           {/* <div className="flex items-center gap-2">

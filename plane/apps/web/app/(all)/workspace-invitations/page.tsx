@@ -135,20 +135,8 @@ function WorkspaceInvitationPage() {
                     render={<Link href="/" />}
                   />
                   <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-                    <AnchorButton
-                      variant="secondary"
-                      size="md"
-                      href="https://github.com/makeplane"
-                      external
-                      label="Star us on GitHub"
-                    />
-                    <AnchorButton
-                      variant="secondary"
-                      size="md"
-                      href="https://forum.plane.so"
-                      external
-                      label="Join our community of active creators"
-                    />
+                    {/* [team 二开] 去掉对外链接 */}
+                    {/* [team 二开] 去掉对外链接 */}
                     <AnchorButton
                       variant="secondary"
                       size="md"

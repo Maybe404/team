@@ -32,7 +32,12 @@ function LegalLink({ href, children }: { href: string; children: React.ReactNode
   );
 }
 
-export function TermsAndConditions({ authType = EAuthModes.SIGN_IN }: TermsAndConditionsProps) {
+export function TermsAndConditions(_props: TermsAndConditionsProps) {
+  // [team 二开] 去掉指向 Plane 官网的服务条款和隐私政策
+  return null;
+}
+
+export function UpstreamTermsAndConditions({ authType = EAuthModes.SIGN_IN }: TermsAndConditionsProps) {
   return (
     <div className="flex items-center justify-center">
       <p className="text-center text-body-xs-regular whitespace-pre-line text-tertiary">

@@ -13,7 +13,12 @@ type TUpgradeBadge = {
   size?: "sm" | "md";
 };
 
-export function UpgradeBadge(props: TUpgradeBadge) {
+// [team 二开] 私有部署不展示付费升级标记
+export function UpgradeBadge(_props: TUpgradeBadge): null {
+  return null;
+}
+
+export function UpstreamUpgradeBadge(props: TUpgradeBadge) {
   const { className, size = "sm" } = props;
 
   const { t } = useTranslation();

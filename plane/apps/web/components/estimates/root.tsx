@@ -8,7 +8,6 @@ import { useState } from "react";
 import { observer } from "mobx-react";
 import useSWR from "swr";
 // plane imports
-import { AnchorButton } from "@makeplane/propel/components/anchor-button";
 import { useTranslation } from "@plane/i18n";
 // components
 import { SettingsBoxedControlItem } from "@/components/settings/boxed-control-item";
@@ -108,18 +107,11 @@ export const EstimateRoot = observer(function EstimateRoot(props: TEstimateRoot)
             <div className="mt-12 flex flex-col gap-y-4">
               <SettingsHeading
                 title="Archived estimates"
+                // [team 二开] 去掉指向 docs.plane.so 的链接
                 description={
                   <>
                     Estimates have gone through a change, these are the estimates you had in your older versions which
-                    were not in use. Read more about them&nbsp;
-                    <AnchorButton
-                      variant="primary"
-                      size="sm"
-                      href="https://docs.plane.so/core-concepts/projects/run-project#estimate"
-                      target="_blank"
-                      rel="noreferrer"
-                      label="here."
-                    />
+                    were not in use.
                   </>
                 }
                 variant="h6"

@@ -32,6 +32,9 @@ export type PaidPlanUpgradeModalProps = {
 };
 
 export const PaidPlanUpgradeModal = observer(function PaidPlanUpgradeModal(props: PaidPlanUpgradeModalProps) {
+  // [team 二开] 私有部署不弹付费套餐
+  return null;
+  // oxlint-disable-next-line no-unreachable
   const { isOpen, handleClose } = props;
   // derived values
   const isSelfHosted = true;

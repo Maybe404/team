@@ -13,7 +13,12 @@ type Props = {
 };
 
 /** A compact "Docs" link that opens the matching help-center page in a new tab. */
-export function SettingsDocsLink({ href }: Props) {
+export function SettingsDocsLink(_props: Props) {
+  // [team 二开] 不链接 Plane 官网文档
+  return null;
+}
+
+export function UpstreamSettingsDocsLink({ href }: Props) {
   const { t } = useTranslation();
 
   return (
