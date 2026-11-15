@@ -14,6 +14,7 @@ import { COMMENT_KINDS, formatGate, gate, TEMPLATES, templateGuide, WRITING_GUID
 import { Plane, PlaneError, type Member, type Project, type WorkItem } from "./plane.ts";
 import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
 import { buildDigest, publishDigest } from "./review.ts";
+import { usageGuide } from "./usage.ts";
 import { agentCanSet, findState, HUMAN_ONLY_HINT, TASK_STATES } from "./workflow.ts";
 
 export const VERSION = (JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { version: string }).version;
@@ -31,7 +32,7 @@ const REPO_PARAM = z
   .string()
   .optional()
   .describe("当前仓库的 git remote 地址，即 `git remote get-url origin` 的输出。远程服务读不到你的本地目录，靠它判断你在哪个团队项目的仓库里，每次调用都带上。");
-const NO_REPO = new Set(["get_writing_guide", "check_text"]);
+const NO_REPO = new Set(["get_writing_guide", "get_usage_guide", "check_text"]);
 
 export function createServer({ config: CONFIG, plane, local, clientName }: Env) {
 
@@ -59,7 +60,8 @@ const server = new McpServer(
 4. 团队任务动手前先 search_lessons 查相关经验，结束后经用户同意用 propose_lesson 提交新经验，团队经验需要人审核才会生效。
 5. 状态“已完成”“已取消”只能由人设置；Agent 做完后用 update_task 改成“待审查”，同时在 comment 里写带证据的结论。
 6. 只写团队工作。个人笔记、密钥和个人信息不要写进来。
-7. 没有删除、成员管理、项目设置类工具，这些由人在网页上做；不再需要的内容由人在网页上归档。`,
+7. 没有删除、成员管理、项目设置类工具，这些由人在网页上做；不再需要的内容由人在网页上归档。
+8. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_usage_guide（资源 team://guide/usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
   },
 );
 
@@ -298,6 +300,21 @@ server.registerTool(
     }),
 );
 
+server.registerResource("usage-guide", "team://guide/usage", { title: "产品使用指南", mimeType: "text/markdown" }, async (uri) => ({
+  contents: [{ uri: uri.href, mimeType: "text/markdown", text: usageGuide(CONFIG.webUrl, CONFIG.workspace) }],
+}));
+
+server.registerTool(
+  "get_usage_guide",
+  {
+    title: "读取产品使用指南",
+    description:
+      "返回任务、页面、周期、模块、视图、经验库的用途和什么时候用，以及哪些能通过 MCP 做、哪些要去网页做。用户问“怎么用”“该用哪个功能”，或者看起来不熟悉这个产品时，先读它再回答和引导。",
+    annotations: { readOnlyHint: true },
+  },
+  async () => text(usageGuide(CONFIG.webUrl, CONFIG.workspace)),
+);
+
 server.registerTool(
   "get_writing_guide",
   {
@@ -347,7 +364,7 @@ server.registerTool(
           ? `关联的是 ${unjoined.map((p) => p.identifier).join("、")}，但你还不是成员，请项目管理员在网页上把你加进项目`
           : `未关联。${notBoundMessage(sc, CONFIG.webUrl, local)}`;
       return text(
-        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nPlane：${CONFIG.webUrl}${local ? `（API ${CONFIG.baseUrl}）` : ""}\nteam-mcp：${VERSION}（${local ? "本机" : "远程"}）\n仓库：${sc.remotes.join("、") || "未提供"}\n团队项目：${repo}`,
+        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nPlane：${CONFIG.webUrl}${local ? `（API ${CONFIG.baseUrl}）` : ""}\nteam-mcp：${VERSION}（${local ? "本机" : "远程"}）\n仓库：${sc.remotes.join("、") || "未提供"}\n团队项目：${repo}\n不熟悉怎么用？调用 get_usage_guide 看任务、页面、周期、模块、视图的用法。`,
       );
     }),
 );
