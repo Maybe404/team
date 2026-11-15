@@ -21,6 +21,7 @@ from drf_spectacular.types import OpenApiTypes
 
 
 # Module imports
+from plane.utils.team_shared import add_workspace_members_to_shared, default_states_for, ensure_shared_memberships
 from plane.db.models import (
     Cycle,
     Intake,
@@ -29,7 +30,6 @@ from plane.db.models import (
     DeployBoard,
     ProjectMember,
     State,
-    DEFAULT_STATES,
     Workspace,
     UserFavorite,
     Label,
@@ -174,6 +174,7 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
         Retrieve all projects in a workspace or get details of a specific project.
         Returns projects ordered by user's custom sort order with member information.
         """
+        ensure_shared_memberships(request.user, slug)  # [team 二开]
         sort_order_query = ProjectMember.objects.filter(
             member=request.user,
             project_id=OuterRef("pk"),
@@ -270,10 +271,11 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
                                 default=state.get("default", False),
                                 created_by=request.user,
                             )
-                            for state in DEFAULT_STATES
+                            for state in default_states_for(serializer.instance)
                         ]
                     )
 
+                    add_workspace_members_to_shared(serializer.instance)  # [team 二开]
                     project = self.get_queryset().filter(pk=serializer.instance.id).first()
 
                     # Defer the activity-log task until the surrounding
@@ -402,6 +404,7 @@ class ProjectListLiteAPIEndpoint(BaseAPIView):
         the workspace (projects they are an active member of, plus public projects),
         optimized for pickers and references.
         """
+        ensure_shared_memberships(request.user, slug)  # [team 二开]
         if not Workspace.objects.filter(slug=slug).exists():
             return Response(
                 {"error": "Provided workspace does not exist"},

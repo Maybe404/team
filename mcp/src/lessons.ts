@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { htmlToMd, mdToHtml } from "./markdown.ts";
 import { assertMember, type Label, type Plane, type Project, type WorkItem } from "./plane.ts";
-import { ensureLessonStates, findState } from "./workflow.ts";
+import { findState } from "./workflow.ts";
 
 export type Lesson = {
   scope: "team" | "private";
@@ -51,9 +51,8 @@ export async function getLessonProject(plane: Plane): Promise<Project> {
   const projects = await plane.listProjects();
   const hit = projects.find((p) => p.identifier === ident);
   if (hit) return assertMember(hit);
-  const p = await plane.createProject("经验库", ident, "团队共享的踩坑记录、有效做法和检查项。Agent 提交到“待审核”，由人决定是否采纳。");
-  await ensureLessonStates(plane, p);
-  return p;
+  // Plane 二开会给经验库建审核状态，并把工作区成员都加进来
+  return plane.createProject("经验库", ident, "团队共享的踩坑记录、有效做法和检查项。Agent 提交到“待审核”，由人决定是否采纳。");
 }
 
 async function ensureLabels(plane: Plane, projectId: string, names: string[]): Promise<Label[]> {
@@ -68,7 +67,6 @@ async function ensureLabels(plane: Plane, projectId: string, names: string[]): P
 
 export async function proposeTeamLesson(plane: Plane, title: string, bodyMd: string, tags: string[]) {
   const project = await getLessonProject(plane);
-  await ensureLessonStates(plane, project);
   const states = await plane.listStates(project.id);
   const labels = await ensureLabels(plane, project.id, tags);
   const item = await plane.createWorkItem(project.id, {

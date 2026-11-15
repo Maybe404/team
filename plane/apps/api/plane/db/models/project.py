@@ -3,6 +3,7 @@
 # See the LICENSE file for details.
 
 # Python imports
+import re
 import pytz
 from uuid import uuid4
 from enum import Enum
@@ -65,6 +66,28 @@ def get_default_preferences():
     return {"pages": {"block_display": True}, "navigation": {"default_tab": "work_items", "hide_in_more_menu": []}}
 
 
+
+def normalize_repo_url(url: str) -> str:
+    """[team 二开] git@github.com:org/repo.git、https://github.com/org/repo/ 都规范成 github.com/org/repo。"""
+    u = (url or "").strip()
+    u = re.sub(r"^[a-z+]+://", "", u, flags=re.I)  # 协议
+    u = re.sub(r"^[^@/]+@", "", u)  # 用户名
+    u = re.sub(r"^([^/:]+):(?!\d+/)", r"\1/", u)  # scp 写法 host:org/repo
+    u = re.sub(r"^([^/:]+):\d+/", r"\1/", u)  # 端口
+    u = re.sub(r"\.git$", "", u.rstrip("/"))
+    return u.lower()
+
+
+def normalize_repo_list(repos) -> list:
+    if not isinstance(repos, list):
+        return []
+    out = []
+    for r in repos:
+        n = normalize_repo_url(str(r))
+        if n and n not in out:
+            out.append(n)
+    return out
+
 class Project(ChangeTrackerMixin, BaseModel):
     TRACKED_FIELDS = ["timezone"]
 
@@ -109,7 +132,8 @@ class Project(ChangeTrackerMixin, BaseModel):
         related_name="project_cover_image",
     )
     estimate = models.ForeignKey("db.Estimate", on_delete=models.SET_NULL, related_name="projects", null=True)
-    archive_in = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(12)])
+    # [team 二开] 已完成、已取消的任务默认 1 个月后自动归档
+    archive_in = models.IntegerField(default=1, validators=[MinValueValidator(0), MaxValueValidator(12)])
     close_in = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(12)])
     logo_props = models.JSONField(default=dict)
     default_state = models.ForeignKey("db.State", on_delete=models.SET_NULL, null=True, related_name="default_state")
@@ -120,6 +144,9 @@ class Project(ChangeTrackerMixin, BaseModel):
     # external_id for imports
     external_source = models.CharField(max_length=255, null=True, blank=True)
     external_id = models.CharField(max_length=255, blank=True, null=True)
+    # [team 二开] 关联的代码仓库（规范化后的地址，例如 github.com/org/repo）。
+    # team-mcp 按当前仓库的 git remote 匹配项目，只有关联了的仓库里 Agent 才能读写这个项目。
+    team_repos = models.JSONField(default=list, blank=True)
 
     def __init__(self, *args, **kwargs):
         # Track if timezone is provided, if so, don't override it with the workspace timezone when saving
@@ -194,6 +221,8 @@ class Project(ChangeTrackerMixin, BaseModel):
         from plane.db.models import Workspace
 
         self.identifier = self.identifier.strip().upper()
+        # [team 二开]
+        self.team_repos = normalize_repo_list(self.team_repos)
         is_creating = self._state.adding
 
         if is_creating and not self.is_timezone_provided:

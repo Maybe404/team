@@ -4,7 +4,8 @@ import { mdToHtml } from "./markdown.ts";
 import { assertMember, type Plane, type WorkItem } from "./plane.ts";
 
 type Row = { key: string; name: string; state: string; days: number; url: string; project: string; who: string[] };
-export type DigestOpts = { staleDays: number; onlyMine: boolean; team?: boolean };
+/** projectIds：只扫这些项目（MCP 里传当前仓库关联的项目）；不传时扫你加入的所有项目（定时回顾用）。 */
+export type DigestOpts = { staleDays: number; onlyMine: boolean; team?: boolean; projectIds?: string[] };
 
 const DAY = 86_400_000;
 
@@ -15,7 +16,11 @@ export async function buildDigest(plane: Plane, opts: DigestOpts) {
   const reviewIdent = (process.env.TEAM_REVIEW_PROJECT || "REVIEW").toUpperCase();
   // 只扫自己加入了的项目：没加入的读不到，也不归你管
   const projects = (await plane.listProjects()).filter(
-    (p) => p.is_member !== false && p.id !== lessonProject?.id && p.identifier !== reviewIdent,
+    (p) =>
+      p.is_member !== false &&
+      p.id !== lessonProject?.id &&
+      p.identifier !== reviewIdent &&
+      (!opts.projectIds || opts.projectIds.includes(p.id)),
   );
   const now = Date.now();
 

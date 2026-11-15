@@ -1,7 +1,5 @@
 {
   "mcpServers": {
-    "team": {
-      "command": "dev/team-mcp.sh"
-    }
+    "team-dev": { "command": "dev/team-mcp.sh" }
   }
 }

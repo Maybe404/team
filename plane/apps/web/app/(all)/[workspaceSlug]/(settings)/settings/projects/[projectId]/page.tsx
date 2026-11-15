@@ -19,6 +19,7 @@ import { useUserPermissions } from "@/hooks/store/user";
 import type { Route } from "./+types/page";
 import { GeneralProjectSettingsHeader } from "./header";
 import { GeneralProjectSettingsControlSection } from "@/components/project/settings/control-section";
+import { TeamReposSection } from "@/components/project/settings/team-repos";
 
 function ProjectSettingsPage({ params }: Route.ComponentProps) {
   // router
@@ -44,6 +45,10 @@ function ProjectSettingsPage({ params }: Route.ComponentProps) {
           />
         ) : (
           <ProjectDetailsFormLoader />
+        )}
+        {/* [team 二开] 关联代码仓库 */}
+        {currentProjectDetails && (
+          <TeamReposSection workspaceSlug={workspaceSlug} projectId={projectId} isAdmin={isAdmin} />
         )}
         {isAdmin && <GeneralProjectSettingsControlSection projectId={projectId} />}
       </div>

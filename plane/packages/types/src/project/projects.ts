@@ -44,6 +44,8 @@ export interface IPartialProject {
 
 export interface IProject extends IPartialProject {
   archive_in?: number;
+  // [team 二开] 关联的代码仓库（规范化地址）
+  team_repos?: string[];
   close_in?: number;
   // only for uploading the cover image
   cover_image_asset?: null;

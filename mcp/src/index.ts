@@ -4,26 +4,21 @@
 // 所有写入都要先过规范闸门（norms），不合规的会被退回给调用方 Agent 修改。
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { BINDING_FILE, checkWritable, readBinding, workDirs, writeBinding } from "./binding.ts";
+import { loadConfig } from "./config.ts";
+import { matchProjects, notBoundMessage, repoRemotes, workDirs, type RepoScope } from "./binding.ts";
 import { z } from "zod";
-import { formatLessons, getLessonProject, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
+import { formatLessons, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
 import { htmlToMd, mdToHtml } from "./markdown.ts";
 import { COMMENT_KINDS, formatGate, gate, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
 import { Plane, PlaneError, type Member, type Project, type WorkItem } from "./plane.ts";
 import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
-import { buildDigest, getReviewProject, publishDigest } from "./review.ts";
-import { agentCanSet, ensureStates, findState, HUMAN_ONLY_HINT, TASK_STATES } from "./workflow.ts";
+import { buildDigest, publishDigest } from "./review.ts";
+import { agentCanSet, findState, HUMAN_ONLY_HINT, TASK_STATES } from "./workflow.ts";
 
-const CONFIG = {
-  baseUrl: process.env.PLANE_BASE_URL || "http://localhost:47800",
-  token: process.env.PLANE_API_TOKEN || "",
-  workspace: process.env.PLANE_WORKSPACE || "",
-  webUrl: process.env.PLANE_WEB_URL || "http://localhost:47300",
-};
+const CONFIG = loadConfig();
 const plane = new Plane(CONFIG);
 
 // 没配置或 Token 失效时不让进程崩掉，而是在每次调用时告诉使用者怎么配
@@ -32,9 +27,9 @@ function setupGuide(reason: string) {
   return `${reason}
 
 首次使用按下面做（每个人用自己的账号和 Token，Plane 上的操作会记在你名下）：
-1. 打开 ${web} 登录。没有账号的话请管理员用 invite_member 邀请你的邮箱，再用这个邮箱注册，注册后在网页上接受工作区邀请。
+1. 请管理员在 ${web} 的工作区设置里邀请你的邮箱，你用这个邮箱注册并接受邀请。
 2. 进入 ${web}/${CONFIG.workspace || "<工作区>"}/settings/account/api-tokens 新建一个 API Token。
-3. 在 MCP 配置里设置环境变量：PLANE_API_TOKEN=<刚才的 Token>、PLANE_WORKSPACE=${CONFIG.workspace || "<工作区 slug，网址里第一段>"}、PLANE_BASE_URL=${CONFIG.baseUrl}、PLANE_WEB_URL=${web}，然后重启 Agent。
+3. 在 team 仓库里运行 mcp/install.sh，按提示填 Plane 地址、工作区和 Token（保存在 ~/.config/team-mcp/config.json），然后重启 Agent。
 4. 调用 whoami 确认。`;
 }
 const webUrl = (path: string) => plane.webUrl(path);
@@ -46,11 +41,11 @@ const server = new McpServer(
 规则：
 1. 写之前先读规范：资源 team://guide/writing，或调用 get_writing_guide。
 2. 所有写入都会做规范检查，被退回时按提示逐条改完重交，不要换个说法绕过检查。
-3. 只在团队项目里工作时使用（whoami 能看到当前仓库是否绑定）；个人项目里不要调用这些工具。团队任务动手前先 search_lessons 查相关经验，结束后经用户同意用 propose_lesson 提交新经验，团队经验需要人审核才会生效。
-4. 状态“已完成”“已取消”只能由人设置；Agent 做完后用 update_task 改成“待审查”，同时在 comment 里写带证据的结论。
-5. 只写团队工作。只有绑定了团队项目的仓库（根目录有 ${BINDING_FILE}）里才能写入；没绑定时不要自己调用 bind_repo，先问用户。个人项目、私人笔记、密钥和个人信息不要写进来。
-6. 没有删除工具，也不要让用户去网页删除；不再需要的内容由人在网页上归档。
-7. 写入前不用每次都问用户，但新建项目、邀请成员、绑定仓库、提交团队经验之前要征得用户同意。`,
+3. 只在团队项目的仓库里工作时使用。仓库要由项目管理员在 Plane「项目设置 → 关联代码仓库」登记过，其他目录里除了 whoami 和规范类工具都用不了，这是正常的，不要想办法绕过。
+4. 团队任务动手前先 search_lessons 查相关经验，结束后经用户同意用 propose_lesson 提交新经验，团队经验需要人审核才会生效。
+5. 状态“已完成”“已取消”只能由人设置；Agent 做完后用 update_task 改成“待审查”，同时在 comment 里写带证据的结论。
+6. 只写团队工作。个人笔记、密钥和个人信息不要写进来。
+7. 没有删除、成员管理、项目设置类工具，这些由人在网页上做；不再需要的内容由人在网页上归档。`,
   },
 );
 
@@ -67,8 +62,9 @@ async function run(fn: () => Promise<ReturnType<typeof text>>) {
   } catch (e) {
     if (e instanceof PlaneError && (e.status === 401 || /token is not valid|credentials were not provided/i.test(e.body)))
       return fail(setupGuide("Plane 拒绝了这个 API Token（401），可能已被删除或填错。"));
-    if (e instanceof PlaneError && e.status === 403) return fail(`没有权限：${e.path}。这个操作需要更高的项目或工作区角色，请找管理员。`);
+    if (e instanceof PlaneError && e.status === 403) return fail(`没有权限：${e.path}。${/API Token/.test(e.body) ? "Agent 不能做这类操作，请由人在网页上完成。" : "这个操作需要更高的项目角色，请找项目管理员。"}`);
     if (e instanceof TypeError && /fetch failed/.test(e.message)) return fail(`连不上 Plane（${CONFIG.baseUrl}）。确认服务已启动、PLANE_BASE_URL 正确。`);
+    if (e instanceof NotBound) return fail(e.message);
     return fail(e instanceof Error ? e.message : String(e));
   }
 }
@@ -83,8 +79,6 @@ async function signature(role?: string) {
 
 const STATE_COMMENT_KIND: Record<string, (typeof COMMENT_KINDS)[number]> = { 待审查: "结论", 阻塞: "阻塞", 待决定: "决策" };
 
-const ROLES = { admin: 20, member: 15, guest: 5 } as const;
-const roleName = (r?: number) => (r === 20 ? "管理员" : r === 15 ? "成员" : r === 5 ? "访客" : "未知");
 const memberName = (m: Member) => `${m.display_name}${m.email ? `（${m.email}）` : ""}`;
 
 /** 把 "me"、邮箱、显示名、姓名解析成项目成员 ID。 */
@@ -117,10 +111,10 @@ function checkOrReject(md: string, type: DocType, opts: Parameters<typeof gate>[
   return { ok: r.ok, report: formatGate(r) };
 }
 
-async function resolveTask(ref: string): Promise<{ project: Project; item: WorkItem; key: string }> {
+async function resolveTask(ref: string, mode: "read" | "write" = "read"): Promise<{ project: Project; item: WorkItem; key: string }> {
   const m = ref.trim().match(/^([A-Za-z][A-Za-z0-9]*)-(\d+)$/);
   if (!m) throw new Error(`任务编号格式是「项目标识-序号」，例如 DEMO-12，收到「${ref}」`);
-  const project = await plane.resolveProject(m[1]);
+  const project = await projectFor(m[1], mode);
   const item = await plane.getWorkItemByKey(`${project.identifier}-${m[2]}`).catch((e) => {
     if (e instanceof PlaneError && e.status === 404) throw new Error(`找不到任务 ${project.identifier}-${m[2]}。可以用 list_tasks 或 search_tasks 查编号。`);
     throw e;
@@ -128,17 +122,52 @@ async function resolveTask(ref: string): Promise<{ project: Project; item: WorkI
   return { project, item, key: `${project.identifier}-${item.sequence_id}` };
 }
 
-// ---------- 写入范围 ----------
+// ---------- 仓库范围 ----------
+// 当前仓库的 git remote 对上了哪些项目的“关联代码仓库”，Agent 就只能读写这些项目；
+// 经验库和每日回顾是全员共享的，只要当前仓库属于某个团队项目就能读，经验只能经 propose_lesson 提交。
 
-async function currentDirs() {
+class NotBound extends Error {}
+
+const SHARED = [process.env.TEAM_LESSONS_PROJECT || "LESSON", process.env.TEAM_REVIEW_PROJECT || "REVIEW"].map((x) => x.toUpperCase());
+
+async function repoScope(): Promise<RepoScope & { all: Project[] }> {
   const caps = server.server.getClientCapabilities();
-  return workDirs(caps?.roots ? () => server.server.listRoots() : undefined);
+  const dirs = await workDirs(caps?.roots ? () => server.server.listRoots() : undefined);
+  const remotes = [...new Set(dirs.flatMap(repoRemotes))];
+  const all = await plane.listProjects();
+  return { dirs, remotes, projects: matchProjects(all, remotes).filter((p) => p.is_member !== false), all };
 }
 
-/** 返回拒绝原因；可以写时返回 undefined。 */
-async function guardWrite(projectIdentifier: string): Promise<string | undefined> {
-  const dirs = await currentDirs();
-  return checkWritable(readBinding(dirs), CONFIG.workspace, projectIdentifier, dirs);
+/** 当前仓库关联的项目；一个都没有时抛 NotBound。 */
+async function boundProjects(): Promise<{ projects: Project[]; shared: Project[] }> {
+  const sc = await repoScope();
+  if (!sc.projects.length) {
+    const unjoined = matchProjects(sc.all, sc.remotes).filter((p) => p.is_member === false);
+    if (unjoined.length) {
+      throw new NotBound(`当前仓库关联的是 ${unjoined.map((p) => `${p.identifier}（${p.name}）`).join("、")}，但你还不是成员。请项目管理员在网页上把你加进项目。`);
+    }
+    throw new NotBound(notBoundMessage(sc, CONFIG.webUrl));
+  }
+  const shared = sc.all.filter((p) => SHARED.includes(p.identifier.toUpperCase()) && p.is_member !== false);
+  return { projects: sc.projects, shared };
+}
+
+/**
+ * 选项目：不传时用当前仓库关联的唯一项目；传了必须是当前仓库关联的项目。
+ * mode=read 时也允许经验库、每日回顾这两个共享项目。
+ */
+async function projectFor(ref: string | undefined, mode: "read" | "write" = "write"): Promise<Project> {
+  const { projects, shared } = await boundProjects();
+  const pool = mode === "read" ? [...projects, ...shared] : projects;
+  const list = projects.map((p) => `${p.identifier}（${p.name}）`).join("、");
+  if (!ref) {
+    if (projects.length === 1) return projects[0];
+    throw new Error(`当前仓库关联了多个项目：${list}。请用 project 参数指定一个。`);
+  }
+  const key = ref.trim().toLowerCase();
+  const hit = pool.find((p) => p.id === ref || p.identifier.toLowerCase() === key || p.name.toLowerCase() === key);
+  if (!hit) throw new Error(`当前仓库只能${mode === "read" ? "读写" : "写入"} ${list}${mode === "read" && shared.length ? `，以及共享的 ${shared.map((p) => p.identifier).join("、")}` : ""}，没有「${ref}」。`);
+  return hit;
 }
 
 // ---------- 规范 ----------
@@ -214,7 +243,7 @@ server.registerTool(
       "对一篇长文（≥500 汉字）跑 less-ai-tone 的整篇检测，返回分级报告（A/B/C/F/X）。用于成稿清理，配合提示词 less-ai-tone 使用。短文本的逐句检查已经内置在所有写入工具里。",
     inputSchema: {
       markdown: z.string().optional().describe("正文"),
-      project: z.string().optional().describe("读取 Plane 文档时的项目"),
+      project: z.string().optional().describe("读取 Plane 文档时的项目，默认当前仓库关联的项目"),
       doc_id: z.string().optional().describe("读取 Plane 文档时的文档 ID"),
     },
     annotations: { readOnlyHint: true },
@@ -222,11 +251,11 @@ server.registerTool(
   async ({ markdown, project, doc_id }) =>
     run(async () => {
       let md = markdown;
-      if (!md && project && doc_id) {
-        const p = await plane.resolveProject(project);
+      if (!md && doc_id) {
+        const p = await projectFor(project, "read");
         md = htmlToMd((await plane.getPage(p.id, doc_id)).description_html);
       }
-      if (!md) return fail("传 markdown，或者 project + doc_id");
+      if (!md) return fail("传 markdown，或者 doc_id（可加 project）");
       const file = join(mkdtempSync(join(tmpdir(), "team-tone-")), "doc.md");
       writeFileSync(file, md, "utf8");
       try {
@@ -272,120 +301,38 @@ server.registerTool(
 server.registerTool(
   "whoami",
   {
-    title: "当前账号",
-    description: "确认 team-mcp 连的是哪个 Plane、哪个工作区、以哪个账号操作。首次使用或报权限错误时先调用它。",
+    title: "当前账号和仓库",
+    description: "确认 team-mcp 连的是哪个 Plane、以哪个账号操作，以及当前仓库关联了哪些团队项目。首次使用或报错时先调用它。",
     annotations: { readOnlyHint: true },
   },
   async () =>
     run(async () => {
-      const me = await plane.me();
-      const role = await plane
-        .listWorkspaceMembers()
-        .then((ms) => roleName(ms.find((m) => m.id === me.id)?.role))
-        .catch(() => "成员或访客");
-      const dirs = await currentDirs();
-      const b = readBinding(dirs);
-      const bound = b
-        ? `已绑定：${b.projects === "*" ? "工作区所有项目" : b.projects.join("、")}（${b.file}）`
-        : `未绑定（${dirs.join("、")}），只能读，不能写`;
+      const [me, sc] = await Promise.all([plane.me(), repoScope()]);
+      const unjoined = matchProjects(sc.all, sc.remotes).filter((p) => p.is_member === false);
+      const repo = sc.projects.length
+        ? `已关联 ${sc.projects.map((p) => `${p.identifier}（${p.name}）`).join("、")}，可以读写`
+        : unjoined.length
+          ? `关联的是 ${unjoined.map((p) => p.identifier).join("、")}，但你还不是成员，请项目管理员在网页上把你加进项目`
+          : `未关联。${notBoundMessage(sc, CONFIG.webUrl)}`;
       return text(
-        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}，角色：${role}\nPlane：${CONFIG.webUrl}（API ${CONFIG.baseUrl}）\n当前仓库：${bound}`,
+        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nPlane：${CONFIG.webUrl}（API ${CONFIG.baseUrl}）\n工作目录：${sc.dirs.join("、")}\ngit remote：${sc.remotes.join("、") || "无"}\n团队项目：${repo}`,
       );
-    }),
-);
-
-server.registerTool(
-  "bind_repo",
-  {
-    title: "绑定仓库",
-    description: `把当前仓库绑定到团队项目，绑定后才能在这个仓库里写任务、文档和团队经验。会在仓库根目录写 ${BINDING_FILE}。只有用户明确说这是团队项目时才能调用，不要自行判断。`,
-    inputSchema: { projects: z.array(z.string()).min(1).describe("项目标识，例如 [\"ORDER\"]") },
-  },
-  async ({ projects }) =>
-    run(async () => {
-      for (const p of projects) await plane.resolveProject(p);
-      const dir = (await currentDirs())[0];
-      const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: dir, encoding: "utf8" });
-      const root = top.status === 0 ? top.stdout.trim() : dir;
-      const f = writeBinding(root, CONFIG.workspace, projects);
-      return text(`已绑定，写入 ${f}。建议把它提交到仓库，团队其他人的 Agent 也会按这个绑定写入。`);
     }),
 );
 
 server.registerTool(
   "list_members",
   {
-    title: "列出成员",
-    description: "传 project 时列出项目成员（指派任务用）；不传时列出工作区成员和待接受的邀请（需要管理员）。",
+    title: "列出项目成员",
+    description: "列出项目成员，指派任务时用。不传 project 时用当前仓库关联的项目。",
     inputSchema: { project: z.string().optional() },
     annotations: { readOnlyHint: true },
   },
   async ({ project }) =>
     run(async () => {
-      if (project) {
-        const p = await plane.resolveProject(project);
-        const ms = await plane.listProjectMembers(p.id);
-        return text(`${p.identifier} 项目成员（${ms.length}）：\n${ms.map((m) => `- ${memberName(m)}`).join("\n")}`);
-      }
-      const [ms, invites] = await Promise.all([plane.listWorkspaceMembers(), plane.listInvites().catch(() => [])]);
-      const pending = invites.filter((i) => !i.accepted);
-      return text(
-        `工作区成员（${ms.length}）：\n${ms.map((m) => `- ${memberName(m)}，${roleName(m.role)}`).join("\n")}${
-          pending.length ? `\n\n待接受的邀请：\n${pending.map((i) => `- ${i.email}，${roleName(i.role)}`).join("\n")}` : ""
-        }`,
-      );
-    }),
-);
-
-server.registerTool(
-  "invite_member",
-  {
-    title: "邀请成员",
-    description:
-      "邀请一个邮箱加入工作区（需要工作区所有者的 Token）。对方用这个邮箱在 Plane 注册并接受邀请后，再用 add_project_member 加进项目。调用前要征得用户同意。",
-    inputSchema: {
-      email: z.string().email(),
-      role: z.enum(["admin", "member", "guest"]).optional().describe("默认 member"),
-    },
-  },
-  async ({ email, role }) =>
-    run(async () => {
-      const existing = await plane.listWorkspaceMembers().catch(() => []);
-      if (existing.some((m) => m.email?.toLowerCase() === email.toLowerCase())) return text(`${email} 已经是工作区成员。`);
-      const inv = await plane.createInvite(email, ROLES[role ?? "member"]);
-      return text(
-        `已邀请 ${inv.email}（${roleName(inv.role)}）。请对方：\n1. 用这个邮箱在 ${CONFIG.webUrl} 注册并登录，在首页接受「${CONFIG.workspace}」的邀请；\n2. 在 ${CONFIG.webUrl}/${CONFIG.workspace}/settings/account/api-tokens 生成自己的 API Token，配到自己的 team-mcp 里。\n接受后用 add_project_member 把他加进需要的项目。`,
-      );
-    }),
-);
-
-server.registerTool(
-  "add_project_member",
-  {
-    title: "加入项目",
-    description: "把已在工作区里的成员加进项目，加入后才能被指派任务。需要项目管理员权限。",
-    inputSchema: {
-      project: z.string(),
-      member: z.string().describe("邮箱或显示名"),
-      role: z.enum(["admin", "member", "guest"]).optional().describe("默认 member"),
-    },
-  },
-  async ({ project, member, role }) =>
-    run(async () => {
-      const p = await plane.resolveProject(project);
-      const r = member.trim().toLowerCase();
-      const ms = await plane.listWorkspaceMembers();
-      const hit = ms.find((m) => m.email?.toLowerCase() === r || m.display_name.toLowerCase() === r);
-      if (!hit) return fail(`工作区里没有「${member}」。还没加入的人先用 invite_member 邀请。工作区成员：${ms.map(memberName).join("、")}`);
-      const done: string[] = [];
-      // 经验库和每日回顾是全员共享的，加人进任何项目时顺带加进去
-      const shared = [p, await getLessonProject(plane), await getReviewProject(plane)];
-      for (const proj of shared.filter((x, i) => shared.findIndex((y) => y.id === x.id) === i)) {
-        if ((await plane.listProjectMembers(proj.id)).some((m) => m.id === hit.id)) continue;
-        await plane.addProjectMember(proj.id, hit.id, proj.id === p.id ? ROLES[role ?? "member"] : ROLES.member);
-        done.push(proj.identifier);
-      }
-      return text(done.length ? `已把 ${memberName(hit)} 加进 ${done.join("、")}。` : `${memberName(hit)} 已在 ${p.identifier} 里。`);
+      const p = await projectFor(project, "read");
+      const ms = await plane.listProjectMembers(p.id);
+      return text(`${p.identifier} 项目成员（${ms.length}）：\n${ms.map((m) => `- ${memberName(m)}`).join("\n")}`);
     }),
 );
 
@@ -393,37 +340,12 @@ server.registerTool(
 
 server.registerTool(
   "list_projects",
-  { title: "列出项目", description: "列出工作区里的所有项目", annotations: { readOnlyHint: true } },
+  { title: "列出项目", description: "列出当前仓库关联的团队项目，以及全员共享的经验库和每日回顾。", annotations: { readOnlyHint: true } },
   async () =>
     run(async () => {
-      const ps = await plane.listProjects();
-      return text(
-        ps.map((p) => `- ${p.identifier}：${p.name}${p.description ? `（${p.description}）` : ""}${p.is_member === false ? "　[你未加入]" : ""}`).join("\n") ||
-          "没有项目",
-      );
-    }),
-);
-
-server.registerTool(
-  "setup_project",
-  {
-    title: "初始化项目",
-    description: "新建项目（不存在时）并把状态整理成团队工作流：待办、待开始、进行中、待审查、阻塞、待决定、已完成、已取消。可重复执行。",
-    inputSchema: {
-      identifier: z.string().regex(/^[A-Z][A-Z0-9]{1,11}$/).describe("项目标识，大写字母开头，2～12 位，例如 ORDER"),
-      name: z.string().optional().describe("新建时的项目名"),
-      description: z.string().optional(),
-    },
-  },
-  async ({ identifier, name, description }) =>
-    run(async () => {
-      let project = (await plane.listProjects()).find((p) => p.identifier === identifier);
-      const created = !project;
-      if (!project) project = await plane.createProject(name || identifier, identifier, description);
-      const changes = await ensureStates(plane, project, TASK_STATES);
-      // 已完成、已取消的任务一个月后自动归档，列表保持干净
-      if (!project.archive_in) await plane.updateProject(project.id, { archive_in: 1 }).then(() => changes.push("已完成和已取消的任务 1 个月后自动归档")).catch(() => undefined);
-      return text(`${created ? "已新建" : "已存在"}项目 ${project.identifier}（${project.name}）。${changes.length ? `\n${changes.join("\n")}` : "\n状态已是团队工作流，无需调整。"}`);
+      const { projects, shared } = await boundProjects();
+      const line = (p: Project) => `- ${p.identifier}：${p.name}${p.description ? `（${p.description}）` : ""}`;
+      return text(`当前仓库关联的项目：\n${projects.map(line).join("\n")}${shared.length ? `\n\n共享项目（只读，经验用 propose_lesson 提交）：\n${shared.map(line).join("\n")}` : ""}`);
     }),
 );
 
@@ -435,7 +357,7 @@ server.registerTool(
     title: "列出任务",
     description: "列出某个项目的任务，可按状态过滤。默认不含已完成和已取消。",
     inputSchema: {
-      project: z.string().describe("项目标识或名称"),
+      project: z.string().optional().describe("项目标识，默认当前仓库关联的项目"),
       states: z.array(z.string()).optional().describe("只看这些状态，例如 [\"进行中\",\"阻塞\"]"),
       include_closed: z.boolean().optional(),
       search: z.string().optional().describe("标题关键词"),
@@ -445,7 +367,7 @@ server.registerTool(
   },
   async ({ project, states, include_closed, search, assignee }) =>
     run(async () => {
-      const p = await plane.resolveProject(project);
+      const p = await projectFor(project, "read");
       const [items, st, members] = await Promise.all([plane.listWorkItems(p.id), plane.listStates(p.id), plane.listProjectMembers(p.id)]);
       const byId = new Map(st.map((s) => [s.id, s]));
       const names = new Map(members.map((m) => [m.id, m.display_name]));
@@ -519,7 +441,7 @@ server.registerTool(
     description:
       "新建任务。描述必须符合任务模板（## 目标、## 验收标准）。拆分大任务时传 parent 建子任务。建任务前建议先 search_lessons，把相关经验写进「相关」章节。",
     inputSchema: {
-      project: z.string(),
+      project: z.string().optional().describe("项目标识，默认当前仓库关联的项目"),
       title: z.string().min(4),
       description: z.string().describe("Markdown，按任务模板"),
       priority: z.enum(["urgent", "high", "medium", "low", "none"]).optional(),
@@ -532,14 +454,12 @@ server.registerTool(
     run(async () => {
       const g = checkOrReject(description, "task", { title });
       if (!g.ok) return fail(g.report);
-      const p = await plane.resolveProject(project);
-      const denied = await guardWrite(p.identifier);
-      if (denied) return fail(denied);
+      const p = await projectFor(project, "write");
       const st = await plane.listStates(p.id);
       const target = state ?? "待开始";
       if (!agentCanSet(target)) return fail(HUMAN_ONLY_HINT);
       const people = await resolveMembers(p.id, assignees ?? []);
-      const parentTask = parent ? await resolveTask(parent) : undefined;
+      const parentTask = parent ? await resolveTask(parent, "write") : undefined;
       if (parentTask && parentTask.project.id !== p.id) return fail(`父任务 ${parentTask.key} 不在项目 ${p.identifier} 里，子任务要和父任务在同一个项目。`);
       const item = await plane.createWorkItem(p.id, {
         name: title,
@@ -579,9 +499,7 @@ server.registerTool(
   },
   async ({ task, state, title, description, priority, assignees, parent, comment, role }) =>
     run(async () => {
-      const { project, item, key } = await resolveTask(task);
-      const denied = await guardWrite(project.identifier);
-      if (denied) return fail(denied);
+      const { project, item, key } = await resolveTask(task, "write");
       const kind = state ? STATE_COMMENT_KIND[state] : undefined;
       if (kind && !comment) return fail(`改成「${state}」时要在 comment 里写${kind}说明${kind === "结论" ? "（做了什么、怎么验证的、结果如何）" : ""}。`);
       const commentKind = kind ?? "进展";
@@ -607,7 +525,7 @@ server.registerTool(
       if (parent) {
         if (parent.toLowerCase() === "none") body.parent = null;
         else {
-          const pt = await resolveTask(parent);
+          const pt = await resolveTask(parent, "write");
           if (pt.item.id === item.id) return fail("任务不能挂在自己下面");
           body.parent = pt.item.id;
         }
@@ -637,9 +555,7 @@ server.registerTool(
     run(async () => {
       const g = checkOrReject(markdown, "comment", { commentKind: kind });
       if (!g.ok) return fail(g.report);
-      const { project, item, key } = await resolveTask(task);
-      const denied = await guardWrite(project.identifier);
-      if (denied) return fail(denied);
+      const { project, item, key } = await resolveTask(task, "write");
       const signed = `**${kind}** · ${await signature(role)}\n\n${markdown.trim()}`;
       await plane.createComment(project.id, item.id, mdToHtml(signed));
       return text(`已在 ${key} 写入「${kind}」评论。${g.report ? `\n\n${g.report}` : ""}`);
@@ -650,13 +566,16 @@ server.registerTool(
   "search_tasks",
   {
     title: "搜索任务",
-    description: "在整个工作区按关键词搜索任务",
+    description: "按关键词搜索当前仓库关联项目里的任务",
     inputSchema: { query: z.string() },
     annotations: { readOnlyHint: true },
   },
   async ({ query }) =>
     run(async () => {
+      const { projects } = await boundProjects();
+      const ids = new Set(projects.map((p) => p.id));
       const r = await plane.searchWorkItems(query);
+      r.issues = r.issues.filter((i) => ids.has(i.project_id));
       return text(r.issues.map((i) => `- ${i.project__identifier}-${i.sequence_id} ${i.name}`).join("\n") || "没有匹配的任务");
     }),
 );
@@ -668,12 +587,12 @@ server.registerTool(
   {
     title: "列出文档",
     description: "列出项目里的文档（Plane Page），可按关键词搜索标题和正文",
-    inputSchema: { project: z.string(), search: z.string().optional() },
+    inputSchema: { project: z.string().optional().describe("默认当前仓库关联的项目"), search: z.string().optional() },
     annotations: { readOnlyHint: true },
   },
   async ({ project, search }) =>
     run(async () => {
-      const p = await plane.resolveProject(project);
+      const p = await projectFor(project, "read");
       const pages = await plane.listPages(p.id, search);
       return text(pages.map((d) => `- ${d.id}　${d.name}（更新于 ${d.updated_at.slice(0, 10)}）`).join("\n") || "没有文档");
     }),
@@ -684,12 +603,12 @@ server.registerTool(
   {
     title: "读取文档",
     description: "以 Markdown 读取一篇文档",
-    inputSchema: { project: z.string(), doc_id: z.string() },
+    inputSchema: { project: z.string().optional().describe("默认当前仓库关联的项目"), doc_id: z.string() },
     annotations: { readOnlyHint: true },
   },
   async ({ project, doc_id }) =>
     run(async () => {
-      const p = await plane.resolveProject(project);
+      const p = await projectFor(project, "read");
       const d = await plane.getPage(p.id, doc_id).catch((e) => {
         if (e instanceof PlaneError && e.status === 404) throw new Error(`项目 ${p.identifier} 里没有文档 ${doc_id}，或者它是别人的私有文档。用 list_docs 查。`);
         throw e;
@@ -705,7 +624,7 @@ server.registerTool(
     description:
       "新建或整篇更新一篇文档。不传 doc_id 是新建，传了是更新（按段落做增量合并，正在网页上打开的人会实时看到）。正文必须符合对应 type 的模板，写之前先 get_writing_guide。",
     inputSchema: {
-      project: z.string(),
+      project: z.string().optional().describe("默认当前仓库关联的项目"),
       type: z.enum(DOC_TYPES).describe("文档类型，决定检查哪个模板"),
       title: z.string(),
       markdown: z.string().describe("正文，从二级标题开始，不要写一级标题"),
@@ -718,16 +637,14 @@ server.registerTool(
     run(async () => {
       const g = checkOrReject(markdown, type, { title });
       if (!g.ok) return fail(g.report);
-      const p = await plane.resolveProject(project);
-      const denied = await guardWrite(p.identifier);
-      if (denied) return fail(denied);
+      const p = await projectFor(project, "write");
+      const t = task ? await resolveTask(task, "write") : undefined;
       const html = mdToHtml(markdown);
       const d = doc_id
         ? await plane.updatePage(p.id, doc_id, { name: title, description_html: html })
         : await plane.createPage(p.id, title, html, parent_id);
       const url = webUrl(`projects/${p.id}/pages/${d.id}`);
-      if (task) {
-        const t = await resolveTask(task);
+      if (t) {
         await plane.addLink(t.project.id, t.item.id, url, `文档：${title}`).catch(() => undefined);
       }
       return text(
@@ -741,14 +658,12 @@ server.registerTool(
   {
     title: "关联文档",
     description: "把已有文档关联到任务上（任务页的链接区会出现这篇文档）。任务交付时把设计、接口、复盘等文档都关联上。write_doc 传 task 时会自动关联，不用再调这个。",
-    inputSchema: { task: z.string(), project: z.string().describe("文档所在项目"), doc_id: z.string() },
+    inputSchema: { task: z.string(), project: z.string().optional().describe("文档所在项目，默认当前仓库关联的项目"), doc_id: z.string() },
   },
   async ({ task, project, doc_id }) =>
     run(async () => {
-      const t = await resolveTask(task);
-      const denied = await guardWrite(t.project.identifier);
-      if (denied) return fail(denied);
-      const p = await plane.resolveProject(project);
+      const t = await resolveTask(task, "write");
+      const p = await projectFor(project, "read");
       const d = await plane.getPage(p.id, doc_id);
       const url = webUrl(`projects/${p.id}/pages/${d.id}`);
       const links = await plane.listLinks(t.project.id, t.item.id).catch(() => []);
@@ -773,7 +688,10 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async ({ query, tags, include_pending }) =>
-    run(async () => text(formatLessons(await searchLessons(plane, query, tags ?? [], { includePending: include_pending })))),
+    run(async () => {
+      await boundProjects();
+      return text(formatLessons(await searchLessons(plane, query, tags ?? [], { includePending: include_pending })));
+    }),
 );
 
 server.registerTool(
@@ -799,9 +717,7 @@ server.registerTool(
         const path = await savePrivateLesson(title, md, tags);
         return text(`已存为私人经验：${path}`);
       }
-      const dirs = await currentDirs();
-      const b = readBinding(dirs);
-      if (!b) return fail(checkWritable(b, CONFIG.workspace, "LESSON", dirs)!);
+      await boundProjects();
       const r = await proposeTeamLesson(plane, title, md, tags);
       return text(`已提交团队经验 ${r.key}，状态“待审核”，需要人在 Plane 上采纳后才会被检索到：${webUrl(`browse/${r.key}`)}`);
     }),
@@ -814,7 +730,7 @@ server.registerTool(
   {
     title: "生成回顾",
     description:
-      "扫一遍你加入的项目，列出等你决定、阻塞、待审查、长期没动的任务和待审核的经验。publish=true 时写成「每日回顾」项目里你当天的个人回顾（「回顾 日期 · 你的名字」，同一天重复执行会更新）。全员的团队回顾由 team-review 定时生成。",
+      "扫一遍当前仓库关联的项目，列出等你决定、阻塞、待审查、长期没动的任务和待审核的经验。publish=true 时写成「每日回顾」项目里你当天的个人回顾（「回顾 日期 · 你的名字」，同一天重复执行会更新）。全员的团队回顾由 team-review 定时生成。",
     inputSchema: {
       stale_days: z.number().int().min(1).max(60).optional().describe("多少天没更新算“没动”，默认 3"),
       only_mine: z.boolean().optional().describe("只看指派给我或未指派的任务"),
@@ -823,7 +739,8 @@ server.registerTool(
   },
   async ({ stale_days, only_mine, publish }) =>
     run(async () => {
-      const opts = { staleDays: stale_days ?? 3, onlyMine: only_mine ?? false };
+      const { projects } = await boundProjects();
+      const opts = { staleDays: stale_days ?? 3, onlyMine: only_mine ?? false, projectIds: projects.map((p) => p.id) };
       if (!publish) return text((await buildDigest(plane, opts)).md);
       const r = await publishDigest(plane, { ...opts, webUrl });
       return text(`${r.updated ? "已更新" : "已发布"}「${r.title}」：${r.url}\n\n${r.md}`);

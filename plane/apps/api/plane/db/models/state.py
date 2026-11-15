@@ -22,37 +22,15 @@ class StateGroup(models.TextChoices):
 
 # Default states
 DEFAULT_STATES = [
-    {
-        "name": "Backlog",
-        "color": "#60646C",
-        "sequence": 15000,
-        "group": StateGroup.BACKLOG.value,
-        "default": True,
-    },
-    {
-        "name": "Todo",
-        "color": "#60646C",
-        "sequence": 25000,
-        "group": StateGroup.UNSTARTED.value,
-    },
-    {
-        "name": "In Progress",
-        "color": "#F59E0B",
-        "sequence": 35000,
-        "group": StateGroup.STARTED.value,
-    },
-    {
-        "name": "Done",
-        "color": "#46A758",
-        "sequence": 45000,
-        "group": StateGroup.COMPLETED.value,
-    },
-    {
-        "name": "Cancelled",
-        "color": "#9AA4BC",
-        "sequence": 55000,
-        "group": StateGroup.CANCELLED.value,
-    },
+    # [team 二开] 团队工作流：已完成、已取消只能由人设置（team-mcp 约束）
+    {"name": "待办", "color": "#A3A3A3", "sequence": 15000, "group": StateGroup.BACKLOG.value},
+    {"name": "待开始", "color": "#3A3A3A", "sequence": 25000, "group": StateGroup.UNSTARTED.value, "default": True},
+    {"name": "进行中", "color": "#F59E0B", "sequence": 35000, "group": StateGroup.STARTED.value},
+    {"name": "待审查", "color": "#8B5CF6", "sequence": 36000, "group": StateGroup.STARTED.value},
+    {"name": "阻塞", "color": "#EF4444", "sequence": 37000, "group": StateGroup.STARTED.value},
+    {"name": "待决定", "color": "#EC4899", "sequence": 38000, "group": StateGroup.STARTED.value},
+    {"name": "已完成", "color": "#16A34A", "sequence": 45000, "group": StateGroup.COMPLETED.value},
+    {"name": "已取消", "color": "#9CA3AF", "sequence": 55000, "group": StateGroup.CANCELLED.value},
     {
         "name": "Triage",
         "color": "#4E5355",

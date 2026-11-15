@@ -16,6 +16,7 @@ from rest_framework import status
 from rest_framework.response import Response
 
 # Module imports
+from plane.utils.team_shared import add_workspace_members_to_shared, default_states_for, ensure_shared_memberships
 from plane.app.permissions import ROLE, ProjectMemberPermission, allow_permission
 from plane.app.serializers import (
     DeployBoardSerializer,
@@ -36,7 +37,6 @@ from plane.db.models import (
     ProjectNetwork,
     ProjectUserProperty,
     State,
-    DEFAULT_STATES,
     Workspace,
     WorkspaceMember,
 )
@@ -101,6 +101,7 @@ class ProjectViewSet(BaseViewSet):
 
     @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
     def list_detail(self, request, slug):
+        ensure_shared_memberships(request.user, slug)  # [team 二开]
         fields = [field for field in request.GET.get("fields", "").split(",") if field]
         projects = self.get_queryset().order_by("sort_order", "name")
         if WorkspaceMember.objects.filter(
@@ -145,6 +146,7 @@ class ProjectViewSet(BaseViewSet):
 
     @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
     def list(self, request, slug):
+        ensure_shared_memberships(request.user, slug)  # [team 二开]
         sort_order = ProjectUserProperty.objects.filter(
             user=self.request.user,
             project_id=OuterRef("pk"),
@@ -191,6 +193,7 @@ class ProjectViewSet(BaseViewSet):
             "guest_view_all_features",
             "project_lead",
             "network",
+            "team_repos",
             "created_at",
             "updated_at",
             "created_by",
@@ -291,10 +294,11 @@ class ProjectViewSet(BaseViewSet):
                         default=state.get("default", False),
                         created_by=request.user,
                     )
-                    for state in DEFAULT_STATES
+                    for state in default_states_for(serializer.instance)
                 ]
             )
 
+            add_workspace_members_to_shared(serializer.instance)  # [team 二开]
             project = self.get_queryset().filter(pk=serializer.data["id"]).first()
 
             # Create the model activity

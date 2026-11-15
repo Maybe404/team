@@ -31,7 +31,7 @@ profile.onboarding_step = {k: True for k in (profile.onboarding_step or {})}
 profile.save()
 
 tok = APIToken.objects.filter(user=user, label="dev-mcp").first() or APIToken.objects.create(user=user, label="dev-mcp", workspace=ws)
-# 第二个账号：普通成员，用来测指派、权限和多人协作（不进任何项目，由 add_project_member 加）
+# 第二个账号：普通成员，用来测指派、权限和多人协作（不进任何项目，测试里再加）
 bob = User.objects.filter(email="bob@team.test").first()
 if bob is None:
     bob = User(email="bob@team.test", username="bob", first_name="Bob", last_name="Member",

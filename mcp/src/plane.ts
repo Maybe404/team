@@ -2,12 +2,19 @@
 
 export type PlaneConfig = { baseUrl: string; token: string; workspace: string; webUrl?: string };
 
-export type Project = { id: string; name: string; identifier: string; description?: string; is_member?: boolean; archive_in?: number };
+export type Project = {
+  id: string;
+  name: string;
+  identifier: string;
+  description?: string;
+  is_member?: boolean;
+  team_repos?: string[];
+};
 
 /** 项目存在但当前账号不是成员时，给出能照着做的提示。 */
 export function assertMember(p: Project): Project {
   if (p.is_member === false) {
-    throw new Error(`你还不是项目 ${p.identifier}（${p.name}）的成员。请管理员调用 add_project_member 把你加进去，或在网页上加入该项目。`);
+    throw new Error(`你还不是项目 ${p.identifier}（${p.name}）的成员。请项目管理员在网页上把你加进项目（项目设置 → 成员）。`);
   }
   return p;
 }
@@ -30,7 +37,6 @@ export type WorkItem = {
 };
 export type Member = { id: string; email?: string; display_name: string; first_name?: string; last_name?: string };
 export type Link = { id: string; url: string; title?: string | null };
-export type Invite = { id: string; email: string; role: number; accepted: boolean };
 export type Comment = { id: string; comment_html: string; actor: string; created_at: string };
 export type Page = {
   id: string;
@@ -109,52 +115,22 @@ export class Plane {
     return this.req<Me>("GET", "users/me/");
   }
 
-  // 成员（项目成员接口普通成员也能读；工作区成员和邀请需要管理员/所有者）
+  // 成员
   listProjectMembers(projectId: string) {
     return this.req<Member[]>("GET", this.ws(`projects/${projectId}/members/`));
-  }
-  addProjectMember(projectId: string, memberId: string, role = 15) {
-    return this.req("POST", this.ws(`projects/${projectId}/members/`), { member: memberId, role });
-  }
-  listWorkspaceMembers() {
-    return this.req<(Member & { role?: number })[]>("GET", this.ws("members/"));
-  }
-  listInvites() {
-    return this.req<Invite[]>("GET", this.ws("invitations/"));
-  }
-  createInvite(email: string, role: number) {
-    return this.req<Invite>("POST", this.ws("invitations/"), { email, role });
   }
 
   // 项目
   listProjects() {
     return this.all<Project>(this.ws("projects/"));
   }
-  updateProject(projectId: string, body: Record<string, unknown>) {
-    return this.req<Project>("PATCH", this.ws(`projects/${projectId}/`), body);
-  }
   createProject(name: string, identifier: string, description = "") {
     return this.req<Project>("POST", this.ws("projects/"), { name, identifier, description });
-  }
-  async resolveProject(ref: string): Promise<Project> {
-    const projects = await this.listProjects();
-    const key = ref.trim().toLowerCase();
-    const hit = projects.find((p) => p.id === ref || p.identifier.toLowerCase() === key || p.name.toLowerCase() === key);
-    if (!hit) {
-      throw new Error(`找不到项目「${ref}」。现有项目：${projects.map((p) => `${p.identifier}（${p.name}）`).join("、") || "无"}`);
-    }
-    return assertMember(hit);
   }
 
   // 状态、标签
   listStates(projectId: string) {
     return this.all<State>(this.ws(`projects/${projectId}/states/`));
-  }
-  createState(projectId: string, s: { name: string; group: string; color: string }) {
-    return this.req<State>("POST", this.ws(`projects/${projectId}/states/`), s);
-  }
-  updateState(projectId: string, stateId: string, s: Partial<{ name: string; color: string; default: boolean }>) {
-    return this.req<State>("PATCH", this.ws(`projects/${projectId}/states/${stateId}/`), s);
   }
   listLabels(projectId: string) {
     return this.all<Label>(this.ws(`projects/${projectId}/labels/`));

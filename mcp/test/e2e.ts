@@ -1,6 +1,8 @@
 // 端到端测试：用 MCP 客户端通过 stdio 启动 team-mcp，对本地开发 Plane 走一遍完整流程。
 // 前置：dev/run.sh 已启动，dev/seed.sh 已生成 dev/.secrets。
 // 用法：npm run e2e
+// 建项目、登记仓库、加成员这些“管理员在网页上做的事”用 Django shell 代替，MCP 本身做不了。
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,36 +23,60 @@ const ports = Object.fromEntries(
     .map((l) => l.split("=")),
 );
 
-const privateDir = mkdtempSync(join(tmpdir(), "team-lessons-"));
-// Agent 的工作目录：一开始没有绑定团队项目，测试里再用 bind_repo 绑定
-const workDir = mkdtempSync(join(tmpdir(), "team-repo-"));
-const baseEnv = { ...process.env } as Record<string, string>;
-delete baseEnv.TEAM_ALLOWED_PROJECTS;
-const transport = new StdioClientTransport({
-  command: process.execPath,
-  args: ["--experimental-strip-types", "--no-warnings", join(import.meta.dirname, "..", "src/index.ts")],
-  cwd: workDir,
-  env: {
-    ...baseEnv,
-    PLANE_BASE_URL: `http://localhost:${ports.API_PORT}`,
-    PLANE_WEB_URL: `http://localhost:${ports.WEB_PORT}`,
-    PLANE_API_TOKEN: secrets.PLANE_API_TOKEN,
-    PLANE_WORKSPACE: secrets.PLANE_WORKSPACE,
-    TEAM_PRIVATE_LESSONS_DIR: privateDir,
-  } as Record<string, string>,
-});
-const client = new Client({ name: "e2e", version: "0.0.1" });
-await client.connect(transport);
-
 const run = Date.now().toString(36).slice(-4).toUpperCase();
 const PROJECT = `E2E${run}`;
+const REPO = `git.example.com/e2e/repo-${run.toLowerCase()}`;
 let passed = 0;
 let failed = 0;
 
-async function call(name: string, args: Record<string, unknown>) {
-  const r = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
-  return { text: r.content.map((c) => c.text).join("\n"), isError: Boolean(r.isError) };
+/** 以管理员身份直接改数据库（代替网页操作）。 */
+function django(code: string): string {
+  const api = join(root, "plane/apps/api");
+  const r = spawnSync(
+    "bash",
+    ["-c", "set -a && source .env && set +a && DJANGO_SETTINGS_MODULE=plane.settings.local .venv/bin/python manage.py shell"],
+    { cwd: api, input: code, encoding: "utf8" },
+  );
+  if (r.status !== 0) throw new Error(`django shell 失败：${r.stderr.slice(-800)}`);
+  return r.stdout
+    .split("\n")
+    .filter((l) => l.trim() && !/objects imported automatically/.test(l))
+    .join("\n");
 }
+const git = (...args: string[]) => {
+  const r = spawnSync("git", args, { cwd: workDir, encoding: "utf8" });
+  if (r.status !== 0) throw new Error(r.stderr);
+};
+
+const privateDir = mkdtempSync(join(tmpdir(), "team-lessons-"));
+// Agent 的工作目录：一开始不是 git 仓库，测试里再 git init、加 remote、由“管理员”登记
+const workDir = mkdtempSync(join(tmpdir(), "team-repo-"));
+
+async function connect(token: string, name: string) {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["--experimental-strip-types", "--no-warnings", join(import.meta.dirname, "..", "src/index.ts")],
+    cwd: workDir,
+    env: {
+      ...process.env,
+      PLANE_BASE_URL: `http://localhost:${ports.API_PORT}`,
+      PLANE_WEB_URL: `http://localhost:${ports.WEB_PORT}`,
+      PLANE_API_TOKEN: token,
+      PLANE_WORKSPACE: secrets.PLANE_WORKSPACE,
+      TEAM_PRIVATE_LESSONS_DIR: privateDir,
+    } as Record<string, string>,
+  });
+  const c = new Client({ name, version: "0.0.1" });
+  await c.connect(transport);
+  const fn = async (tool: string, args: Record<string, unknown>) => {
+    const r = (await c.callTool({ name: tool, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+    return { text: r.content.map((x) => x.text).join("\n"), isError: Boolean(r.isError) };
+  };
+  return Object.assign(fn, { client: c });
+}
+const call = await connect(secrets.PLANE_API_TOKEN, "e2e");
+const client = call.client;
+const bob = await connect(secrets.PLANE_MEMBER_TOKEN, "e2e-bob");
 
 async function step(title: string, fn: () => Promise<string | void>) {
   try {
@@ -85,9 +111,10 @@ let docId = "";
 
 await step("工具、资源、提示词都已注册", async () => {
   const tools = (await client.listTools()).tools.map((t) => t.name);
-  for (const t of ["create_task", "write_doc", "propose_lesson", "search_lessons", "review_digest", "check_text", "analyze_tone", "whoami", "list_members", "invite_member", "add_project_member"]) {
+  for (const t of ["create_task", "write_doc", "propose_lesson", "search_lessons", "review_digest", "check_text", "analyze_tone", "whoami", "list_members"]) {
     expect(tools.includes(t), `缺少工具 ${t}`);
   }
+  for (const t of ["bind_repo", "setup_project", "invite_member", "add_project_member"]) expect(!tools.includes(t), `不该有工具 ${t}`);
   const res = await client.readResource({ uri: "team://guide/writing" });
   expect(String((res.contents[0] as { text: string }).text).includes("团队写作规范"), "写作规范资源为空");
   const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
@@ -97,28 +124,66 @@ await step("工具、资源、提示词都已注册", async () => {
   return `${tools.length} 个工具`;
 });
 
-await step("setup_project 新建项目并整理状态", async () => {
-  const r = await call("setup_project", { identifier: PROJECT, name: `E2E 测试 ${run}` });
-  expect(!r.isError, r.text);
-  expect(r.text.includes("待审查") && r.text.includes("待决定"), r.text);
-  const again = await call("setup_project", { identifier: PROJECT });
-  expect(again.text.includes("无需调整"), `重复执行应无变化：${again.text}`);
-});
-
-await step("未绑定团队项目的目录里不能写", async () => {
-  const r = await call("create_task", { project: PROJECT, title: "修复订单分页重复", description: goodTask });
-  expect(r.isError && r.text.includes("没有绑定团队项目") && r.text.includes("bind_repo"), r.text);
-  const lesson = await call("propose_lesson", { title: "测试经验标题", markdown: "## 场景\n\n在没有绑定团队项目的个人仓库里写测试时，需要往团队空间提交经验。\n\n## 做法\n\n先让用户确认是团队工作，再绑定仓库，然后写入团队空间。", tags: ["t"], scope: "team" });
-  expect(lesson.isError && lesson.text.includes("没有绑定"), lesson.text);
+await step("不是 git 仓库时只能用 whoami 和规范类工具", async () => {
   const who = await call("whoami", {});
-  expect(who.text.includes("未绑定"), who.text);
+  expect(!who.isError && who.text.includes("未关联") && who.text.includes(secrets.SEED_EMAIL), who.text);
+  const list = await call("list_tasks", { project: "DEMO" });
+  expect(list.isError && list.text.includes("不是 git 仓库"), list.text);
+  const guide = await call("get_writing_guide", {});
+  expect(!guide.isError, guide.text);
 });
 
-await step("bind_repo 绑定后可以写，未绑定的项目仍然拒绝", async () => {
-  const r = await call("bind_repo", { projects: [PROJECT] });
-  expect(!r.isError && r.text.includes(".team.json"), r.text);
+await step("管理员建项目：默认就是团队工作流和自动归档", async () => {
+  const out = django(`
+from plane.db.models import Workspace, User, Project, ProjectMember, State
+from plane.utils.team_shared import default_states_for
+ws = Workspace.objects.get(slug="${secrets.PLANE_WORKSPACE}")
+admin = User.objects.get(email="${secrets.SEED_EMAIL}")
+p = Project.objects.create(workspace=ws, name="E2E 测试 ${run}", identifier="${PROJECT}", created_by=admin)
+ProjectMember.objects.create(project=p, member=admin, role=20)
+for st in default_states_for(p):
+    State.objects.create(project=p, workspace=ws, name=st["name"], color=st["color"], sequence=st["sequence"], group=st["group"], default=st.get("default", False))
+print("archive_in", p.archive_in)
+`);
+  expect(out.includes("archive_in 1"), out);
+});
+
+await step("仓库没登记时读写都被拒绝，并提示去项目设置登记", async () => {
+  git("init", "-q");
+  git("remote", "add", "origin", `git@${REPO.replace("/", ":").replace("e2e/", "E2E/")}.git`);
+  const r = await call("create_task", { project: PROJECT, title: "修复订单分页重复", description: goodTask });
+  expect(r.isError && r.text.includes("没有登记") && r.text.includes("关联代码仓库"), r.text);
+  const read = await call("list_tasks", { project: PROJECT });
+  expect(read.isError && read.text.includes("没有登记"), read.text);
+  const lesson = await call("search_lessons", { query: "分页" });
+  expect(lesson.isError, lesson.text);
+});
+
+await step("管理员在项目设置里登记仓库后可以读写，其他项目仍然拒绝", async () => {
+  const out = django(`
+from plane.db.models import Project
+p = Project.objects.get(identifier="${PROJECT}", workspace__slug="${secrets.PLANE_WORKSPACE}")
+p.team_repos = ["https://${REPO}/"]
+p.save()
+print(p.team_repos)
+`);
+  expect(out.includes(REPO), out);
+  const who = await call("whoami", {});
+  expect(who.text.includes(`已关联 ${PROJECT}`), who.text);
   const other = await call("create_task", { project: "DEMO", title: "不该写进去的任务", description: goodTask });
-  expect(other.isError && other.text.includes("没有绑定 DEMO"), other.text);
+  expect(other.isError && other.text.includes(`只能写入 ${PROJECT}`), other.text);
+  const ls = await call("list_tasks", {});
+  expect(!ls.isError, ls.text);
+});
+
+await step("Agent Token 不能改项目设置、加成员、删除（即使是管理员）", async () => {
+  const base = `http://localhost:${ports.API_PORT}/api/v1/workspaces/${secrets.PLANE_WORKSPACE}`;
+  const h = { "X-API-Key": secrets.PLANE_API_TOKEN, "Content-Type": "application/json" };
+  const pid = django(`from plane.db.models import Project; print(Project.objects.get(identifier="${PROJECT}", workspace__slug="${secrets.PLANE_WORKSPACE}").id)`);
+  const patch = await fetch(`${base}/projects/${pid}/`, { method: "PATCH", headers: h, body: JSON.stringify({ team_repos: ["x/y/z"] }) });
+  const add = await fetch(`${base}/projects/${pid}/members/`, { method: "POST", headers: h, body: JSON.stringify({ member: pid, role: 15 }) });
+  const del = await fetch(`${base}/projects/${pid}/`, { method: "DELETE", headers: h });
+  expect(patch.status === 403 && add.status === 403 && del.status === 403, `${patch.status} ${add.status} ${del.status}`);
 });
 
 await step("密钥、手机号、本机图片被拒绝", async () => {
@@ -143,25 +208,46 @@ await step("带套话的任务被拒绝", async () => {
 });
 
 await step("合规任务创建成功", async () => {
-  const r = await call("create_task", { project: PROJECT, title: "修复订单分页重复", description: goodTask, priority: "high" });
+  const r = await call("create_task", { title: "修复订单分页重复", description: goodTask, priority: "high" });
   expect(!r.isError, r.text);
   taskKey = r.text.match(/已新建 ([A-Z0-9]+-\d+)/)?.[1] ?? "";
   expect(taskKey, r.text);
   return taskKey;
 });
 
-await step("whoami 显示账号和角色", async () => {
-  const r = await call("whoami", {});
-  expect(!r.isError && r.text.includes(secrets.SEED_EMAIL) && r.text.includes("管理员"), r.text);
+await step("成员还没加进项目时，他的 Agent 读不到；管理员加进去后可以", async () => {
+  const before = await bob("list_tasks", {});
+  expect(before.isError && before.text.includes("还不是成员"), before.text);
+  const no = await call("create_task", { title: "拆分：游标排序", description: goodTask, assignees: ["bob@team.test"] });
+  expect(no.isError && no.text.includes("项目里没有成员"), no.text);
+  django(`
+from plane.db.models import Project, ProjectMember, User
+p = Project.objects.get(identifier="${PROJECT}", workspace__slug="${secrets.PLANE_WORKSPACE}")
+ProjectMember.objects.create(project=p, member=User.objects.get(email="bob@team.test"), role=15)
+`);
+  const members = await call("list_members", {});
+  expect(members.text.includes("bob"), members.text);
+  const after = await bob("list_tasks", {});
+  expect(!after.isError && after.text.includes(taskKey), after.text);
 });
 
-await step("指派给不在项目里的人被拒绝，加入项目后可以指派，并顺带加入经验库和回顾", async () => {
-  const no = await call("create_task", { project: PROJECT, title: "拆分：游标排序", description: goodTask, assignees: ["bob@team.test"] });
-  expect(no.isError && no.text.includes("项目里没有成员"), no.text);
-  const add = await call("add_project_member", { project: PROJECT, member: "bob@team.test" });
-  expect(!add.isError && add.text.includes(PROJECT), add.text);
-  const members = await call("list_members", { project: PROJECT });
-  expect(members.text.includes("bob"), members.text);
+await step("成员自动进入经验库和每日回顾，经验库是审核状态", async () => {
+  const ls = await bob("list_projects", {});
+  expect(ls.text.includes("LESSON") && ls.text.includes(PROJECT), ls.text);
+  const out = django(`
+from plane.db.models import Project, ProjectMember, State
+p = Project.objects.get(identifier="LESSON", workspace__slug="${secrets.PLANE_WORKSPACE}")
+print(ProjectMember.objects.filter(project=p, member__email="bob@team.test", is_active=True).exists())
+print(",".join(State.objects.filter(project=p).order_by("sequence").values_list("name", flat=True)))
+`);
+  expect(out.startsWith("True") && out.includes("待审核") && out.includes("已采纳"), out);
+});
+
+await step("成员的 Agent 写评论，署名是成员自己", async () => {
+  const r = await bob("comment_task", { task: taskKey, kind: "进展", markdown: "游标排序的子任务我来接，今天先补测试。" });
+  expect(!r.isError, r.text);
+  const t = await call("get_task", { task: taskKey });
+  expect(t.text.includes("bob 的 e2e-bob") || t.text.includes("的 e2e-bob"), t.text);
 });
 
 await step("子任务：parent + 指派，父任务能看到子任务", async () => {
@@ -263,7 +349,7 @@ await step("write_doc 整篇更新", async () => {
 
 await step("list_docs 能按正文搜索", async () => {
   expect(docId, "前一步没有拿到文档 ID");
-  const r = await call("list_docs", { project: PROJECT, search: "游标" });
+  const r = await call("list_docs", { search: "游标" });
   expect(r.text.includes(docId), r.text);
 });
 
@@ -317,5 +403,4 @@ await step("analyze_tone 对长文出整篇报告，短文提示字数不够", a
 });
 
 console.log(`\n${passed} 通过，${failed} 失败。测试项目：${PROJECT}`);
-await client.close();
 process.exit(failed ? 1 : 0);
