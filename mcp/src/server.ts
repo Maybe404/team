@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import type { Config } from "./config.ts";
 import { matchProjects, normalizeRepoUrl, notBoundMessage, repoRemotes, workDirs, type RepoScope } from "./binding.ts";
 import { z } from "zod";
-import { formatLessons, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
+import { formatLessons, GENERAL, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
 import { htmlToMd, mdToHtml } from "./markdown.ts";
 import { COMMENT_KINDS, formatGate, gate, LESSON_GUIDE, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
 import { Plane, PlaneError, type Member, type Project, type WorkItem } from "./plane.ts";
@@ -218,6 +218,18 @@ for (const t of DOC_TYPES) {
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: templateGuide(t) }] }),
   );
 }
+
+server.registerPrompt(
+  "team-usage",
+  { title: "产品使用指南", description: "任务、页面、周期、模块、视图、经验库分别怎么用，哪些要去网页上做" },
+  () => ({ messages: [{ role: "user", content: { type: "text", text: `${usageGuide(CONFIG.webUrl, CONFIG.workspace)}\n\n按上面的指南，结合我当前的情况，告诉我该怎么用。` } }] }),
+);
+
+server.registerPrompt(
+  "team-lessons",
+  { title: "哪些内容该沉淀为经验", description: "经验库的收录标准、怎么写、怎么归属项目" },
+  () => ({ messages: [{ role: "user", content: { type: "text", text: `${LESSON_GUIDE}\n\n按上面的标准，判断刚才这次工作里有没有值得沉淀的经验。有的话先告诉我理由，我同意再提交。` } }] }),
+);
 
 server.registerPrompt(
   "team-write",
@@ -738,13 +750,16 @@ server.registerTool(
       query: z.string().describe("关键词，空格分隔"),
       tags: z.array(z.string()).optional().describe("技术栈、项目、类型等标签"),
       include_pending: z.boolean().optional().describe("包含还在待审核的团队经验"),
+      project: z.string().optional().describe("只看这个项目的经验（加上通用的）。默认是当前仓库关联的项目"),
+      all_projects: z.boolean().optional().describe("不按项目筛，查所有项目的经验"),
     },
     annotations: { readOnlyHint: true },
   },
-  async ({ query, tags, include_pending }) =>
+  async ({ query, tags, include_pending, project, all_projects }) =>
     run(async () => {
-      await boundProjects();
-      return text(formatLessons(await searchLessons(plane, query, tags ?? [], { includePending: include_pending, skipPrivate: !local })));
+      const { projects } = await boundProjects();
+      const scope = all_projects ? undefined : project ? [project] : projects.map((p) => p.identifier);
+      return text(formatLessons(await searchLessons(plane, query, tags ?? [], { includePending: include_pending, skipPrivate: !local, projects: scope })));
     }),
 );
 
@@ -760,9 +775,13 @@ server.registerTool(
       tags: z.array(z.string()).min(1),
       scope: z.enum(["team", "private"]),
       source_task: z.string().optional().describe("来源任务编号"),
+      project: z
+        .string()
+        .optional()
+        .describe("这条经验属于哪个项目（项目标识）。不传时用当前仓库关联的项目；临时的、不属于任何项目的经验传「通用」"),
     },
   },
-  async ({ title, markdown, tags, scope, source_task }) =>
+  async ({ title, markdown, tags, scope, source_task, project }) =>
     run(async () => {
       const md = source_task && !/##\s*来源/.test(markdown) ? `${markdown.trim()}\n\n## 来源\n\n${source_task}\n` : markdown;
       const g = checkOrReject(md, "lesson", { title });
@@ -775,11 +794,20 @@ server.registerTool(
         const path = await savePrivateLesson(title, md, tags);
         return text(`已存为私人经验：${path}`);
       }
-      await boundProjects();
+      const { projects } = await boundProjects();
+      let belongs: string;
+      const pr = project?.trim();
+      if (pr && (pr === GENERAL || pr.toLowerCase() === "general")) belongs = GENERAL;
+      else if (pr) {
+        const hit = projects.find((p) => p.identifier.toLowerCase() === pr.toLowerCase() || p.name === pr);
+        if (!hit) return fail(`当前仓库关联的项目是 ${projects.map((p) => p.identifier).join("、")}，没有「${project}」。不属于任何项目的经验，project 传「${GENERAL}」。`);
+        belongs = hit.identifier;
+      } else if (projects.length === 1) belongs = projects[0].identifier;
+      else return fail(`当前仓库关联了多个项目：${projects.map((p) => p.identifier).join("、")}。请用 project 指定这条经验属于哪个，或传「${GENERAL}」。`);
       const similar = (await searchLessons(plane, title, tags, { includePending: true, skipPrivate: true })).filter((l) => l.scope === "team").slice(0, 3);
-      const r = await proposeTeamLesson(plane, title, md, tags);
+      const r = await proposeTeamLesson(plane, title, md, tags, belongs);
       const dup = similar.length ? `\n\n库里已有相近的经验，如果重复，请用户在网页上把其中一条驳回：\n${similar.map((l) => `- ${l.key} ${l.title}（${l.status}）${l.url}`).join("\n")}` : "";
-      return text(`已提交团队经验 ${r.key}，状态“待审核”，需要人在 Plane 上采纳后才会被检索到：${webUrl(`browse/${r.key}`)}${dup}`);
+      return text(`已提交团队经验 ${r.key}（${belongs === GENERAL ? "通用，不属于具体项目" : `项目 ${belongs}`}），状态“待审核”，需要人在 Plane 上采纳后才会被检索到：${webUrl(`browse/${r.key}`)}${dup}`);
     }),
 );
 

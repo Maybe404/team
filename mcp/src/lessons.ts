@@ -10,12 +10,18 @@ export type Lesson = {
   scope: "team" | "private";
   title: string;
   tags: string[];
+  /** 所属项目标识；“通用”表示不属于某个项目；私人经验没有 */
+  project?: string;
   body: string;
   key?: string;
   url?: string;
   path?: string;
   status?: string;
 };
+
+export const GENERAL = "通用";
+const PROJECT_LABEL = "项目:";
+export const projectLabel = (ident: string) => `${PROJECT_LABEL}${ident.toUpperCase()}`;
 
 export function privateDir(): string {
   return process.env.TEAM_PRIVATE_LESSONS_DIR || join(homedir(), ".team", "lessons");
@@ -65,10 +71,11 @@ async function ensureLabels(plane: Plane, projectId: string, names: string[]): P
   return out;
 }
 
-export async function proposeTeamLesson(plane: Plane, title: string, bodyMd: string, tags: string[]) {
+/** belongs：所属项目标识，或 GENERAL（不属于任何项目）。用标签「项目:XXX」/「通用」记录，网页上能直接按它筛选。 */
+export async function proposeTeamLesson(plane: Plane, title: string, bodyMd: string, tags: string[], belongs: string) {
   const project = await getLessonProject(plane);
   const states = await plane.listStates(project.id);
-  const labels = await ensureLabels(plane, project.id, tags);
+  const labels = await ensureLabels(plane, project.id, [...tags, belongs === GENERAL ? GENERAL : projectLabel(belongs)]);
   const item = await plane.createWorkItem(project.id, {
     name: title,
     description_html: mdToHtml(bodyMd),
@@ -111,7 +118,7 @@ export async function searchLessons(
   plane: Plane,
   query: string,
   tags: string[],
-  opts: { includePending?: boolean; limit?: number; skipPrivate?: boolean } = {},
+  opts: { includePending?: boolean; limit?: number; skipPrivate?: boolean; projects?: string[] } = {},
 ): Promise<Lesson[]> {
   const tokens = tokenize(query);
   const results: { l: Lesson; s: number }[] = [];
@@ -128,7 +135,12 @@ export async function searchLessons(
   for (const it of items as WorkItem[]) {
     const status = stateName.get(it.state) ?? "";
     if (!allowed.has(status)) continue;
-    const itTags = it.labels.map((id) => labelName.get(id) ?? "").filter(Boolean);
+    const allLabels = it.labels.map((id) => labelName.get(id) ?? "").filter(Boolean);
+    const projLabel = allLabels.find((n) => n.startsWith(PROJECT_LABEL));
+    const belongs = projLabel ? projLabel.slice(PROJECT_LABEL.length) : allLabels.includes(GENERAL) ? GENERAL : undefined;
+    // 按项目筛：属于指定项目的、通用的、还没标项目的（旧数据）都算
+    if (opts.projects && belongs && belongs !== GENERAL && !opts.projects.map((x) => x.toUpperCase()).includes(belongs.toUpperCase())) continue;
+    const itTags = allLabels.filter((n) => n !== projLabel && n !== GENERAL);
     const body = htmlToMd(it.description_html);
     const s = score(`${it.name}\n${body}`, itTags, tokens, tags);
     if (s > 0 || (!tokens.length && !tags.length)) {
@@ -138,6 +150,7 @@ export async function searchLessons(
           scope: "team",
           title: it.name,
           tags: itTags,
+          project: belongs,
           body,
           status,
           key: `${project.identifier}-${it.sequence_id}`,
@@ -163,7 +176,7 @@ export function formatLessons(lessons: Lesson[]): string {
   return lessons
     .map((l) => {
       const head = l.scope === "team" ? `[团队 ${l.key}${l.status !== "已采纳" ? `，${l.status}` : ""}]` : `[私人 ${l.path}]`;
-      return `### ${l.title}\n${head}${l.tags.length ? ` 标签：${l.tags.join("、")}` : ""}\n\n${l.body}`;
+      return `### ${l.title}\n${head}${l.project ? ` 项目：${l.project}` : ""}${l.tags.length ? ` 标签：${l.tags.join("、")}` : ""}\n\n${l.body}`;
     })
     .join("\n\n---\n\n");
 }

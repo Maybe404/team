@@ -393,6 +393,17 @@ await step("团队经验提交到待审核", async () => {
   return r.text.match(/LESSON-\d+/)?.[0];
 });
 
+await step("经验按项目归属：默认当前项目，也可以归通用", async () => {
+  const g = await call("propose_lesson", { title: `通用的小坑 ${run}`, markdown: lessonBody, tags: ["杂项"], scope: "team", source_task: taskKey, project: "通用" });
+  expect(!g.isError && g.text.includes("通用"), g.text);
+  const bad = await call("propose_lesson", { title: `写错项目 ${run}`, markdown: lessonBody, tags: ["杂项"], scope: "team", source_task: taskKey, project: "NOPE" });
+  expect(bad.isError && bad.text.includes("没有「NOPE」"), bad.text);
+  const s = await call("search_lessons", { query: `游标 ${run}`, include_pending: true });
+  expect(s.text.includes(`项目：${PROJECT}`), s.text);
+  const g2 = await call("search_lessons", { query: `通用的小坑 ${run}`, include_pending: true });
+  expect(g2.text.includes("项目：通用"), g2.text);
+});
+
 await step("团队经验没有来源会被退回", async () => {
   const r = await call("propose_lesson", { title: `没有来源的经验 ${run}`, markdown: lessonBody, tags: ["分页"], scope: "team" });
   expect(r.isError && r.text.includes("来源"), r.text);
