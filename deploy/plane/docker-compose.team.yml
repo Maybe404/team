@@ -6,6 +6,8 @@ x-team-api-env: &team-api-env
   LIVE_BASE_PATH: /live
   # Agent 走 API Token，回顾会扫所有项目，放宽默认的 60 次/分钟
   API_KEY_RATE_LIMIT: ${API_KEY_RATE_LIMIT:-600/minute}
+  # 关闭自助注册：只有被邀请的邮箱能注册，实例首个管理员走 /god-mode/ 初始化
+  ENABLE_SIGNUP: ${ENABLE_SIGNUP:-0}
   # AI：首次启动时写入实例配置，之后在 /god-mode/ai 修改
   LLM_PROVIDER: ${LLM_PROVIDER:-openai-compatible}
   LLM_BASE_URL: ${LLM_BASE_URL:-}
