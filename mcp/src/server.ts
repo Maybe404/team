@@ -10,7 +10,7 @@ import { matchProjects, normalizeRepoUrl, notBoundMessage, repoRemotes, workDirs
 import { z } from "zod";
 import { formatLessons, GENERAL, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
 import { htmlToMd, mdToHtml } from "./markdown.ts";
-import { COMMENT_KINDS, formatGate, gate, LESSON_GUIDE, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
+import { COMMENT_KINDS, formatGate, gate, LESSON_GUIDE, SELF_CHECK, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
 import { Plane, PlaneError, type Member, type Project, type WorkItem } from "./plane.ts";
 import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
 import { buildDigest, publishDigest } from "./review.ts";
@@ -33,6 +33,7 @@ const REPO_PARAM = z
   .optional()
   .describe("当前仓库 git remote get-url origin 的输出，每次都带");
 const NO_REPO = new Set(["get_guide", "check_text"]);
+const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson"]);
 
 export function createServer({ config: CONFIG, plane, local, clientName }: Env) {
 
@@ -72,6 +73,8 @@ let repoArg: string | undefined;
 const register = server.registerTool.bind(server) as unknown as (name: string, cfg: Record<string, unknown>, cb: (...a: unknown[]) => unknown) => unknown;
 (server as unknown as { registerTool: typeof register }).registerTool = (name, cfg, cb) => {
   if (NO_REPO.has(name)) return register(name, cfg, cb);
+  // 写入类工具的说明里带上自检清单：代码检查之外，让 Agent 提交前自己也过一遍
+  if (WRITE_TOOLS.has(name)) cfg = { ...cfg, description: `${cfg.description ?? ""}\n${SELF_CHECK}` };
   return register(name, { ...cfg, inputSchema: { ...((cfg.inputSchema as object) ?? {}), repo: REPO_PARAM } }, (args, extra) => {
     repoArg = (args as { repo?: string })?.repo;
     return cb(args, extra);
@@ -137,7 +140,8 @@ async function resolveMembers(projectId: string, refs: string[]): Promise<Member
 
 function checkOrReject(md: string, type: DocType, opts: Parameters<typeof gate>[2] = {}) {
   const r = gate(md, type, opts);
-  return { ok: r.ok, report: formatGate(r) };
+  // 被退回时再提醒一次自检：代码只能查规则，语义和可读性要 Agent 自己把关
+  return { ok: r.ok, report: r.ok ? formatGate(r) : `${formatGate(r)}\n\n${SELF_CHECK}` };
 }
 
 async function resolveTask(ref: string, mode: "read" | "write" = "read"): Promise<{ project: Project; item: WorkItem; key: string }> {
