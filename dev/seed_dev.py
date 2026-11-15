@@ -1,4 +1,4 @@
-"""本地开发种子：建测试管理员、工作区和 API Token，输出写进 dev/.secrets。
+"""本地开发种子：建测试管理员、普通成员 bob、工作区和 API Token，输出写进 dev/.secrets。
 用法：dev/seed.sh（不要在生产环境运行）"""
 import os, secrets
 from plane.db.models import Profile, User, Workspace, WorkspaceMember, APIToken
@@ -31,8 +31,23 @@ profile.onboarding_step = {k: True for k in (profile.onboarding_step or {})}
 profile.save()
 
 tok = APIToken.objects.filter(user=user, label="dev-mcp").first() or APIToken.objects.create(user=user, label="dev-mcp", workspace=ws)
+# 第二个账号：普通成员，用来测指派、权限和多人协作（不进任何项目，由 add_project_member 加）
+bob = User.objects.filter(email="bob@team.test").first()
+if bob is None:
+    bob = User(email="bob@team.test", username="bob", first_name="Bob", last_name="Member",
+               display_name="bob", is_active=True, is_email_verified=True)
+    bob.set_unusable_password()
+    bob.save()
+WorkspaceMember.objects.get_or_create(workspace=ws, member=bob, defaults={"role": 15})
+bp, _ = Profile.objects.get_or_create(user=bob)
+bp.is_onboarded = True
+bp.last_workspace_id = ws.id
+bp.save()
+btok = APIToken.objects.filter(user=bob, label="dev-mcp").first() or APIToken.objects.create(user=bob, label="dev-mcp", workspace=ws)
+
 print(f"SEED_EMAIL={email}")
 if created:
     print(f"SEED_PASSWORD={password}")
 print(f"PLANE_WORKSPACE={slug}")
 print(f"PLANE_API_TOKEN={tok.token}")
+print(f"PLANE_MEMBER_TOKEN={btok.token}")

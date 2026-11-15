@@ -71,6 +71,9 @@ test("加粗过多被拒绝", () => {
 test("结论评论必须带证据", () => {
   assert.equal(gate("分页问题已修复，测试都没问题。", "comment", { commentKind: "结论" }).ok, false);
   assert.equal(gate("分页问题已修复。\n\n跑了 `pnpm test`，42 个用例通过。", "comment", { commentKind: "结论" }).ok, true);
+  assert.equal(gate("验收通过。", "comment", { commentKind: "验收" }).ok, false, "只写“通过”不算证据");
+  assert.equal(gate("验收通过。\n\n手工点了 12 个页面，全部通过。", "comment", { commentKind: "验收" }).ok, true);
+  assert.equal(gate("先合进去。\n\n集成测试未运行，环境没起来。", "comment", { commentKind: "结论" }).ok, true);
 });
 
 test("评论第一行不能是标题", () => {

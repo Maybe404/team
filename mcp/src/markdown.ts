@@ -36,5 +36,9 @@ td.addRule("planeMention", {
 
 export function htmlToMd(html: string | null | undefined): string {
   if (!html) return "";
-  return td.turndown(html).replace(/\n{3,}/g, "\n\n").trim();
+  return td
+    .turndown(html)
+    .replace(/^(\s*)(\d+\.|-)\s{2,}/gm, "$1$2 ") // turndown 列表项后面会多出空格
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }

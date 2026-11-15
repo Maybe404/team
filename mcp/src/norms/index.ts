@@ -1,6 +1,7 @@
 // 规范闸门：所有写入工具在调用 Plane 之前都要经过 gate()。
 import { checkStyle, type Issue } from "./style.ts";
 import { checkTone } from "./tone.ts";
+import { checkPrivacy } from "./privacy.ts";
 import { checkComment, checkTemplate, TEMPLATES, type CommentKind, type DocType } from "./templates.ts";
 
 export { TEMPLATES, COMMENT_KINDS, type DocType, type CommentKind } from "./templates.ts";
@@ -9,10 +10,10 @@ export type { Issue } from "./style.ts";
 export type GateResult = { ok: boolean; errors: Issue[]; warnings: Issue[] };
 
 export function gate(markdown: string, type: DocType, opts: { commentKind?: CommentKind; title?: string } = {}): GateResult {
-  const issues: Issue[] = [...checkStyle(markdown), ...checkTone(markdown)];
+  const issues: Issue[] = [...checkPrivacy(markdown), ...checkStyle(markdown), ...checkTone(markdown)];
   if (opts.title) {
     issues.push(
-      ...[...checkStyle(opts.title), ...checkTone(opts.title)].map((i) => ({ ...i, message: `标题：${i.message}`, line: undefined })),
+      ...[...checkPrivacy(opts.title), ...checkStyle(opts.title), ...checkTone(opts.title)].map((i) => ({ ...i, message: `标题：${i.message}`, line: undefined })),
     );
   }
   issues.push(...(type === "comment" ? checkComment(opts.commentKind ?? "进展", markdown) : checkTemplate(type, markdown)));
@@ -60,6 +61,17 @@ export const WRITING_GUIDE = `# 团队写作规范
 - 模型自述：「作为 AI」「我为你……」「以下是……的总结：」
 - emoji
 - 大量加粗：每千字不超过 8 处，只给关键结论加粗
+
+## 隐私
+
+团队空间里所有成员都能看到，写之前确认内容属于团队工作。服务端会拦：
+
+- 密钥：API Key、Token、私钥、明文密码。用占位符（例如 \`<API_KEY>\`），真实值放本机环境变量。
+- 个人信息：手机号、身份证号、银行卡号。
+- 本机文件：指向本机的图片和文件链接。需要的图片在 Plane 网页上传。
+- 本机绝对路径（提示）：改成仓库内的相对路径。
+
+私人项目、私人笔记、和团队无关的内容不要写进来；私人经验用 propose_lesson 的 scope=private，只存在本机。
 
 ## 格式
 

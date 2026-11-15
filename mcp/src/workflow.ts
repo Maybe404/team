@@ -60,15 +60,21 @@ export function ensureLessonStates(plane: Plane, project: Project) {
   return ensureStates(plane, project, LESSON_STATES, { from: LESSON_EXTRA_FROM, name: LESSON_REVISING });
 }
 
+const order = (n: string) => {
+  const i = [...TASK_STATES, ...LESSON_STATES].findIndex((d) => d.name === n);
+  return i < 0 ? 99 : i;
+};
+
 export function findState(states: State[], name: string): State {
   const s = states.find((x) => x.name === name);
   if (!s) {
-    throw new Error(`项目里没有状态「${name}」。先调用 setup_project 初始化。现有状态：${states.map((x) => x.name).join("、")}`);
+    throw new Error(`项目里没有状态「${name}」。可选状态：${[...states].sort((a, b) => order(a.name) - order(b.name)).map((x) => x.name).join("、")}`);
   }
   return s;
 }
 
 export function agentCanSet(name: string, defs: StateDef[] = TASK_STATES): boolean {
+  // 不在工作流定义里的名字交给 findState 报“没有这个状态”，不在这里误报成“只能由人设置”
   const d = defs.find((x) => x.name === name);
-  return d ? d.agentCanSet : false;
+  return d ? d.agentCanSet : true;
 }

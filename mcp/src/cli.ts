@@ -7,7 +7,7 @@
 // 另有 TEAM_REVIEW_AT（默认 09:00）、TEAM_REVIEW_STALE_DAYS（默认 3）、TEAM_REVIEW_PROJECT（默认 REVIEW）。
 import { parseArgs } from "node:util";
 import { Plane } from "./plane.ts";
-import { buildDigest, getReviewProject, publishDigest } from "./review.ts";
+import { buildDigest, digestTitle, getReviewProject, publishDigest } from "./review.ts";
 
 const { values } = parseArgs({
   options: {
@@ -37,6 +37,7 @@ const plane = new Plane({
 const opts = {
   staleDays: Number(values["stale-days"] ?? process.env.TEAM_REVIEW_STALE_DAYS ?? 3),
   onlyMine: Boolean(values["only-mine"]),
+  team: !values["only-mine"],
   webUrl: (p: string) => plane.webUrl(p),
 };
 const at = values.at ?? process.env.TEAM_REVIEW_AT ?? "09:00";
@@ -51,7 +52,7 @@ async function once() {
 
 async function publishedToday(): Promise<boolean> {
   const project = await getReviewProject(plane);
-  const title = `回顾 ${new Date().toLocaleDateString("sv-SE")}`;
+  const title = digestTitle();
   return (await plane.listPages(project.id)).some((p) => p.name === title);
 }
 

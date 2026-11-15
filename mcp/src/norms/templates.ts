@@ -145,6 +145,17 @@ export function checkTemplate(type: DocType, markdown: string): Issue[] {
   return issues;
 }
 
+// 证据：命令或代码、带数字的结果（“42 个用例通过”）、明确写了未运行、或附了链接。光写“通过”不算。
+function hasEvidence(md: string): boolean {
+  return (
+    /`[^`]+`/.test(md) ||
+    /未运行|没有运行|没跑/.test(md) ||
+    /\d+\s*(个|项|条|例|处)?[^。\n]{0,12}(通过|失败|passed|failed|errors?)/i.test(md) ||
+    /\b(PASS|FAIL)\b/.test(md) ||
+    /https?:\/\//.test(md)
+  );
+}
+
 export function checkComment(kind: CommentKind, markdown: string): Issue[] {
   const issues: Issue[] = [];
   const first = markdown.trim().split("\n")[0] ?? "";
@@ -154,7 +165,7 @@ export function checkComment(kind: CommentKind, markdown: string): Issue[] {
   if (first.length > 120) {
     issues.push({ rule: "评论首行", level: "warn", message: "第一行控制在 120 字以内，细节放到后面" });
   }
-  if ((kind === "结论" || kind === "验收") && !/(`[^`]+`|```|通过|失败|未运行|PASS|FAIL)/i.test(markdown)) {
+  if ((kind === "结论" || kind === "验收") && !hasEvidence(markdown)) {
     issues.push({
       rule: "缺少证据",
       level: "error",

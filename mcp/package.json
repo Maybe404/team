@@ -16,7 +16,8 @@
     "dev": "node --experimental-strip-types src/index.ts",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "e2e": "node --experimental-strip-types test/e2e.ts",
-    "review": "node --experimental-strip-types --no-warnings src/cli.ts"
+    "review": "node --experimental-strip-types --no-warnings src/cli.ts",
+    "sim": "node --experimental-strip-types --no-warnings test/agent-sim.ts"
   },
   "dependencies": {
     "@joplin/turndown-plugin-gfm": "1.0.71",

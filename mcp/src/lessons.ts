@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { htmlToMd, mdToHtml } from "./markdown.ts";
-import type { Label, Plane, Project, WorkItem } from "./plane.ts";
+import { assertMember, type Label, type Plane, type Project, type WorkItem } from "./plane.ts";
 import { ensureLessonStates, findState } from "./workflow.ts";
 
 export type Lesson = {
@@ -50,7 +50,7 @@ export async function getLessonProject(plane: Plane): Promise<Project> {
   const ident = (process.env.TEAM_LESSONS_PROJECT || "LESSON").toUpperCase();
   const projects = await plane.listProjects();
   const hit = projects.find((p) => p.identifier === ident);
-  if (hit) return hit;
+  if (hit) return assertMember(hit);
   const p = await plane.createProject("经验库", ident, "团队共享的踩坑记录、有效做法和检查项。Agent 提交到“待审核”，由人决定是否采纳。");
   await ensureLessonStates(plane, p);
   return p;

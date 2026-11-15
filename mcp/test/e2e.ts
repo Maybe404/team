@@ -22,11 +22,16 @@ const ports = Object.fromEntries(
 );
 
 const privateDir = mkdtempSync(join(tmpdir(), "team-lessons-"));
+// Agent 的工作目录：一开始没有绑定团队项目，测试里再用 bind_repo 绑定
+const workDir = mkdtempSync(join(tmpdir(), "team-repo-"));
+const baseEnv = { ...process.env } as Record<string, string>;
+delete baseEnv.TEAM_ALLOWED_PROJECTS;
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: ["--experimental-strip-types", "--no-warnings", join(import.meta.dirname, "..", "src/index.ts")],
+  cwd: workDir,
   env: {
-    ...process.env,
+    ...baseEnv,
     PLANE_BASE_URL: `http://localhost:${ports.API_PORT}`,
     PLANE_WEB_URL: `http://localhost:${ports.WEB_PORT}`,
     PLANE_API_TOKEN: secrets.PLANE_API_TOKEN,
@@ -80,7 +85,7 @@ let docId = "";
 
 await step("工具、资源、提示词都已注册", async () => {
   const tools = (await client.listTools()).tools.map((t) => t.name);
-  for (const t of ["create_task", "write_doc", "propose_lesson", "search_lessons", "review_digest", "check_text", "analyze_tone"]) {
+  for (const t of ["create_task", "write_doc", "propose_lesson", "search_lessons", "review_digest", "check_text", "analyze_tone", "whoami", "list_members", "invite_member", "add_project_member"]) {
     expect(tools.includes(t), `缺少工具 ${t}`);
   }
   const res = await client.readResource({ uri: "team://guide/writing" });
@@ -100,6 +105,33 @@ await step("setup_project 新建项目并整理状态", async () => {
   expect(again.text.includes("无需调整"), `重复执行应无变化：${again.text}`);
 });
 
+await step("未绑定团队项目的目录里不能写", async () => {
+  const r = await call("create_task", { project: PROJECT, title: "修复订单分页重复", description: goodTask });
+  expect(r.isError && r.text.includes("没有绑定团队项目") && r.text.includes("bind_repo"), r.text);
+  const lesson = await call("propose_lesson", { title: "测试经验标题", markdown: "## 场景\n\n在没有绑定团队项目的个人仓库里写测试时，需要往团队空间提交经验。\n\n## 做法\n\n先让用户确认是团队工作，再绑定仓库，然后写入团队空间。", tags: ["t"], scope: "team" });
+  expect(lesson.isError && lesson.text.includes("没有绑定"), lesson.text);
+  const who = await call("whoami", {});
+  expect(who.text.includes("未绑定"), who.text);
+});
+
+await step("bind_repo 绑定后可以写，未绑定的项目仍然拒绝", async () => {
+  const r = await call("bind_repo", { projects: [PROJECT] });
+  expect(!r.isError && r.text.includes(".team.json"), r.text);
+  const other = await call("create_task", { project: "DEMO", title: "不该写进去的任务", description: goodTask });
+  expect(other.isError && other.text.includes("没有绑定 DEMO"), other.text);
+});
+
+await step("密钥、手机号、本机图片被拒绝", async () => {
+  const r = await call("check_text", {
+    type: "task",
+    markdown: `${goodTask}\n配置 OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz123456，联系 13812345678。\n\n![截图](/Users/someone/Desktop/a.png)\n`,
+  });
+  expect(r.text.includes("[密钥]") && r.text.includes("[个人信息]") && r.text.includes("[本机文件]"), r.text);
+  expect(!r.text.includes("abcdefghij"), "报告里不能回显完整密钥");
+  const ok = await call("check_text", { type: "task", markdown: `${goodTask}\n密钥放在环境变量 \`OPENAI_API_KEY=<API_KEY>\` 里。\n` });
+  expect(ok.text.startsWith("通过"), ok.text);
+});
+
 await step("带套话的任务被拒绝", async () => {
   const r = await call("create_task", {
     project: PROJECT,
@@ -116,6 +148,36 @@ await step("合规任务创建成功", async () => {
   taskKey = r.text.match(/已新建 ([A-Z0-9]+-\d+)/)?.[1] ?? "";
   expect(taskKey, r.text);
   return taskKey;
+});
+
+await step("whoami 显示账号和角色", async () => {
+  const r = await call("whoami", {});
+  expect(!r.isError && r.text.includes(secrets.SEED_EMAIL) && r.text.includes("管理员"), r.text);
+});
+
+await step("指派给不在项目里的人被拒绝，加入项目后可以指派，并顺带加入经验库和回顾", async () => {
+  const no = await call("create_task", { project: PROJECT, title: "拆分：游标排序", description: goodTask, assignees: ["bob@team.test"] });
+  expect(no.isError && no.text.includes("项目里没有成员"), no.text);
+  const add = await call("add_project_member", { project: PROJECT, member: "bob@team.test" });
+  expect(!add.isError && add.text.includes(PROJECT), add.text);
+  const members = await call("list_members", { project: PROJECT });
+  expect(members.text.includes("bob"), members.text);
+});
+
+await step("子任务：parent + 指派，父任务能看到子任务", async () => {
+  const r = await call("create_task", { project: PROJECT, title: "拆分：游标排序", description: goodTask, parent: taskKey, assignees: ["me", "bob"] });
+  expect(!r.isError && r.text.includes(`挂在 ${taskKey} 下`), r.text);
+  const child = r.text.match(/已新建 ([A-Z0-9]+-\d+)/)![1];
+  const parent = await call("get_task", { task: taskKey });
+  expect(parent.text.includes("## 子任务（1）") && parent.text.includes(child), parent.text);
+  const mine = await call("list_tasks", { project: PROJECT, assignee: "bob" });
+  expect(mine.text.includes(child) && !mine.text.includes(`${taskKey} `), mine.text);
+  return child;
+});
+
+await step("不存在的状态给出可选列表，而不是误报“只能由人设置”", async () => {
+  const r = await call("update_task", { task: taskKey, state: "做着呢" });
+  expect(r.isError && r.text.includes("可选状态：待办、待开始、进行中"), r.text);
 });
 
 await step("Agent 不能把任务设成已完成", async () => {
@@ -137,7 +199,7 @@ await step("带证据的结论评论写入成功", async () => {
   const r = await call("comment_task", {
     task: taskKey,
     kind: "结论",
-    author: "实现者 · e2e",
+    role: "实现者",
     markdown: "分页改为游标实现，第二页不再重复。\n\n跑了 `pnpm test order`，18 个用例通过。",
   });
   expect(!r.isError, r.text);
@@ -146,7 +208,7 @@ await step("带证据的结论评论写入成功", async () => {
 await step("get_task 能读到描述和评论", async () => {
   const r = await call("get_task", { task: taskKey });
   expect(r.text.includes("验收标准") && r.text.includes("- [ ] 翻页不再重复"), r.text);
-  expect(r.text.includes("游标实现") && r.text.includes("实现者 · e2e"), r.text);
+  expect(r.text.includes("游标实现") && r.text.includes("实现者 · dev-admin 的 e2e"), r.text);
   expect(r.text.includes("状态：进行中"), r.text);
 });
 
@@ -160,6 +222,24 @@ await step("合规设计文档写入并关联任务", async () => {
   expect(!r.isError, r.text);
   docId = r.text.match(/（([0-9a-f-]{36})）/)?.[1] ?? "";
   expect(docId, r.text);
+});
+
+await step("改成待审查必须附带证据的结论，并关联交付文档", async () => {
+  const none = await call("update_task", { task: taskKey, state: "待审查" });
+  expect(none.isError && none.text.includes("comment"), none.text);
+  const weak = await call("update_task", { task: taskKey, state: "待审查", comment: "做完了。" });
+  expect(weak.isError && weak.text.includes("缺少证据"), weak.text);
+  const r = await call("update_task", {
+    task: taskKey,
+    state: "待审查",
+    role: "实现者",
+    comment: "分页改成游标实现，第二页不再重复。\n\n跑了 `pnpm test order`，18 个用例通过。",
+  });
+  expect(!r.isError && r.text.includes("待审查") && r.text.includes("结论"), r.text);
+  const again = await call("link_doc", { task: taskKey, project: PROJECT, doc_id: docId });
+  expect(again.text.includes("已经关联"), again.text);
+  const t = await call("get_task", { task: taskKey });
+  expect(t.text.includes("## 链接") && t.text.includes("订单分页方案") && t.text.includes("状态：待审查"), t.text);
 });
 
 await step("read_doc 读回 Markdown", async () => {
@@ -223,7 +303,7 @@ await step("review_digest 生成回顾", async () => {
 
 await step("review_digest 发布为当天文档，重复执行只更新", async () => {
   const first = await call("review_digest", { publish: true });
-  expect(!first.isError && /已(发布|更新)「回顾 \d{4}-\d{2}-\d{2}」/.test(first.text), first.text);
+  expect(!first.isError && /已(发布|更新)「回顾 \d{4}-\d{2}-\d{2} · [^」]+」/.test(first.text), first.text);
   const second = await call("review_digest", { publish: true });
   expect(second.text.includes("已更新"), second.text);
   return first.text.match(/http\S+/)?.[0];
