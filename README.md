@@ -9,17 +9,57 @@
 | `dev/` | 本地开发：基础设施、源码启动脚本、种子数据 |
 | `deploy/` | 部署配置 |
 
-## 长期运行（Docker）
+## 部署清单
 
-用二开过的源码构建镜像，`docker compose` 常驻，容器随 Docker 自动重启，数据在 volume 里。
+用二开过的源码构建镜像，`docker compose` 常驻，容器随 Docker 自动重启，数据在 Docker volume 里。常用命令都走 `deploy/team.sh`：`build`、`up`、`down`、`logs <服务>`、`ps`。
+
+### 首次部署
+
+前提：Docker、Node.js 22 以上（构建时编译 MCP 用）、`git`。
+
+- [ ] 克隆仓库，`cp deploy/plane/variables.example.env deploy/plane/.env`
+- [ ] 改 `.env` 里的密钥，不要用模板默认值：`SECRET_KEY`、`LIVE_SERVER_SECRET_KEY`、`POSTGRES_PASSWORD`、`RABBITMQ_PASSWORD`、`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`（后两个是文件存储 MinIO 的账号，用默认值启动时会有安全警告）
+- [ ] 对外访问地址：`APP_DOMAIN` 改成成员实际访问的域名或局域网 IP（带端口的话包含端口）。成员 MCP 命令、公开文档链接、邮件链接都由它生成，本机试用用默认的 `localhost:47080` 即可
+- [ ] `ENABLE_SIGNUP=0`（模板默认就是 0）：关闭自助注册，只有被邀请的邮箱能注册
+- [ ] AI 模型（可选）：`LLM_PROVIDER`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_KEY`，只在第一次启动时写入；之后在 `/god-mode/ai` 改，只有实例管理员能改，改完立即生效
+- [ ] `deploy/team.sh build`（首次 10～20 分钟），再 `deploy/team.sh up`
+- [ ] `deploy/team.sh ps` 确认 13 个容器都在运行
+- [ ] 打开 `http://<地址>/god-mode/`，建实例管理员账号，回到首页建工作区（slug 用小写英文，例如 `team`，发给成员之前定下来，改了 MCP 命令也要跟着换）
+- [ ] 定时回顾（可选）：用管理员建一个 API Token，填到 `.env` 的 `TEAM_REVIEW_WORKSPACE`、`TEAM_REVIEW_TOKEN`，再 `deploy/team.sh up`，每天 `TEAM_REVIEW_AT`（默认 09:00）生成团队回顾
+- [ ] 验证：用管理员的 Token 添加 MCP（见使用清单），在任意目录让 Agent 调用 `whoami`，看到账号信息就说明 `/mcp/<工作区>` 通了
+
+对外提供服务时（未在本机验证）：端口用 `LISTEN_HTTP_PORT`/`LISTEN_HTTPS_PORT`；要 HTTPS 就把 `SITE_ADDRESS` 改成域名并填 `CERT_EMAIL`，Caddy 会自动申请证书。Token 在请求头里传，生产环境一定要上 HTTPS，否则是明文。
+
+### 升级（改了代码或同步了上游之后）
+
+- [ ] `git pull`
+- [ ] 只构建改动的服务，例如 `deploy/team.sh build web proxy team-mcp`；不确定就 `build` 全部
+- [ ] `deploy/team.sh up`，数据库迁移由 `migrator` 容器自动执行
+- [ ] 改了 MCP：只重建 `team-mcp`，成员不用动，下一次调用就是新版
+- [ ] 改了 `Caddyfile.ce`：要重建 `proxy`
+
+### 备份和恢复
+
+数据在 volume 里：`team_pgdata`（数据库）和 `team_uploads`（上传的文件和图片）。
 
 ```bash
-cp deploy/plane/variables.example.env deploy/plane/.env   # 首次，改端口和密钥
-deploy/team.sh build   # 构建镜像（首次 10～20 分钟）
-deploy/team.sh up      # 启动，网页 http://localhost:47080
+# 数据库备份
+docker compose -p team exec -T plane-db sh -c 'PGPASSWORD=$POSTGRES_PASSWORD pg_dump -U $POSTGRES_USER $POSTGRES_DB' > team-$(date +%F).sql
 ```
 
-首次打开 `/god-mode` 建管理员和工作区。定时回顾：在 `.env` 填 `TEAM_REVIEW_WORKSPACE`、`TEAM_REVIEW_TOKEN`（管理员 API Token）后再 `deploy/team.sh up`。AI 模型在 `/god-mode/ai` 配，或在 `.env` 里填 `LLM_*`（首次启动时写入）。
+- [ ] 定期备份数据库，并备份 `team_uploads`（可以用 `docker run --rm -v team_uploads:/d -v $PWD:/b alpine tar czf /b/uploads.tgz -C /d .`，恢复命令未验证）
+- [ ] `deploy/team.sh down` 只停容器，不删数据；不要加 `-v`，那会删掉 volume
+
+### 排障
+
+| 现象 | 先看哪里 |
+|---|---|
+| 页面打不开、返回 429 | 静态资源限流，已放宽到每 IP 每分钟 6000；`deploy/team.sh logs web` 看是否还有 429 |
+| 页面 502 | `deploy/team.sh ps` 看哪个容器没起来，再 `logs <服务>` |
+| MCP 返回 401 | Token 没带或已失效，到 API Tokens 页重新建 |
+| MCP 返回“未关联” | 管理员还没在项目设置里登记这个仓库地址，或 Agent 没带 `repo` 参数 |
+| 写评论、改文档报协同服务不可用 | `live` 容器没起来，`logs live` |
+| 经验或文档写入被退回 | 看退回信息里的规则，按提示改；规则代码在 `mcp/src/norms/` |
 
 ## 使用流程
 
@@ -55,6 +95,32 @@ Plane 自带的“访客”角色用不上，邀请时不要选。Agent 用的 A
 3. 重启 Claude Code，进入团队项目的仓库，让它调用 `whoami`：显示“已关联 某项目”就可以用了；“未关联”说明管理员还没登记这个仓库；“还不是成员”说明还没被加进项目。
 
 MCP 随服务器升级，成员这边不用动。Agent 每次调用工具会带上当前仓库的 git remote 地址，服务器据此判断它在哪个团队项目里。
+
+### 使用清单
+
+管理员第一次把团队跑起来：
+
+- [ ] 工作区建好，项目建好
+- [ ] 每个项目的「项目设置 → 关联代码仓库」登记了仓库地址（没登记的仓库里 Agent 读写不了）
+- [ ] 邀请成员，邮箱注册后在项目设置 → 成员里加进项目
+- [ ] 自己和每个成员都按成员步骤装好 MCP，在仓库里让 Agent 调用 `whoami`，显示“已关联”
+- [ ] 提醒成员：Token 等于账号，不要发给别人
+
+日常（管理员）：
+
+- [ ] 任务到“待审查”时看结论和证据，改成“已完成”或打回
+- [ ] 经验库里“待审核”的经验，改成“已采纳”或“已驳回”；重复的驳回，不属于具体项目的会标成“通用”
+- [ ] 每天看“每日回顾”项目里的团队回顾：等你决定、阻塞、长期没动的任务
+- [ ] 人员变动：移出项目，需要时在工作区设置里停用成员；该成员的 Token 随账号失效，建议同时让对方在 API Tokens 页删掉
+- [ ] 要给团队外的人看某篇文档：文档右上角“…” → 公开链接，用完关掉
+
+日常（成员和 Agent）：
+
+- [ ] 在团队项目的仓库里用 Agent；Agent 动手前会先查经验库
+- [ ] 任务做完让 Agent 改成“待审查”并写带证据的结论，不要自己标“已完成”
+- [ ] 有价值的经验让 Agent 提交（要可复用、不明显、有代价、已验证，并写明来源），你同意后才提交
+- [ ] 不熟悉怎么用某个功能时，直接问 Agent，它会读使用指南；周期、模块、视图目前要在网页上操作
+- [ ] 写入被退回很正常，Agent 会按提示改；改不过就把退回信息发给管理员
 
 ### 47080 上的几个入口
 
