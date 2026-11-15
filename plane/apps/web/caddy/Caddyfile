@@ -9,11 +9,12 @@
 :3000 {
 	root * /usr/share/caddy/html
 
-	# Per-client-IP rate limiting for static asset requests
+	# [team 二开] 上游每个 IP 每分钟只放行 300 个静态请求，而这个前端一次打开就会加载几百个文件，
+	# 刷新几次就会 429（整页打不开）；团队常在同一出口 IP 后面，所以放宽到 6000。
 	rate_limit {
 		zone static {
 			key {client_ip}
-			events 300
+			events 6000
 			window 1m
 		}
 	}
