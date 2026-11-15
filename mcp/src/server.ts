@@ -10,7 +10,7 @@ import { matchProjects, normalizeRepoUrl, notBoundMessage, repoRemotes, workDirs
 import { z } from "zod";
 import { formatLessons, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
 import { htmlToMd, mdToHtml } from "./markdown.ts";
-import { COMMENT_KINDS, formatGate, gate, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
+import { COMMENT_KINDS, formatGate, gate, LESSON_GUIDE, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
 import { Plane, PlaneError, type Member, type Project, type WorkItem } from "./plane.ts";
 import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
 import { buildDigest, publishDigest } from "./review.ts";
@@ -61,7 +61,8 @@ const server = new McpServer(
 5. 状态“已完成”“已取消”只能由人设置；Agent 做完后用 update_task 改成“待审查”，同时在 comment 里写带证据的结论。
 6. 只写团队工作。个人笔记、密钥和个人信息不要写进来。
 7. 没有删除、成员管理、项目设置类工具，这些由人在网页上做；不再需要的内容由人在网页上归档。
-8. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_usage_guide（资源 team://guide/usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
+8. 这里的内容由 Agent 写、人来看：写法以人能一眼看懂、能核验为准，标题讲结论，结构清楚，证据写全。提交经验前先读 team://guide/lessons，只提值得沉淀的，宁缺毋滥。
+9. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_usage_guide（资源 team://guide/usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
   },
 );
 
@@ -302,6 +303,10 @@ server.registerTool(
 
 server.registerResource("usage-guide", "team://guide/usage", { title: "产品使用指南", mimeType: "text/markdown" }, async (uri) => ({
   contents: [{ uri: uri.href, mimeType: "text/markdown", text: usageGuide(CONFIG.webUrl, CONFIG.workspace) }],
+}));
+
+server.registerResource("lesson-guide", "team://guide/lessons", { title: "哪些内容该沉淀为经验", mimeType: "text/markdown" }, async (uri) => ({
+  contents: [{ uri: uri.href, mimeType: "text/markdown", text: LESSON_GUIDE }],
 }));
 
 server.registerTool(
@@ -748,7 +753,7 @@ server.registerTool(
   {
     title: "提交经验",
     description:
-      "沉淀一条经验。scope=team 提交到团队经验库的“待审核”，由人在 Plane 上决定采纳或驳回；scope=private 只存在本机（仅本机 stdio 版可用，远程服务不支持）。提交前应先征得用户同意。",
+      "沉淀一条经验。先读资源 team://guide/lessons 判断值不值得提：要可复用、不明显、有代价、已验证；任务进展、能直接查到的事实、个人偏好、重复的都不要提。团队经验必须有来源（source_task 或 ## 来源），人靠它核验。scope=team 提交到团队经验库的“待审核”，由人在 Plane 上决定采纳或驳回；scope=private 只存在本机（仅本机 stdio 版可用，远程服务不支持）。提交前应先征得用户同意。",
     inputSchema: {
       title: z.string().describe("一句话说清经验，例如“Django 迁移里不要直接 import 模型”"),
       markdown: z.string().describe("按经验模板：## 场景、## 做法，可选 ## 原因、## 来源"),
@@ -762,14 +767,19 @@ server.registerTool(
       const md = source_task && !/##\s*来源/.test(markdown) ? `${markdown.trim()}\n\n## 来源\n\n${source_task}\n` : markdown;
       const g = checkOrReject(md, "lesson", { title });
       if (!g.ok) return fail(g.report);
+      if (scope === "team" && !/^#{2,3}\s*来源/m.test(md)) {
+        return fail("团队经验必须写明来源，人要靠它核验：传 source_task（任务编号），或在正文里加「## 来源」，写任务编号、文档链接或报错原文。没有来源说明还没验证过，先不要提交。");
+      }
       if (scope === "private") {
         if (!local) return fail("远程服务没有“本机”，不能存私人经验。私人内容请自己记在本地笔记里；要给团队用的经验用 scope=team 提交。");
         const path = await savePrivateLesson(title, md, tags);
         return text(`已存为私人经验：${path}`);
       }
       await boundProjects();
+      const similar = (await searchLessons(plane, title, tags, { includePending: true, skipPrivate: true })).filter((l) => l.scope === "team").slice(0, 3);
       const r = await proposeTeamLesson(plane, title, md, tags);
-      return text(`已提交团队经验 ${r.key}，状态“待审核”，需要人在 Plane 上采纳后才会被检索到：${webUrl(`browse/${r.key}`)}`);
+      const dup = similar.length ? `\n\n库里已有相近的经验，如果重复，请用户在网页上把其中一条驳回：\n${similar.map((l) => `- ${l.key} ${l.title}（${l.status}）${l.url}`).join("\n")}` : "";
+      return text(`已提交团队经验 ${r.key}，状态“待审核”，需要人在 Plane 上采纳后才会被检索到：${webUrl(`browse/${r.key}`)}${dup}`);
     }),
 );
 

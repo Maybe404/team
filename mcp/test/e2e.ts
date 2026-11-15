@@ -393,6 +393,11 @@ await step("团队经验提交到待审核", async () => {
   return r.text.match(/LESSON-\d+/)?.[0];
 });
 
+await step("团队经验没有来源会被退回", async () => {
+  const r = await call("propose_lesson", { title: `没有来源的经验 ${run}`, markdown: lessonBody, tags: ["分页"], scope: "team" });
+  expect(r.isError && r.text.includes("来源"), r.text);
+});
+
 await step("未采纳的团队经验默认查不到", async () => {
   const r = await call("search_lessons", { query: `游标 ${run}` });
   expect(!r.text.includes(lessonTitle), r.text);
@@ -407,6 +412,10 @@ await step("私人经验存本机并能查到", async () => {
     tags: ["本地开发"],
     scope: "private",
   });
+  if (HTTP) {
+    expect(r.isError && r.text.includes("远程服务"), r.text);
+    return "远程服务拒绝私人经验";
+  }
   expect(!r.isError && r.text.includes(privateDir), r.text);
   const s = await call("search_lessons", { query: "端口", tags: ["本地开发"] });
   expect(s.text.includes("私人"), s.text);

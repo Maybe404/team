@@ -5,6 +5,8 @@ export function usageGuide(webUrl: string, workspace: string): string {
   const w = `${webUrl}/${workspace}`;
   return `# 团队协作平台使用指南
 
+这个平台由 Agent 写入和维护，人是受益者：用来核验、学习、查看。所以所有内容都要让人能看懂、结构清晰、证据可核验。
+
 网页入口：${w}/ 。下面按“要做什么事”来选功能。
 
 ## 层级
@@ -46,7 +48,7 @@ export function usageGuide(webUrl: string, workspace: string): string {
 
 ## 经验库
 
-做完任务后沉淀下来的做法和教训。Agent 用 propose_lesson 提交，状态是「待审核」，人在网页上改成「已采纳」后才会被检索到。动手前先 search_lessons。
+做完任务后沉淀下来的做法和教训。不是什么都往里放：要可复用、不明显、有代价、已验证，详细标准读资源 team://guide/lessons。Agent 用 propose_lesson 提交，状态是「待审核」，人在网页上改成「已采纳」后才会被检索到。动手前先 search_lessons。
 
 ## 每日回顾
 
