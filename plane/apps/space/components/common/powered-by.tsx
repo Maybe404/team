@@ -16,7 +16,8 @@ export function PoweredBy(props: TPoweredBy) {
   // props
   const { disabled = false } = props;
 
-  if (disabled || !WEBSITE_URL) return null;
+  // [team 二开] 去掉 Powered by Plane Publish 角标
+  if (true || disabled || !WEBSITE_URL) return null;
 
   return (
     <a
