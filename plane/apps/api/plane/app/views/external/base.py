@@ -4,6 +4,7 @@
 
 # Python import
 import os
+import re
 from typing import List, Dict, Tuple
 
 # Third party import
@@ -66,11 +67,25 @@ class GeminiProvider(LLMProvider):
     default_model = "gemini-pro"
 
 
+class OpenAICompatibleProvider(LLMProvider):
+    # [team 二开] 任意 OpenAI 兼容接口（自建模型网关、vLLM、Ollama 等），模型名不做白名单校验
+    name = "OpenAI Compatible"
+    models: List[str] = []
+    default_model = ""
+
+
 SUPPORTED_PROVIDERS = {
+    "openai-compatible": OpenAICompatibleProvider,
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
 }
+
+
+def get_llm_base_url() -> str | None:
+    # [team 二开]
+    (base_url,) = get_configuration_value([{"key": "LLM_BASE_URL", "default": os.environ.get("LLM_BASE_URL", "")}])
+    return base_url or None
 
 
 def get_llm_config() -> Tuple[str | None, str | None, str | None]:
@@ -105,11 +120,14 @@ def get_llm_config() -> Tuple[str | None, str | None, str | None]:
         return None, None, None
 
     # If no model specified, use provider's default
+    if not model and provider is OpenAICompatibleProvider:
+        log_exception(ValueError("LLM_MODEL is required for OpenAI compatible provider"))
+        return None, None, None
     if not model:
         model = provider.default_model
 
-    # Validate model is supported by provider
-    if model not in provider.models:
+    # Validate model is supported by provider（[team 二开] OpenAI 兼容接口不校验）
+    if provider is not OpenAICompatibleProvider and model not in provider.models:
         log_exception(
             ValueError(
                 f"Model {model} not supported by {provider.name}. Supported models: {', '.join(provider.models)}"
@@ -128,11 +146,12 @@ def get_llm_response(task, prompt, api_key: str, model: str, provider: str) -> T
         if provider.lower() == "gemini":
             model = f"gemini/{model}"
 
-        client = OpenAI(api_key=api_key)
+        # [team 二开] 支持自定义接口地址；去掉推理模型输出里的 <think> 块
+        client = OpenAI(api_key=api_key, base_url=get_llm_base_url(), timeout=120)
         chat_completion = client.chat.completions.create(
             model=model, messages=[{"role": "user", "content": final_text}]
         )
-        text = chat_completion.choices[0].message.content
+        text = re.sub(r"<think>.*?</think>\s*", "", chat_completion.choices[0].message.content or "", flags=re.S).strip()
         return text, None
     except Exception as e:
         log_exception(e)
