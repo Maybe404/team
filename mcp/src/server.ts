@@ -31,7 +31,7 @@ export type Env = {
 const REPO_PARAM = z
   .string()
   .optional()
-  .describe("当前仓库的 git remote 地址，即 `git remote get-url origin` 的输出。远程服务读不到你的本地目录，靠它判断你在哪个团队项目的仓库里，每次调用都带上。");
+  .describe("当前仓库 git remote get-url origin 的输出，每次都带");
 const NO_REPO = new Set(["get_writing_guide", "get_usage_guide", "check_text"]);
 
 export function createServer({ config: CONFIG, plane, local, clientName }: Env) {
@@ -54,7 +54,7 @@ const server = new McpServer(
   {
     instructions: `团队协作 MCP。任务、文档、经验都通过这里读写，不要绕过它直接改。
 规则：
-1. 写之前先读规范：资源 team://guide/writing，或调用 get_writing_guide。
+1. 第一次写入前读一次规范（get_writing_guide），同一次对话里读过就不用再读；不合规的写入会被退回并说明原因。
 2. 所有写入都会做规范检查，被退回时按提示逐条改完重交，不要换个说法绕过检查。
 3. 只在团队项目的仓库里工作时使用。每次调用工具都要把当前仓库的 git remote 地址（git remote get-url origin 的输出）填进 repo 参数。仓库要由项目管理员在 Plane「项目设置 → 关联代码仓库」登记过，没登记的仓库里除了 whoami 和规范类工具都用不了，这是正常的，不要想办法绕过，也不要填别的仓库地址来蒙混。
 4. 团队任务动手前先 search_lessons 查相关经验，结束后经用户同意用 propose_lesson 提交新经验，团队经验需要人审核才会生效。
