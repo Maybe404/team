@@ -23,6 +23,7 @@ import {
 import { renderFormattedDate, renderFormattedTime, copyTextToClipboard } from "@plane/utils";
 // hooks
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { TeamMcpInstall } from "@/components/api-token/team-mcp-install";
 
 type Props = {
   handleClose: () => void;
@@ -63,6 +64,10 @@ export function GeneratedTokenDetails(props: Props) {
               <CopyOutline className="h-4 w-4 flex-shrink-0 text-placeholder" />
             </Tooltip>
           </button>
+          {/* [team 二开] 带好 Token 的 team-mcp 安装命令 */}
+          <div className="mt-4">
+            <TeamMcpInstall token={tokenDetails.token ?? ""} />
+          </div>
         </DialogBody>
       </DialogMain>
       <DialogActions>

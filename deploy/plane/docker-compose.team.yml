@@ -42,6 +42,12 @@ services:
     image: team/plane-proxy:local
     build: { context: ../../plane/apps/proxy, dockerfile: Dockerfile.ce }
 
+  # [team 二开] team-mcp 安装包，代理在 /team-mcp/ 下提供
+  mcp-dist:
+    image: team/team-mcp-dist:local
+    build: { context: ../../mcp, dockerfile: Dockerfile.dist }
+    restart: unless-stopped
+
   team-review:
     image: team/team-review:local
     build: { context: ../../mcp }

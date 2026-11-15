@@ -20,10 +20,10 @@ function readFile(): FileConfig {
 
 export function loadConfig() {
   const f = readFile();
-  const baseUrl = process.env.PLANE_BASE_URL || f.url || "http://localhost:47080";
+  const baseUrl = (process.env.PLANE_BASE_URL || process.env.PLANE_URL || f.url || "http://localhost:47080").replace(/\/$/, "");
   return {
     baseUrl,
-    webUrl: process.env.PLANE_WEB_URL || f.webUrl || f.url || baseUrl,
+    webUrl: (process.env.PLANE_WEB_URL || f.webUrl || baseUrl).replace(/\/$/, ""),
     workspace: process.env.PLANE_WORKSPACE || f.workspace || "",
     token: process.env.PLANE_API_TOKEN || f.token || "",
   };

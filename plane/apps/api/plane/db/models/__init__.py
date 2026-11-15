@@ -90,3 +90,6 @@ from .device import Device, DeviceSession
 from .sticky import Sticky
 
 from .description import Description, DescriptionVersion
+
+# [team 二开]
+from .team_page_share import TeamPageShare

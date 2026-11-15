@@ -6,7 +6,7 @@
 
 import { useMemo, useState } from "react";
 import { observer } from "mobx-react";
-import { ClipboardOutline, ExportOutline, HistoryOutline } from "@makeplane/propel/icons";
+import { ClipboardOutline, ExportOutline, GlobeOutline, HistoryOutline } from "@makeplane/propel/icons";
 // plane imports
 import { setToast } from "@plane/blocks/toast";
 import { Switch } from "@makeplane/propel/components/switch";
@@ -22,6 +22,7 @@ import type { TPageInstance } from "@/store/pages/base-page";
 // local imports
 import { PageActions } from "../../dropdowns";
 import { ExportPageModal } from "../../modals/export-page-modal";
+import { TeamPageShareModal } from "../../modals/team-share-modal";
 import { PAGE_NAVIGATION_PANE_TABS_QUERY_PARAM } from "../../navigation-pane";
 
 type Props = {
@@ -33,6 +34,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
   const { page, storeType } = props;
   // states
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   // navigation
   const router = useAppRouter();
   // store values
@@ -102,6 +104,14 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
           shouldRender: true,
         },
         {
+          // [team 二开] 文档公开只读链接
+          key: "team-public-link",
+          action: () => setIsShareModalOpen(true),
+          title: "公开链接",
+          icon: GlobeOutline,
+          shouldRender: !page.archived_at,
+        },
+        {
           key: "export",
           action: () => setIsExportModalOpen(true),
           title: "Export",
@@ -120,6 +130,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
       updateQueryParams,
       router,
       setIsExportModalOpen,
+      page.archived_at,
     ]
   );
 
@@ -130,6 +141,12 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         pageTitle={name ?? ""}
+      />
+      <TeamPageShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        pageId={page.id ?? ""}
+        isPrivate={page.access === 1}
       />
       <PageActions
         extraOptions={EXTRA_MENU_OPTIONS}
@@ -143,6 +160,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
           "delete",
           "toggle-access",
           "export",
+          "team-public-link",
         ]}
         page={page}
         storeType={storeType}

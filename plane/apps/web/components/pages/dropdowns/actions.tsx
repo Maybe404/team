@@ -53,7 +53,8 @@ export type TPageActions =
   | "delete"
   | "version-history"
   | "export"
-  | "move";
+  | "move"
+  | "team-public-link"; // [team 二开]
 
 type Props = {
   extraOptions?: (TContextMenuItem & { key: TPageActions })[];

@@ -4,6 +4,8 @@
 
 from django.urls import path
 
+from plane.app.views.page.team_share import TeamPageShareEndpoint
+
 
 from plane.app.views import (
     PageViewSet,
@@ -79,5 +81,11 @@ urlpatterns = [
         "workspaces/<str:slug>/pages/<uuid:page_id>/live-access/",
         PageLiveAccessEndpoint.as_view(),
         name="page-live-access",
+    ),
+    # [team 二开] 文档公开只读链接
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:page_id>/team-share/",
+        TeamPageShareEndpoint.as_view(),
+        name="team-page-share",
     ),
 ]

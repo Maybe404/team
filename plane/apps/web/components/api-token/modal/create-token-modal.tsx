@@ -85,7 +85,7 @@ export function CreateApiTokenModal(props: Props) {
     /* Dismissed only through its own buttons, matching the modal it replaces, whose `handleClose`
        was a no-op. */
     <Dialog open={isOpen} disablePointerDismissal onOpenChange={() => {}}>
-      <DialogContent size="md">
+      <DialogContent size={generatedToken ? "lg" : "md"}>
         {generatedToken ? (
           <GeneratedTokenDetails handleClose={handleClose} tokenDetails={generatedToken} />
         ) : (

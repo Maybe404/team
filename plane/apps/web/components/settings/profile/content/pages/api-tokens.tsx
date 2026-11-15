@@ -18,6 +18,7 @@ import { APITokenService } from "@plane/services";
 // components
 import { CreateApiTokenModal } from "@/components/api-token/modal/create-token-modal";
 import { ApiTokensTable } from "@/components/api-token/tokens-table";
+import { TeamMcpInstall } from "@/components/api-token/team-mcp-install";
 import { ProfileSettingsHeading } from "@/components/settings/profile/heading";
 import { APITokenSettingsLoader } from "@/components/ui/loader/settings/api-token";
 // constants
@@ -114,6 +115,8 @@ export const APITokensProfileSettings = observer(function APITokensProfileSettin
           <ApiTokensTable tokens={filteredTokens} />
         )}
       </div>
+      {/* [team 二开] team-mcp 安装命令，新建 Token 时弹窗里会带好 Token */}
+      <TeamMcpInstall />
     </div>
   );
 });

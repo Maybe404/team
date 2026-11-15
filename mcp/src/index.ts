@@ -19,6 +19,7 @@ import { buildDigest, publishDigest } from "./review.ts";
 import { agentCanSet, findState, HUMAN_ONLY_HINT, TASK_STATES } from "./workflow.ts";
 
 const CONFIG = loadConfig();
+const VERSION = (JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { version: string }).version;
 const plane = new Plane(CONFIG);
 
 // 没配置或 Token 失效时不让进程崩掉，而是在每次调用时告诉使用者怎么配
@@ -28,14 +29,24 @@ function setupGuide(reason: string) {
 
 首次使用按下面做（每个人用自己的账号和 Token，Plane 上的操作会记在你名下）：
 1. 请管理员在 ${web} 的工作区设置里邀请你的邮箱，你用这个邮箱注册并接受邀请。
-2. 进入 ${web}/${CONFIG.workspace || "<工作区>"}/settings/account/api-tokens 新建一个 API Token。
-3. 在 team 仓库里运行 mcp/install.sh，按提示填 Plane 地址、工作区和 Token（保存在 ~/.config/team-mcp/config.json），然后重启 Agent。
+2. 打开 ${web}/settings/profile/api-tokens 新建一个 API Token，页面上会显示带好 Token 的安装命令。
+3. 在终端执行那条命令（或在 Agent 的 MCP 设置里按页面上的字段手动添加），然后重启 Agent。
 4. 调用 whoami 确认。`;
 }
 const webUrl = (path: string) => plane.webUrl(path);
 
+// 新版本提示：安装包由 Plane 实例在 /team-mcp/ 下提供，npx 按地址缓存，所以地址里带版本号，升级要换地址
+const latest = fetch(`${CONFIG.baseUrl}/team-mcp/version.json`, { signal: AbortSignal.timeout(3000) })
+  .then((r) => (r.ok ? (r.json() as Promise<{ version: string; file: string }>) : undefined))
+  .catch(() => undefined);
+async function updateNotice() {
+  const l = await latest;
+  if (!l || l.version === VERSION) return "";
+  return `\n\nteam-mcp 有新版本 ${l.version}（当前 ${VERSION}）。到 ${CONFIG.webUrl}/settings/profile/api-tokens 复制新的安装命令重新执行，或把 MCP 配置里的地址改成 ${CONFIG.baseUrl}/team-mcp/${l.file}，然后重启 Agent。`;
+}
+
 const server = new McpServer(
-  { name: "team-mcp", version: "0.1.0" },
+  { name: "team-mcp", version: VERSION },
   {
     instructions: `团队协作 MCP。任务、文档、经验都通过这里读写，不要绕过它直接改。
 规则：
@@ -315,7 +326,7 @@ server.registerTool(
           ? `关联的是 ${unjoined.map((p) => p.identifier).join("、")}，但你还不是成员，请项目管理员在网页上把你加进项目`
           : `未关联。${notBoundMessage(sc, CONFIG.webUrl)}`;
       return text(
-        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nPlane：${CONFIG.webUrl}（API ${CONFIG.baseUrl}）\n工作目录：${sc.dirs.join("、")}\ngit remote：${sc.remotes.join("、") || "无"}\n团队项目：${repo}`,
+        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nPlane：${CONFIG.webUrl}（API ${CONFIG.baseUrl}）\nteam-mcp：${VERSION}\n工作目录：${sc.dirs.join("、")}\ngit remote：${sc.remotes.join("、") || "无"}\n团队项目：${repo}${await updateNotice()}`,
       );
     }),
 );

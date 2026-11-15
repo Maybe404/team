@@ -40,20 +40,34 @@ Plane 自带的“访客”角色用不上，邀请时不要选。Agent 用的 A
 4. 工作区设置 → 成员 → 邀请，填对方邮箱，角色选“成员”或“管理员”。没配邮件服务时不会发信，直接把网页地址告诉对方。
 5. 对方接受后，项目设置 → 成员，把他加进项目。经验库和每日回顾不用加，会自动加。
 6. 日常：任务到了“待审查”时看结论和证据，改成“已完成”或打回；经验库里“待审核”的经验改成“已采纳”或“已驳回”。
-7. 自己也要用 Agent 的话，按下面成员的第 2～4 步装 MCP。
+7. 自己也要用 Agent 的话，按下面成员的第 2、3 步装 MCP。
 
 ### 成员
 
 1. 打开管理员给的地址，用被邀请的邮箱注册，登录后接受工作区邀请。
-2. 头像 → 个人设置 → API Tokens，新建一个 Token。
-3. 装 MCP：
+2. 头像 → 个人设置 → API Tokens → 新建 Token。弹窗里会显示一条已经填好地址、工作区和 Token 的命令，复制到终端执行一次：
 
    ```bash
-   git clone https://github.com/Maybe404/team.git ~/team && ~/team/mcp/install.sh
+   claude mcp add team -s user -e PLANE_URL=http://<地址> -e PLANE_WORKSPACE=team -e PLANE_API_TOKEN=<Token> -- npx -y http://<地址>/team-mcp/team-mcp-<版本>.tgz
    ```
 
-   按提示填 Plane 地址、工作区 slug 和 Token。装好后重启 Claude Code。
-4. 进入团队项目的仓库打开 Claude Code，让它调用 `whoami`：显示“已关联 某项目”就可以用了；显示“未关联”说明管理员还没登记这个仓库，显示“还不是成员”说明还没被加进项目。
+   不用克隆仓库，只需要本机有 Node.js 22 以上。用 Claude Desktop、Cursor 等其他客户端的，复制弹窗里的 JSON 配置，或在客户端的 MCP 设置里按里面的字段（命令 `npx`、参数、三个环境变量）手动添加。
+3. 重启 Claude Code，进入团队项目的仓库，让它调用 `whoami`：显示“已关联 某项目”就可以用了；“未关联”说明管理员还没登记这个仓库；“还不是成员”说明还没被加进项目。
+
+MCP 升级后，`whoami` 会提示新版本，到 API Tokens 页复制新命令重新执行即可。
+
+### 47080 上的几个入口
+
+| 地址 | 是什么 |
+|---|---|
+| `/god-mode/` | 实例后台，只有实例管理员能进：首次初始化、登录方式、邮件、AI 模型。左下角的按钮回到工作区 |
+| `/<工作区>/` | 日常使用的地方：项目、任务、文档、成员都在这里，例如 `http://localhost:47080/team/` |
+| `/settings/profile/api-tokens` | 个人 API Token 和 MCP 安装命令 |
+| `/spaces/team-pages/<链接>` | 公开文档，不用登录 |
+
+### 公开文档
+
+文档右上角“…” → 公开链接。只有工作区管理员能打开或关闭；打开后拿到链接的人不用登录就能阅读这一篇（只读，看不到评论和项目里的其他内容），关闭后旧链接立即失效。私有文档、已归档的文档不能公开，Agent 也开不了。
 
 ## 本地开发
 
@@ -81,5 +95,7 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 - 项目关联仓库：`Project.team_repos`（迁移 `0126`），网页 `apps/web/components/project/settings/team-repos.tsx`；建项目默认用团队工作流状态、自动归档 1 个月
 - Agent Token 限权：API Token 请求不能 DELETE、不能管理成员和邀请、不能改项目设置（`team_delete_guard.py`）
 - 全员共享项目：经验库（审核状态）和每日回顾自动收录工作区管理员和成员，`plane/apps/api/plane/utils/team_shared.py`
+- MCP 安装包：`mcp/Dockerfile.dist` 打成 npm 包，代理在 `/team-mcp/` 下提供（`Caddyfile.ce`）；API Tokens 页显示安装命令（`apps/web/components/api-token/team-mcp-install.tsx`）
+- 文档公开链接：`TeamPageShare`（迁移 `0127`），管理接口 `app/views/page/team_share.py`，公开接口 `space/views/team_page.py`（服务端白名单清洗 HTML），公开页 `apps/space/app/team-pages/`。没有复用 Plane 的 DeployBoard，因为公开接口按 anchor 查它时不分类型，会连带暴露整个项目
 
 同步上游：`git subtree pull --prefix=plane <上游地址> preview --squash`

@@ -41,12 +41,13 @@ npm run review -- --daemon --at 09:00  # 常驻，每天 09:00 执行；启动�
 
 每个人用自己的 Plane 账号和自己的 API Token，Plane 上的操作记在本人名下。
 
+安装包由 Plane 实例自己提供（`<地址>/team-mcp/`，见 `Dockerfile.dist`），不用克隆仓库。在网页「个人设置 → API Tokens」新建 Token 后，弹窗里有填好的命令：
+
 ```bash
-git clone https://github.com/Maybe404/team.git && cd team
-mcp/install.sh
+claude mcp add team -s user -e PLANE_URL=http://<地址> -e PLANE_WORKSPACE=<工作区> -e PLANE_API_TOKEN=<Token> -- npx -y http://<地址>/team-mcp/team-mcp-<版本>.tgz
 ```
 
-脚本会编译 MCP，问三样东西：Plane 地址（例如 `http://localhost:47080`）、工作区 slug、API Token（在网页「个人设置 → API Tokens」新建），校验通过后存到 `~/.config/team-mcp/config.json`（权限 600），再用 `claude mcp add team -s user` 注册到 Claude Code。其他客户端按脚本最后打印的命令手动加。换 Token 或换地址重新跑一遍即可。
+其他客户端加一个 stdio MCP：命令 `npx`，参数 `-y <安装包地址>`，环境变量同上。地址里带版本号是因为 npx 按地址缓存；升级后 `whoami` 会提示，换成新地址即可。
 
 没配置或 Token 失效时，MCP 照常启动，所有工具都返回配置说明。
 
@@ -74,11 +75,12 @@ mcp/install.sh
 
 | 环境变量 | 说明 |
 |---|---|
-| `PLANE_BASE_URL` | Plane 地址，默认取配置文件里的 `url`；源码开发时 API 是 `http://localhost:47800` |
+| `PLANE_URL` | Plane 地址（网页和 API 同一个），例如 `http://localhost:47080` |
+| `PLANE_BASE_URL` | 单独指定 API 地址，源码开发时是 `http://localhost:47800` |
 | `PLANE_WEB_URL` | Plane 网页地址，用来生成链接，默认同上；源码开发时是 `http://localhost:47300` |
 | `PLANE_API_TOKEN` | 个人 API Token，默认取配置文件 |
 | `PLANE_WORKSPACE` | 工作区 slug，默认取配置文件 |
-| `TEAM_MCP_CONFIG` | 配置文件路径，默认 `~/.config/team-mcp/config.json` |
+| `TEAM_MCP_CONFIG` | 可选的配置文件（`{"url","workspace","token"}`），默认 `~/.config/team-mcp/config.json`，环境变量优先 |
 | `TEAM_LESSONS_PROJECT` | 经验库项目标识，默认 `LESSON`，不存在会自动创建 |
 | `TEAM_PRIVATE_LESSONS_DIR` | 私人经验目录，默认 `~/.team/lessons` |
 | `TEAM_REVIEW_PROJECT` | 回顾项目标识，默认 `REVIEW` |
