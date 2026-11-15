@@ -28,3 +28,5 @@ export function loadConfig() {
     token: process.env.PLANE_API_TOKEN || f.token || "",
   };
 }
+
+export type Config = ReturnType<typeof loadConfig>;

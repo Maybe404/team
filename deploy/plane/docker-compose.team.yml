@@ -44,14 +44,22 @@ services:
     image: team/plane-proxy:local
     build: { context: ../../plane/apps/proxy, dockerfile: Dockerfile.ce }
 
-  # [team 二开] team-mcp 安装包，代理在 /team-mcp/ 下提供
-  mcp-dist:
-    image: team/team-mcp-dist:local
-    build: { context: ../../mcp, dockerfile: Dockerfile.dist }
+  # 团队 MCP：成员在 Claude Code 里只填一个网址和自己的 Plane API Token（http://<地址>/mcp/<工作区>），
+  # 由 Caddy 把 /mcp/* 转到这里。无状态，不存 Token，随 Plane 一起升级。
+  team-mcp:
+    image: team/team-mcp:local
+    build: { context: ../../mcp }
+    command: ["node", "dist/http.js"]
     restart: unless-stopped
+    environment:
+      PORT: 3000
+      PLANE_BASE_URL: http://api:8000
+      PLANE_WEB_URL: ${WEB_URL}
+    depends_on:
+      - api
 
   team-review:
-    image: team/team-review:local
+    image: team/team-mcp:local
     build: { context: ../../mcp }
     restart: unless-stopped
     profiles: [review]

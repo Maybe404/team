@@ -11,8 +11,8 @@
 	
 	reverse_proxy /live/* live:3000
 
-	# [team 二开] team-mcp 安装包
-	reverse_proxy /team-mcp/* mcp-dist:80
+	# [team 二开] 团队 MCP（HTTP）
+	reverse_proxy /mcp/* team-mcp:3000
 
 	reverse_proxy /api/* api:8000
 

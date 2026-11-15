@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { spawn } from "node:child_process";
 
 const root = join(import.meta.dirname, "..", "..");
 const secrets = Object.fromEntries(
@@ -52,8 +54,36 @@ const privateDir = mkdtempSync(join(tmpdir(), "team-lessons-"));
 // Agent 的工作目录：一开始不是 git 仓库，测试里再 git init、加 remote、由“管理员”登记
 const workDir = mkdtempSync(join(tmpdir(), "team-repo-"));
 
+// E2E_HTTP=1：走 HTTP 入口（团队实际使用的方式）。服务读不到本地目录，所以像真实 Agent 一样，
+// 每次调用把工作目录里 git remote 的地址填进 repo 参数。
+const HTTP = process.env.E2E_HTTP === "1";
+const HTTP_PORT = 47991;
+const planeEnv = {
+  PLANE_BASE_URL: `http://localhost:${ports.API_PORT}`,
+  PLANE_WEB_URL: `http://localhost:${ports.WEB_PORT}`,
+};
+if (HTTP) {
+  const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", join(import.meta.dirname, "..", "src/http.ts")], {
+    env: { ...process.env, ...planeEnv, PORT: String(HTTP_PORT), TEAM_PRIVATE_LESSONS_DIR: privateDir } as Record<string, string>,
+    stdio: "inherit",
+  });
+  process.on("exit", () => child.kill());
+  for (let i = 0; i < 50; i++) {
+    if (await fetch(`http://localhost:${HTTP_PORT}/healthz`).then((r) => r.ok).catch(() => false)) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+const agentRepo = () => {
+  const r = spawnSync("git", ["remote", "get-url", "origin"], { cwd: workDir, encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : undefined;
+};
+
 async function connect(token: string, name: string) {
-  const transport = new StdioClientTransport({
+  const transport = HTTP
+    ? new StreamableHTTPClientTransport(new URL(`http://localhost:${HTTP_PORT}/mcp/${secrets.PLANE_WORKSPACE}`), {
+        requestInit: { headers: { Authorization: `Bearer ${token}`, "User-Agent": `${name}/0.0.1` } },
+      })
+    : new StdioClientTransport({
     command: process.execPath,
     args: ["--experimental-strip-types", "--no-warnings", join(import.meta.dirname, "..", "src/index.ts")],
     cwd: workDir,
@@ -69,7 +99,8 @@ async function connect(token: string, name: string) {
   const c = new Client({ name, version: "0.0.1" });
   await c.connect(transport);
   const fn = async (tool: string, args: Record<string, unknown>) => {
-    const r = (await c.callTool({ name: tool, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+    const repo = HTTP ? agentRepo() : undefined;
+    const r = (await c.callTool({ name: tool, arguments: repo && !("repo" in args) ? { ...args, repo } : args })) as { content: { text: string }[]; isError?: boolean };
     return { text: r.content.map((x) => x.text).join("\n"), isError: Boolean(r.isError) };
   };
   return Object.assign(fn, { client: c });

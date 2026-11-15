@@ -41,24 +41,28 @@ npm run review -- --daemon --at 09:00  # 常驻，每天 09:00 执行；启动�
 
 每个人用自己的 Plane 账号和自己的 API Token，Plane 上的操作记在本人名下。
 
-安装包由 Plane 实例自己提供（`<地址>/team-mcp/`，见 `Dockerfile.dist`），不用克隆仓库。在网页「个人设置 → API Tokens」新建 Token 后，弹窗里有填好的命令：
+团队 MCP 是服务器上长期运行的 HTTP 服务（`src/http.ts`，部署里的 `team-mcp` 容器），Caddy 把 `<地址>/mcp/*` 转给它。成员本机不用装任何东西。在网页「个人设置 → API Tokens」新建 Token 后，弹窗里有填好的命令：
 
 ```bash
-claude mcp add team -s user -e PLANE_URL=http://<地址> -e PLANE_WORKSPACE=<工作区> -e PLANE_API_TOKEN=<Token> -- npx -y http://<地址>/team-mcp/team-mcp-<版本>.tgz
+claude mcp add --transport http team http://<地址>/mcp/<工作区> --header "Authorization: Bearer <Token>"
 ```
 
-其他客户端加一个 stdio MCP：命令 `npx`，参数 `-y <安装包地址>`，环境变量同上。地址里带版本号是因为 npx 按地址缓存；升级后 `whoami` 会提示，换成新地址即可。
+其他客户端添加一个 HTTP 类型的 MCP 服务：网址 `http://<地址>/mcp/<工作区>`，请求头 `Authorization: Bearer <Token>`。
+
+服务是无状态的：每个请求用请求头里的 Token 转发给 Plane，Token 不落盘，权限由 Plane 判断。Token 失效时，所有工具都返回配置说明。
+
+`src/index.ts` 是同一套工具的本机 stdio 入口，开发和测试用（`.mcp.json`、`npm run e2e`）。
 
 没配置或 Token 失效时，MCP 照常启动，所有工具都返回配置说明。
 
 ## 仓库绑定和隐私
 
-- 项目管理员在 Plane「项目设置 → 关联代码仓库」登记仓库地址（https、git@ 写法都行，会统一成 `github.com/org/repo`）。MCP 读取 Agent 工作目录的 `git remote`，和项目登记的地址对上才能读写这个项目。一个仓库可以关联多个项目，此时调用要带 `project`。
+- 项目管理员在 Plane「项目设置 → 关联代码仓库」登记仓库地址（https、git@ 写法都行，会统一成 `github.com/org/repo`）。Agent 每次调用工具都带上 `repo` 参数（`git remote get-url origin` 的输出，指令里已写明），和项目登记的地址对上才能读写这个项目；这是防止误写的闸门，不是安全边界，权限始终以 Plane 里的项目成员为准。一个仓库可以关联多个项目，此时调用要带 `project`。
 - 没对上的目录（个人项目、私人文件夹、不是 git 仓库的地方）里只能用 `whoami`、`get_writing_guide`、`check_text`、`analyze_tone`（直接传正文时），读写 Plane 的工具都拒绝。这样个人内容写不进来，团队数据也不会在别的仓库里被读出去。
 - 登记只能由人在网页上做：Agent 的 API Token 不能改项目设置、不能管理成员、不能删除任何东西（服务端拦截，管理员的 Token 也一样）。
 - 经验库（`LESSON`）和每日回顾（`REVIEW`）是全员共享项目，工作区的管理员和成员会被自动加入。在任一团队仓库里都能检索经验、提交经验。
 - 写入内容会查密钥（API Key、Token、私钥、明文密码）、个人信息（手机号、身份证号）、指向本机的图片和文件，命中就拒绝；本机绝对路径和疑似银行卡号只提示。
-- 私人经验 `scope=private` 只存本机（`~/.team/lessons`）。
+- 私人经验 `scope=private` 只在本机 stdio 入口可用（存 `~/.team/lessons`）；远程服务没有“本机”，会拒绝。
 
 ## 系统规则
 
@@ -71,7 +75,7 @@ claude mcp add team -s user -e PLANE_URL=http://<地址> -e PLANE_WORKSPACE=<工
 
 ## 配置
 
-环境变量优先于配置文件。
+下面是 stdio 入口的配置，环境变量优先于配置文件。HTTP 服务只用 `PORT`、`PLANE_BASE_URL`（服务器访问 Plane API 的内部地址）、`PLANE_WEB_URL`（生成链接用的对外地址）；Token 和工作区来自请求。
 
 | 环境变量 | 说明 |
 |---|---|

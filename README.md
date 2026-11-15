@@ -48,13 +48,13 @@ Plane 自带的“访客”角色用不上，邀请时不要选。Agent 用的 A
 2. 头像 → 个人设置 → API Tokens → 新建 Token。弹窗里会显示一条已经填好地址、工作区和 Token 的命令，复制到终端执行一次：
 
    ```bash
-   claude mcp add team -s user -e PLANE_URL=http://<地址> -e PLANE_WORKSPACE=team -e PLANE_API_TOKEN=<Token> -- npx -y http://<地址>/team-mcp/team-mcp-<版本>.tgz
+   claude mcp add --transport http team http://<地址>/mcp/<工作区> --header "Authorization: Bearer <Token>"
    ```
 
-   不用克隆仓库，只需要本机有 Node.js 22 以上。用 Claude Desktop、Cursor 等其他客户端的，复制弹窗里的 JSON 配置，或在客户端的 MCP 设置里按里面的字段（命令 `npx`、参数、三个环境变量）手动添加。
+   本机什么都不用装，MCP 跑在服务器上。用 Cursor 等其他客户端的，复制弹窗里的 JSON 配置，或在客户端的 MCP 设置里添加一个 HTTP 类型的服务：网址同上，请求头 `Authorization: Bearer <Token>`。
 3. 重启 Claude Code，进入团队项目的仓库，让它调用 `whoami`：显示“已关联 某项目”就可以用了；“未关联”说明管理员还没登记这个仓库；“还不是成员”说明还没被加进项目。
 
-MCP 升级后，`whoami` 会提示新版本，到 API Tokens 页复制新命令重新执行即可。
+MCP 随服务器升级，成员这边不用动。Agent 每次调用工具会带上当前仓库的 git remote 地址，服务器据此判断它在哪个团队项目里。
 
 ### 47080 上的几个入口
 
@@ -95,7 +95,7 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 - 项目关联仓库：`Project.team_repos`（迁移 `0126`），网页 `apps/web/components/project/settings/team-repos.tsx`；建项目默认用团队工作流状态、自动归档 1 个月
 - Agent Token 限权：API Token 请求不能 DELETE、不能管理成员和邀请、不能改项目设置（`team_delete_guard.py`）
 - 全员共享项目：经验库（审核状态）和每日回顾自动收录工作区管理员和成员，`plane/apps/api/plane/utils/team_shared.py`
-- MCP 安装包：`mcp/Dockerfile.dist` 打成 npm 包，代理在 `/team-mcp/` 下提供（`Caddyfile.ce`）；API Tokens 页显示安装命令（`apps/web/components/api-token/team-mcp-install.tsx`）
+- 团队 MCP 是服务器上的 HTTP 服务（`mcp/src/http.ts`，compose 里的 `team-mcp`），Caddy 把 `/mcp/*` 转给它（`Caddyfile.ce`）；API Tokens 页显示添加命令（`apps/web/components/api-token/team-mcp-install.tsx`）
 - 文档公开链接：`TeamPageShare`（迁移 `0127`），管理接口 `app/views/page/team_share.py`，公开接口 `space/views/team_page.py`（服务端白名单清洗 HTML），公开页 `apps/space/app/team-pages/`。没有复用 Plane 的 DeployBoard，因为公开接口按 anchor 查它时不分类型，会连带暴露整个项目
 
 同步上游：`git subtree pull --prefix=plane <上游地址> preview --squash`

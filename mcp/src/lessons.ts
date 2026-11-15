@@ -111,7 +111,7 @@ export async function searchLessons(
   plane: Plane,
   query: string,
   tags: string[],
-  opts: { includePending?: boolean; limit?: number } = {},
+  opts: { includePending?: boolean; limit?: number; skipPrivate?: boolean } = {},
 ): Promise<Lesson[]> {
   const tokens = tokenize(query);
   const results: { l: Lesson; s: number }[] = [];
@@ -147,7 +147,7 @@ export async function searchLessons(
     }
   }
 
-  for (const l of await readPrivateLessons()) {
+  for (const l of opts.skipPrivate ? [] : await readPrivateLessons()) {
     const s = score(`${l.title}\n${l.body}`, l.tags, tokens, tags);
     if (s > 0 || (!tokens.length && !tags.length)) results.push({ l, s });
   }
