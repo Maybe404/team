@@ -1,0 +1,57 @@
+# [team 二开] 在官方部署文件上叠加：用 plane/ 下二开过的源码构建镜像，并加上定时回顾服务。
+# 用法见 deploy/team.sh。
+x-team-api-env: &team-api-env
+  # API 调 live 服务做文档增量合并（Pages 二开接口）
+  LIVE_BASE_URL: http://live:3000
+  LIVE_BASE_PATH: /live
+  # Agent 走 API Token，回顾会扫所有项目，放宽默认的 60 次/分钟
+  API_KEY_RATE_LIMIT: ${API_KEY_RATE_LIMIT:-600/minute}
+  # AI：首次启动时写入实例配置，之后在 /god-mode/ai 修改
+  LLM_PROVIDER: ${LLM_PROVIDER:-openai-compatible}
+  LLM_BASE_URL: ${LLM_BASE_URL:-}
+  LLM_MODEL: ${LLM_MODEL:-}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+
+x-team-backend: &team-backend
+  image: team/plane-backend:local
+  build:
+    context: ../../plane/apps/api
+    dockerfile: Dockerfile.api
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  environment: *team-api-env
+
+services:
+  api: *team-backend
+  worker: *team-backend
+  beat-worker: *team-backend
+  migrator: *team-backend
+  web:
+    image: team/plane-web:local
+    build: { context: ../../plane, dockerfile: apps/web/Dockerfile.web }
+  space:
+    image: team/plane-space:local
+    build: { context: ../../plane, dockerfile: apps/space/Dockerfile.space }
+  admin:
+    image: team/plane-admin:local
+    build: { context: ../../plane, dockerfile: apps/admin/Dockerfile.admin }
+  live:
+    image: team/plane-live:local
+    build: { context: ../../plane, dockerfile: apps/live/Dockerfile.live }
+  proxy:
+    image: team/plane-proxy:local
+    build: { context: ../../plane/apps/proxy, dockerfile: Dockerfile.ce }
+
+  team-review:
+    image: team/team-review:local
+    build: { context: ../../mcp }
+    restart: unless-stopped
+    profiles: [review]
+    environment:
+      PLANE_BASE_URL: http://api:8000
+      PLANE_WEB_URL: ${WEB_URL}
+      PLANE_WORKSPACE: ${TEAM_REVIEW_WORKSPACE:-}
+      PLANE_API_TOKEN: ${TEAM_REVIEW_TOKEN:-}
+      TEAM_REVIEW_AT: ${TEAM_REVIEW_AT:-09:00}
+    depends_on:
+      - api
