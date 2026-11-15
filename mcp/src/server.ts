@@ -32,7 +32,7 @@ const REPO_PARAM = z
   .string()
   .optional()
   .describe("当前仓库 git remote get-url origin 的输出，每次都带");
-const NO_REPO = new Set(["get_writing_guide", "get_usage_guide", "check_text"]);
+const NO_REPO = new Set(["get_guide", "check_text"]);
 
 export function createServer({ config: CONFIG, plane, local, clientName }: Env) {
 
@@ -54,15 +54,15 @@ const server = new McpServer(
   {
     instructions: `团队协作 MCP。任务、文档、经验都通过这里读写，不要绕过它直接改。
 规则：
-1. 第一次写入前读一次规范（get_writing_guide），同一次对话里读过就不用再读；不合规的写入会被退回并说明原因。
-2. 所有写入都会做规范检查，被退回时按提示逐条改完重交，不要换个说法绕过检查。
+1. 第一次写入前读一次规范（get_guide topic=writing），同一次对话里读过就不用再读；不合规的写入会被退回并说明原因。
+2. 去 AI 味：页面、任务描述、评论、经验这四类写入，落笔前都要按「去 AI 味」的规则写，写完先用 check_text 预检，按提示改；整篇 500 汉字以上的页面再用 analyze_tone 出整篇报告，按报告改写后再写入。写入时服务端还会再检查一遍，被退回时逐条改完重交，不要换个说法绕过检查。
 3. 只在团队项目的仓库里工作时使用。每次调用工具都要把当前仓库的 git remote 地址（git remote get-url origin 的输出）填进 repo 参数。仓库要由项目管理员在 Plane「项目设置 → 关联代码仓库」登记过，没登记的仓库里除了 whoami 和规范类工具都用不了，这是正常的，不要想办法绕过，也不要填别的仓库地址来蒙混。
 4. 团队任务动手前先 search_lessons 查相关经验，结束后经用户同意用 propose_lesson 提交新经验，团队经验需要人审核才会生效。
 5. 状态“已完成”“已取消”只能由人设置；Agent 做完后用 update_task 改成“待审查”，同时在 comment 里写带证据的结论。
 6. 只写团队工作。个人笔记、密钥和个人信息不要写进来。
 7. 没有删除、成员管理、项目设置类工具，这些由人在网页上做；不再需要的内容由人在网页上归档。
-8. 这里的内容由 Agent 写、人来看：写法以人能一眼看懂、能核验为准，标题讲结论，结构清楚，证据写全。提交经验前先读 team://guide/lessons，只提值得沉淀的，宁缺毋滥。
-9. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_usage_guide（资源 team://guide/usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
+8. 这里的内容由 Agent 写、人来看：写法以人能一眼看懂、能核验为准，标题讲结论，结构清楚，证据写全。提交经验前先读 get_guide（topic=lessons），只提值得沉淀的，宁缺毋滥。
+9. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_guide（topic=usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
   },
 );
 
@@ -145,7 +145,7 @@ async function resolveTask(ref: string, mode: "read" | "write" = "read"): Promis
   if (!m) throw new Error(`任务编号格式是「项目标识-序号」，例如 DEMO-12，收到「${ref}」`);
   const project = await projectFor(m[1], mode);
   const item = await plane.getWorkItemByKey(`${project.identifier}-${m[2]}`).catch((e) => {
-    if (e instanceof PlaneError && e.status === 404) throw new Error(`找不到任务 ${project.identifier}-${m[2]}。可以用 list_tasks 或 search_tasks 查编号。`);
+    if (e instanceof PlaneError && e.status === 404) throw new Error(`找不到任务 ${project.identifier}-${m[2]}。可以用 list_tasks 查编号。`);
     throw e;
   });
   return { project, item, key: `${project.identifier}-${item.sequence_id}` };
@@ -322,25 +322,27 @@ server.registerResource("lesson-guide", "team://guide/lessons", { title: "哪些
 }));
 
 server.registerTool(
-  "get_usage_guide",
+  "get_guide",
   {
-    title: "读取产品使用指南",
+    title: "读取指南",
     description:
-      "返回任务、页面、周期、模块、视图、经验库的用途和什么时候用，以及哪些能通过 MCP 做、哪些要去网页做。用户问“怎么用”“该用哪个功能”，或者看起来不熟悉这个产品时，先读它再回答和引导。",
+      "按需读取指南，不要一次全读。writing=写作规范（第一次写入前读，传 type 附该类文档模板）；lessons=哪些内容该沉淀为经验（提交经验前读）；usage=任务、页面、周期、模块、视图怎么用（用户问怎么用或不熟悉产品时读）。",
+    inputSchema: {
+      topic: z.enum(["writing", "lessons", "usage"]),
+      type: z.enum(DOC_TYPES).optional().describe("topic=writing 时可选：文档类型，附上模板"),
+    },
     annotations: { readOnlyHint: true },
   },
-  async () => text(usageGuide(CONFIG.webUrl, CONFIG.workspace)),
-);
-
-server.registerTool(
-  "get_writing_guide",
-  {
-    title: "读取写作规范",
-    description: "返回团队写作规范；传 type 时附上该类文档的模板。写任何内容之前先读一遍。",
-    inputSchema: { type: z.enum(DOC_TYPES).optional().describe("文档类型") },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ type }) => text(type ? `${WRITING_GUIDE}\n\n${templateGuide(type)}` : WRITING_GUIDE),
+  async ({ topic, type }) =>
+    text(
+      topic === "lessons"
+        ? LESSON_GUIDE
+        : topic === "usage"
+          ? usageGuide(CONFIG.webUrl, CONFIG.workspace)
+          : type
+            ? `${WRITING_GUIDE}\n\n${templateGuide(type)}`
+            : WRITING_GUIDE,
+    ),
 );
 
 server.registerTool(
@@ -381,39 +383,12 @@ server.registerTool(
           ? `关联的是 ${unjoined.map((p) => p.identifier).join("、")}，但你还不是成员，请项目管理员在网页上把你加进项目`
           : `未关联。${notBoundMessage(sc, CONFIG.webUrl, local)}`;
       return text(
-        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nPlane：${CONFIG.webUrl}${local ? `（API ${CONFIG.baseUrl}）` : ""}\nteam-mcp：${VERSION}（${local ? "本机" : "远程"}）\n仓库：${sc.remotes.join("、") || "未提供"}\n团队项目：${repo}\n不熟悉怎么用？调用 get_usage_guide 看任务、页面、周期、模块、视图的用法。`,
+        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nPlane：${CONFIG.webUrl}${local ? `（API ${CONFIG.baseUrl}）` : ""}\nteam-mcp：${VERSION}（${local ? "本机" : "远程"}）\n仓库：${sc.remotes.join("、") || "未提供"}\n团队项目：${repo}\n不熟悉怎么用？调用 get_guide（topic=usage）看任务、页面、周期、模块、视图的用法。`,
       );
     }),
 );
 
-server.registerTool(
-  "list_members",
-  {
-    title: "列出项目成员",
-    description: "列出项目成员，指派任务时用。不传 project 时用当前仓库关联的项目。",
-    inputSchema: { project: z.string().optional() },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ project }) =>
-    run(async () => {
-      const p = await projectFor(project, "read");
-      const ms = await plane.listProjectMembers(p.id);
-      return text(`${p.identifier} 项目成员（${ms.length}）：\n${ms.map((m) => `- ${memberName(m)}`).join("\n")}`);
-    }),
-);
-
 // ---------- 项目 ----------
-
-server.registerTool(
-  "list_projects",
-  { title: "列出项目", description: "列出当前仓库关联的团队项目，以及全员共享的经验库和每日回顾。", annotations: { readOnlyHint: true } },
-  async () =>
-    run(async () => {
-      const { projects, shared } = await boundProjects();
-      const line = (p: Project) => `- ${p.identifier}：${p.name}${p.description ? `（${p.description}）` : ""}`;
-      return text(`当前仓库关联的项目：\n${projects.map(line).join("\n")}${shared.length ? `\n\n共享项目（只读，经验用 propose_lesson 提交）：\n${shared.map(line).join("\n")}` : ""}`);
-    }),
-);
 
 // ---------- 任务 ----------
 
@@ -628,24 +603,6 @@ server.registerTool(
     }),
 );
 
-server.registerTool(
-  "search_tasks",
-  {
-    title: "搜索任务",
-    description: "按关键词搜索当前仓库关联项目里的任务",
-    inputSchema: { query: z.string() },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ query }) =>
-    run(async () => {
-      const { projects } = await boundProjects();
-      const ids = new Set(projects.map((p) => p.id));
-      const r = await plane.searchWorkItems(query);
-      r.issues = r.issues.filter((i) => ids.has(i.project_id));
-      return text(r.issues.map((i) => `- ${i.project__identifier}-${i.sequence_id} ${i.name}`).join("\n") || "没有匹配的任务");
-    }),
-);
-
 // ---------- 文档 ----------
 
 server.registerTool(
@@ -688,7 +645,7 @@ server.registerTool(
   {
     title: "写文档",
     description:
-      "新建或整篇更新一篇文档。不传 doc_id 是新建，传了是更新（按段落做增量合并，正在网页上打开的人会实时看到）。正文必须符合对应 type 的模板，写之前先 get_writing_guide。",
+      "新建或整篇更新一篇文档。不传 doc_id 是新建，传了是更新（按段落做增量合并，正在网页上打开的人会实时看到）。正文必须符合对应 type 的模板，写之前先读 get_guide（topic=writing）。",
     inputSchema: {
       project: z.string().optional().describe("默认当前仓库关联的项目"),
       type: z.enum(DOC_TYPES).describe("文档类型，决定检查哪个模板"),
@@ -716,26 +673,6 @@ server.registerTool(
       return text(
         `${doc_id ? "已更新" : "已新建"}文档「${title}」（${d.id}）：${url}${d.live_editing ? "\n有人正在网页上编辑这篇文档，改动已实时合并。" : ""}${g.report ? `\n\n${g.report}` : ""}`,
       );
-    }),
-);
-
-server.registerTool(
-  "link_doc",
-  {
-    title: "关联文档",
-    description: "把已有文档关联到任务上（任务页的链接区会出现这篇文档）。任务交付时把设计、接口、复盘等文档都关联上。write_doc 传 task 时会自动关联，不用再调这个。",
-    inputSchema: { task: z.string(), project: z.string().optional().describe("文档所在项目，默认当前仓库关联的项目"), doc_id: z.string() },
-  },
-  async ({ task, project, doc_id }) =>
-    run(async () => {
-      const t = await resolveTask(task, "write");
-      const p = await projectFor(project, "read");
-      const d = await plane.getPage(p.id, doc_id);
-      const url = webUrl(`projects/${p.id}/pages/${d.id}`);
-      const links = await plane.listLinks(t.project.id, t.item.id).catch(() => []);
-      if (links.some((l) => l.url === url)) return text(`${t.key} 已经关联了「${d.name}」。`);
-      await plane.addLink(t.project.id, t.item.id, url, `文档：${d.name}`);
-      return text(`已把「${d.name}」关联到 ${t.key}。`);
     }),
 );
 
@@ -768,7 +705,7 @@ server.registerTool(
   {
     title: "提交经验",
     description:
-      "沉淀一条经验。先读资源 team://guide/lessons 判断值不值得提：要可复用、不明显、有代价、已验证；任务进展、能直接查到的事实、个人偏好、重复的都不要提。团队经验必须有来源（source_task 或 ## 来源），人靠它核验。scope=team 提交到团队经验库的“待审核”，由人在 Plane 上决定采纳或驳回；scope=private 只存在本机（仅本机 stdio 版可用，远程服务不支持）。提交前应先征得用户同意。",
+      "沉淀一条经验。先读 get_guide（topic=lessons）判断值不值得提：要可复用、不明显、有代价、已验证；任务进展、能直接查到的事实、个人偏好、重复的都不要提。团队经验必须有来源（source_task 或 ## 来源），人靠它核验。scope=team 提交到团队经验库的“待审核”，由人在 Plane 上决定采纳或驳回；scope=private 只存在本机（仅本机 stdio 版可用，远程服务不支持）。提交前应先征得用户同意。",
     inputSchema: {
       title: z.string().describe("一句话说清经验，例如“Django 迁移里不要直接 import 模型”"),
       markdown: z.string().describe("按经验模板：## 场景、## 做法，可选 ## 原因、## 来源"),

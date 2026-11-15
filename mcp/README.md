@@ -8,10 +8,10 @@
 
 | 分类 | 工具 |
 |---|---|
-| 规范 | `get_writing_guide`、`check_text`、`analyze_tone`；资源 `team://guide/writing`、`team://templates/<type>`、`team://skills/less-ai-tone`；提示词 `team-write`、`less-ai-tone` |
-| 账号与项目 | `whoami`、`list_projects`、`list_members` |
-| 任务 | `list_tasks`、`search_tasks`、`get_task`、`create_task`、`update_task`、`comment_task`（支持指派 `assignees` 和子任务 `parent`） |
-| 文档 | `list_docs`、`read_doc`、`write_doc`、`link_doc` |
+| 规范 | `get_guide`、`check_text`、`analyze_tone`；资源 `team://guide/writing`、`team://templates/<type>`、`team://skills/less-ai-tone`；提示词 `team-write`、`less-ai-tone` |
+| 账号与仓库 | `whoami` |
+| 任务 | `list_tasks`、`get_task`、`create_task`、`update_task`、`comment_task`（支持指派 `assignees` 和子任务 `parent`） |
+| 文档 | `list_docs`、`read_doc`、`write_doc` |
 | 经验 | `search_lessons`、`propose_lesson` |
 | 回顾 | `review_digest`（`publish: true` 写成你当天的个人回顾） |
 
@@ -58,7 +58,7 @@ claude mcp add --transport http team http://<地址>/mcp/<工作区> --header "A
 ## 仓库绑定和隐私
 
 - 项目管理员在 Plane「项目设置 → 关联代码仓库」登记仓库地址（https、git@ 写法都行，会统一成 `github.com/org/repo`）。Agent 每次调用工具都带上 `repo` 参数（`git remote get-url origin` 的输出，指令里已写明），和项目登记的地址对上才能读写这个项目；这是防止误写的闸门，不是安全边界，权限始终以 Plane 里的项目成员为准。一个仓库可以关联多个项目，此时调用要带 `project`。
-- 没对上的目录（个人项目、私人文件夹、不是 git 仓库的地方）里只能用 `whoami`、`get_writing_guide`、`check_text`、`analyze_tone`（直接传正文时），读写 Plane 的工具都拒绝。这样个人内容写不进来，团队数据也不会在别的仓库里被读出去。
+- 没对上的目录（个人项目、私人文件夹、不是 git 仓库的地方）里只能用 `whoami`、`get_guide`、`check_text`、`analyze_tone`（直接传正文时），读写 Plane 的工具都拒绝。这样个人内容写不进来，团队数据也不会在别的仓库里被读出去。
 - 登记只能由人在网页上做：Agent 的 API Token 不能改项目设置、不能管理成员、不能删除任何东西（服务端拦截，管理员的 Token 也一样）。
 - 经验库（`LESSON`）和每日回顾（`REVIEW`）是全员共享项目，工作区的管理员和成员会被自动加入。在任一团队仓库里都能检索经验、提交经验。
 - 写入内容会查密钥（API Key、Token、私钥、明文密码）、个人信息（手机号、身份证号）、指向本机的图片和文件，命中就拒绝；本机绝对路径和疑似银行卡号只提示。
@@ -69,7 +69,7 @@ claude mcp add --transport http team http://<地址>/mcp/<工作区> --header "A
 - 任务状态：待办 → 待开始 → 进行中 → 待审查 → 已完成，另有阻塞、待决定、已取消。
 - 「已完成」「已取消」只能由人在网页上设置；Agent 做完用 `update_task` 改成「待审查」，同时在 `comment` 里写带证据的结论（改成「阻塞」「待决定」时同样必须写说明）。
 - 没有删除、成员管理和项目设置类工具。Plane 网页上只有工作区管理员能删除，其他人只能归档；已完成、已取消的任务 1 个月后自动归档。
-- 交付文档用 `write_doc` 的 `task` 参数或 `link_doc` 关联到任务，任务页的链接区能看到。
+- 交付文档用 `write_doc` 的 `task` 参数关联到任务，任务页的链接区能看到。
 - 评论署名自动填为「角色 · 账号 的 客户端」，Agent 只能传角色。
 - 团队经验由 Agent 提交到「待审核」，人在 Plane 上改成「已采纳」后才会被 `search_lessons` 检索到。
 

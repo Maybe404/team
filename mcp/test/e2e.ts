@@ -142,10 +142,10 @@ let docId = "";
 
 await step("工具、资源、提示词都已注册", async () => {
   const tools = (await client.listTools()).tools.map((t) => t.name);
-  for (const t of ["create_task", "write_doc", "propose_lesson", "search_lessons", "review_digest", "check_text", "analyze_tone", "whoami", "list_members"]) {
+  for (const t of ["create_task", "write_doc", "propose_lesson", "search_lessons", "review_digest", "check_text", "analyze_tone", "whoami", "get_guide"]) {
     expect(tools.includes(t), `缺少工具 ${t}`);
   }
-  for (const t of ["bind_repo", "setup_project", "invite_member", "add_project_member"]) expect(!tools.includes(t), `不该有工具 ${t}`);
+  for (const t of ["bind_repo", "setup_project", "invite_member", "add_project_member", "list_members", "list_projects", "search_tasks", "link_doc", "get_writing_guide", "get_usage_guide"]) expect(!tools.includes(t), `不该有工具 ${t}`);
   const res = await client.readResource({ uri: "team://guide/writing" });
   expect(String((res.contents[0] as { text: string }).text).includes("团队写作规范"), "写作规范资源为空");
   const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
@@ -160,8 +160,10 @@ await step("不是 git 仓库时只能用 whoami 和规范类工具", async () =
   expect(!who.isError && who.text.includes("未关联") && who.text.includes(secrets.SEED_EMAIL), who.text);
   const list = await call("list_tasks", { project: "DEMO" });
   expect(list.isError && list.text.includes("不是 git 仓库"), list.text);
-  const guide = await call("get_writing_guide", {});
-  expect(!guide.isError, guide.text);
+  const guide = await call("get_guide", { topic: "writing" });
+  expect(!guide.isError && guide.text.includes("团队写作规范"), guide.text);
+  const les = await call("get_guide", { topic: "lessons" });
+  expect(les.text.includes("哪些内容该沉淀"), les.text);
 });
 
 await step("管理员建项目：默认就是团队工作流和自动归档", async () => {
@@ -256,15 +258,11 @@ from plane.db.models import Project, ProjectMember, User
 p = Project.objects.get(identifier="${PROJECT}", workspace__slug="${secrets.PLANE_WORKSPACE}")
 ProjectMember.objects.create(project=p, member=User.objects.get(email="bob@team.test"), role=15)
 `);
-  const members = await call("list_members", {});
-  expect(members.text.includes("bob"), members.text);
   const after = await bob("list_tasks", {});
   expect(!after.isError && after.text.includes(taskKey), after.text);
 });
 
 await step("成员自动进入经验库和每日回顾，经验库是审核状态", async () => {
-  const ls = await bob("list_projects", {});
-  expect(ls.text.includes("LESSON") && ls.text.includes(PROJECT), ls.text);
   const out = django(`
 from plane.db.models import Project, ProjectMember, State
 p = Project.objects.get(identifier="LESSON", workspace__slug="${secrets.PLANE_WORKSPACE}")
@@ -353,8 +351,6 @@ await step("改成待审查必须附带证据的结论，并关联交付文档",
     comment: "分页改成游标实现，第二页不再重复。\n\n跑了 `pnpm test order`，18 个用例通过。",
   });
   expect(!r.isError && r.text.includes("待审查") && r.text.includes("结论"), r.text);
-  const again = await call("link_doc", { task: taskKey, project: PROJECT, doc_id: docId });
-  expect(again.text.includes("已经关联"), again.text);
   const t = await call("get_task", { task: taskKey });
   expect(t.text.includes("## 链接") && t.text.includes("订单分页方案") && t.text.includes("状态：待审查"), t.text);
 });

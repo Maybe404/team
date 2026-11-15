@@ -95,7 +95,7 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 - 项目关联仓库：`Project.team_repos`（迁移 `0126`），网页 `apps/web/components/project/settings/team-repos.tsx`；建项目默认用团队工作流状态、自动归档 1 个月
 - Agent Token 限权：API Token 请求不能 DELETE、不能管理成员和邀请、不能改项目设置（`team_delete_guard.py`）
 - 全员共享项目：经验库（审核状态）和每日回顾自动收录工作区管理员和成员，`plane/apps/api/plane/utils/team_shared.py`
-- 使用指南 `mcp/src/usage.ts`（工具 get_usage_guide、资源 team://guide/usage）：改了工具能力要同步它
+- 使用指南 `mcp/src/usage.ts`（工具 get_guide topic=usage、资源 team://guide/usage）：改了工具能力要同步它
 - 团队 MCP 是服务器上的 HTTP 服务（`mcp/src/http.ts`，compose 里的 `team-mcp`），Caddy 把 `/mcp/*` 转给它（`Caddyfile.ce`）；API Tokens 页显示添加命令（`apps/web/components/api-token/team-mcp-install.tsx`）
 - 文档公开链接：`TeamPageShare`（迁移 `0127`），管理接口 `app/views/page/team_share.py`，公开接口 `space/views/team_page.py`（服务端白名单清洗 HTML），公开页 `apps/space/app/team-pages/`。没有复用 Plane 的 DeployBoard，因为公开接口按 anchor 查它时不分类型，会连带暴露整个项目
 

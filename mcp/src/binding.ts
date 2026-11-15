@@ -55,8 +55,8 @@ export function notBoundMessage(scope: RepoScope, webUrl: string, local = true):
     const how = local
       ? `当前目录（${scope.dirs.join("、")}）不是 git 仓库或没有 remote`
       : "没有收到 repo 参数。在 git 仓库里运行 `git remote get-url origin`，把输出填到工具的 repo 参数再调一次（每次调用都要带）；如果当前目录不是 git 仓库或没有 remote";
-    return `${how}，就不属于任何团队项目。为了避免把个人内容写进团队空间，也避免在团队外读到团队数据，这里只能用 whoami、get_writing_guide、check_text。`;
+    return `${how}，就不属于任何团队项目。为了避免把个人内容写进团队空间，也避免在团队外读到团队数据，这里只能用 whoami、get_guide、check_text。`;
   }
-  return `当前仓库（${scope.remotes.join("、")}）没有登记到任何团队项目，这里只能用 whoami、get_writing_guide、check_text。
+  return `当前仓库（${scope.remotes.join("、")}）没有登记到任何团队项目，这里只能用 whoami、get_guide、check_text。
 如果这确实是团队项目，请项目管理员在 ${webUrl} 的「项目设置 → 关联代码仓库」里填上这个仓库地址，不需要改本地任何文件。`;
 }

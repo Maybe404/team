@@ -20,12 +20,12 @@ export function usageGuide(webUrl: string, workspace: string): string {
 一件具体要做的事，有编号（如 ABC-12）、状态、负责人、优先级、子任务、评论。
 - 状态流转：待办 → 待开始 → 进行中 → 待审查 → 已完成；另有阻塞、待决定、已取消。
 - 「已完成」「已取消」只能由人在网页上设置；Agent 做完改成「待审查」并在评论里写带证据的结论。
-- MCP 能做：查、建、改、评论、挂子任务、指派（create_task、update_task、comment_task、list_tasks、search_tasks、get_task）。
+- MCP 能做：查、建、改、评论、挂子任务、指派（create_task、update_task、comment_task、list_tasks、get_task）。
 
 ## 页面（文档）
 
 设计方案、会议纪要、复盘这类要长期留存的文字，放在项目的「页面」里。任务讲“做什么”，页面讲“为什么这么做”。
-- MCP 能做：写、读、整篇更新、关联到任务（write_doc、read_doc、list_docs、link_doc），写入前会按规范检查。
+- MCP 能做：写、读、整篇更新、写入时用 task 参数关联到任务（write_doc、read_doc、list_docs），写入前会按规范检查。
 - 想让团队外的人读：管理员在页面右上角「…」→「公开链接」打开，生成免登录只读链接，关掉就失效。这个只能在网页上做。
 
 ## 周期（Cycle）
@@ -48,7 +48,7 @@ export function usageGuide(webUrl: string, workspace: string): string {
 
 ## 经验库
 
-做完任务后沉淀下来的做法和教训。不是什么都往里放：要可复用、不明显、有代价、已验证，详细标准读资源 team://guide/lessons。Agent 用 propose_lesson 提交，状态是「待审核」，人在网页上改成「已采纳」后才会被检索到。动手前先 search_lessons。
+做完任务后沉淀下来的做法和教训。不是什么都往里放：要可复用、不明显、有代价、已验证，详细标准调用 get_guide（topic=lessons）。Agent 用 propose_lesson 提交，状态是「待审核」，人在网页上改成「已采纳」后才会被检索到。动手前先 search_lessons。
 
 ## 每日回顾
 

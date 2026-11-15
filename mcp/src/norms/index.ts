@@ -26,7 +26,7 @@ export function formatGate(result: GateResult): string {
     `- [${i.rule}]${i.line ? ` 第 ${i.line} 行` : ""}${i.excerpt ? ` 「${i.excerpt}」` : ""}：${i.message}`;
   const parts: string[] = [];
   if (result.errors.length) parts.push(`未通过规范检查，没有写入。请按下面逐条修改后重新提交：\n${result.errors.map(fmt).join("\n")}`);
-  if (result.warnings.length) parts.push(`建议修改：\n${result.warnings.map(fmt).join("\n")}`);
+  if (result.warnings.length) parts.push(`建议修改（按去 AI 味等规则，请逐条处理；内容已经写入的，处理后再更新一次）：\n${result.warnings.map(fmt).join("\n")}`);
   return parts.join("\n\n");
 }
 
