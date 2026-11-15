@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanDeleteContent } from "@/hooks/use-can-delete-content";
 import { observer } from "mobx-react";
 
 import { useTranslation } from "@plane/i18n";
@@ -33,6 +34,8 @@ type TIssueAttachmentsListItem = {
 };
 
 export const IssueAttachmentsListItem = observer(function IssueAttachmentsListItem(props: TIssueAttachmentsListItem) {
+  // [team 二开] 只有工作区管理员能删除
+  const canDeleteContent = useCanDeleteContent();
   const { t } = useTranslation();
   // props
   const { attachmentId, disabled, issueServiceType = EIssueServiceType.ISSUES } = props;
@@ -102,6 +105,7 @@ export const IssueAttachmentsListItem = observer(function IssueAttachmentsListIt
                 if (e.key === "Enter" || e.key === " ") e.stopPropagation();
               }}
             >
+              {canDeleteContent && (
               <Menu>
                 {/* Icon-only trigger, so it needs an explicit accessible name. */}
                 <MenuTrigger
@@ -125,6 +129,7 @@ export const IssueAttachmentsListItem = observer(function IssueAttachmentsListIt
                   />
                 </MenuContent>
               </Menu>
+              )}
             </div>
           </div>
         </div>

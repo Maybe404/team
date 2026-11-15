@@ -39,7 +39,7 @@ import { NameDescriptionUpdateStatus } from "@/components/issues/issue-update-st
 // hooks
 import { useProject } from "@/hooks/store/use-project";
 import { useProjectInbox } from "@/hooks/store/use-project-inbox";
-import { useUser, useUserPermissions } from "@/hooks/store/user";
+import { useUserPermissions } from "@/hooks/store/user";
 import { useAppRouter } from "@/hooks/use-app-router";
 // store
 import type { IInboxIssueStore } from "@/store/inbox/inbox-issue.store";
@@ -81,7 +81,6 @@ export const InboxIssueActionsHeader = observer(function InboxIssueActionsHeader
   const [deleteIssueModal, setDeleteIssueModal] = useState(false);
   // store
   const { currentTab, deleteInboxIssue, filteredInboxIssueIds } = useProjectInbox();
-  const { data: currentUser } = useUser();
   const { allowPermissions } = useUserPermissions();
   const { getPartialProjectById } = useProject();
   const currentProjectDetails = getPartialProjectById(projectId);
@@ -102,9 +101,8 @@ export const InboxIssueActionsHeader = observer(function InboxIssueActionsHeader
   const canMarkAsAccepted = isAllowed && (inboxIssue?.status === 0 || inboxIssue?.status === -2);
   const canMarkAsDeclined = isAllowed && (inboxIssue?.status === 0 || inboxIssue?.status === -2);
   // can delete only if admin or is creator of the issue
-  const canDelete =
-    allowPermissions([EUserPermissions.ADMIN], EUserPermissionsLevel.PROJECT, workspaceSlug, projectId) ||
-    issue?.created_by === currentUser?.id;
+  // [team 二开] 只有工作区管理员能删除
+  const canDelete = allowPermissions([EUserPermissions.ADMIN], EUserPermissionsLevel.WORKSPACE);
   const isProjectAdmin = allowPermissions(
     [EUserPermissions.ADMIN],
     EUserPermissionsLevel.PROJECT,

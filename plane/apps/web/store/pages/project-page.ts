@@ -148,8 +148,10 @@ export class ProjectPage extends BasePage implements TProjectPage {
    * @description returns true if the current logged in user can delete the page
    */
   get canCurrentUserDeletePage() {
-    const highestRole = this.getHighestRoleAcrossProjects();
-    return this.isCurrentUserOwner || highestRole === EUserPermissions.ADMIN;
+    // [team 二开] 只有工作区管理员能删除文档，其他人只能归档
+    const { workspaceSlug } = this.rootStore.router;
+    if (!workspaceSlug) return false;
+    return this.rootStore.user.permission.getWorkspaceRoleByWorkspaceSlug(workspaceSlug.toString()) === EUserPermissions.ADMIN;
   }
 
   /**

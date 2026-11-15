@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanDeleteContent } from "@/hooks/use-can-delete-content";
 import { DeleteOutline, EditOutline, NewTabOutline } from "@makeplane/propel/icons";
 import { setToast } from "@plane/blocks/toast";
 import { Tooltip } from "@makeplane/propel/components/tooltip";
@@ -22,6 +23,8 @@ export type TIssueLinkDetail = {
 };
 
 export function IssueLinkDetail(props: TIssueLinkDetail) {
+  // [team 二开] 只有工作区管理员能删除
+  const canDeleteContent = useCanDeleteContent();
   // props
   const { linkId, linkOperations, isNotAllowed } = props;
   // hooks
@@ -94,6 +97,7 @@ export function IssueLinkDetail(props: TIssueLinkDetail) {
               >
                 <NewTabOutline className="h-3 w-3 text-secondary" />
               </a>
+              {canDeleteContent && (
               <button
                 type="button"
                 className="flex items-center justify-center p-1 hover:bg-layer-1"
@@ -105,6 +109,7 @@ export function IssueLinkDetail(props: TIssueLinkDetail) {
               >
                 <DeleteOutline className="h-3 w-3" />
               </button>
+              )}
             </div>
           )}
         </div>

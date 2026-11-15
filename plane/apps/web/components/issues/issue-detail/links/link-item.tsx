@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanDeleteContent } from "@/hooks/use-can-delete-content";
 import { useState } from "react";
 import { observer } from "mobx-react";
 
@@ -43,6 +44,8 @@ type TIssueLinkItem = {
 };
 
 export const IssueLinkItem = observer(function IssueLinkItem(props: TIssueLinkItem) {
+  // [team 二开] 只有工作区管理员能删除
+  const canDeleteContent = useCanDeleteContent();
   // props
   const { linkId, linkOperations, isNotAllowed, issueServiceType = EIssueServiceType.ISSUES } = props;
   // hooks
@@ -127,6 +130,7 @@ export const IssueLinkItem = observer(function IssueLinkItem(props: TIssueLinkIt
                   toggleIssueLinkModal(true);
                 }}
               />
+              {canDeleteContent && (
               <MenuItem
                 icon={<Icon icon={DeleteOutline} />}
                 label={t("common.actions.delete")}
@@ -134,6 +138,7 @@ export const IssueLinkItem = observer(function IssueLinkItem(props: TIssueLinkIt
                   void linkOperations.remove(linkDetail.id);
                 }}
               />
+              )}
             </MenuContent>
           </Menu>
         </div>

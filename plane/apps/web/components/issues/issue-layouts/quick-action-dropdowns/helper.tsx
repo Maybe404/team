@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanDeleteContent } from "@/hooks/use-can-delete-content";
 import { useMemo } from "react";
 import {
   ArchiveOutline,
@@ -175,6 +176,7 @@ export const useIssueActionHandlers = (props: MenuItemFactoryProps) => {
 };
 
 export const useMenuItemFactory = (props: MenuItemFactoryProps) => {
+  const canDeleteContent = useCanDeleteContent();
   const { t } = useTranslation();
   const actionHandlers = useIssueActionHandlers(props);
 
@@ -283,7 +285,8 @@ export const useMenuItemFactory = (props: MenuItemFactoryProps) => {
     action: () => {
       setDeleteIssueModal(true);
     },
-    shouldRender: isDeletingAllowed,
+    // [team 二开] 非管理员不显示删除
+    shouldRender: isDeletingAllowed && canDeleteContent,
   });
 
   return {

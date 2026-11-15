@@ -30,6 +30,9 @@ from plane.utils.paginator import BasePaginator
 from plane.authentication.session import BaseSessionAuthentication
 
 
+from plane.utils.team_delete_guard import enforce_delete_policy
+
+
 class TimezoneMixin:
     """
     This enables timezone conversion according
@@ -42,6 +45,8 @@ class TimezoneMixin:
             timezone.activate(zoneinfo.ZoneInfo(request.user.user_timezone))
         else:
             timezone.deactivate()
+        # [team 二开] 非管理员不能删除共享内容
+        enforce_delete_policy(self, request, kwargs)
 
 
 class DeployBoardAnchorMixin:

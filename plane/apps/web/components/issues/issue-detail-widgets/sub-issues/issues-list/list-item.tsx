@@ -31,6 +31,7 @@ import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import useIssuePeekOverviewRedirection from "@/hooks/use-issue-peek-overview-redirection";
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { useCanDeleteContent } from "@/hooks/use-can-delete-content";
 // components
 import { IssueIdentifier } from "@/components/issues/issue-detail/issue-identifier";
 // local components
@@ -70,6 +71,7 @@ export const SubIssuesListItem = observer(function SubIssuesListItem(props: Prop
     storeType = EIssuesStoreType.PROJECT,
   } = props;
   const { t } = useTranslation();
+  const canDeleteContent = useCanDeleteContent();
   const {
     issue: { getIssueById },
     subIssues: {
@@ -252,7 +254,8 @@ export const SubIssuesListItem = observer(function SubIssuesListItem(props: Prop
                       }}
                     />
                   )}
-                  {canEdit && (
+                  {/* [team 二开] 只有管理员能删除 */}
+                  {canEdit && canDeleteContent && (
                     <MenuItem
                       icon={<Icon icon={DeleteOutline} />}
                       label={t("issue.delete.label")}

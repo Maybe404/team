@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanDeleteContent } from "@/hooks/use-can-delete-content";
 import { useState } from "react";
 import { observer } from "mobx-react";
 import Link from "next/link";
@@ -24,6 +25,8 @@ import { CreateUpdateWorkspaceViewModal } from "./modal";
 type Props = { viewId: string };
 
 export const GlobalViewListItem = observer(function GlobalViewListItem(props: Props) {
+  // [team 二开] 只有工作区管理员能删除
+  const canDeleteContent = useCanDeleteContent();
   const { viewId } = props;
   // states
   const [updateViewModal, setUpdateViewModal] = useState(false);
@@ -88,11 +91,13 @@ export const GlobalViewListItem = observer(function GlobalViewListItem(props: Pr
                         label="Edit View"
                         onClick={() => setUpdateViewModal(true)}
                       />
+                      {canDeleteContent && (
                       <MenuItem
                         icon={<Icon icon={DeleteOutline} />}
                         label="Delete View"
                         onClick={() => setDeleteViewModal(true)}
                       />
+                      )}
                     </MenuContent>
                   </Menu>
                 </div>

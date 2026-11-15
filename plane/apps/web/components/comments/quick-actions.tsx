@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanDeleteContent } from "@/hooks/use-can-delete-content";
 import { useMemo } from "react";
 import { observer } from "mobx-react";
 import {
@@ -38,10 +39,12 @@ export const CommentQuickActions = observer(function CommentQuickActions(props: 
   const { activityOperations, comment, setEditMode, showAccessSpecifier, showCopyLinkOption } = props;
   // store hooks
   const { data: currentUser } = useUser();
+  const canDeleteContent = useCanDeleteContent();
   // derived values
   const isAuthor = currentUser?.id === comment.actor;
   const canEdit = isAuthor;
-  const canDelete = isAuthor;
+  // [team 二开] 只有管理员能删评论
+  const canDelete = isAuthor && canDeleteContent;
   // translation
   const { t } = useTranslation();
 

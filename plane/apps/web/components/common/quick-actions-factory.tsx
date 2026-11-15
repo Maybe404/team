@@ -13,6 +13,7 @@ import {
   RestoreOutline,
 } from "@makeplane/propel/icons";
 import { useTranslation } from "@plane/i18n";
+import { useCanDeleteContent } from "@/hooks/use-can-delete-content";
 import type { TContextMenuItem } from "@plane/blocks/context-menu";
 
 /**
@@ -20,6 +21,8 @@ import type { TContextMenuItem } from "@plane/blocks/context-menu";
  */
 export const useQuickActionsFactory = () => {
   const { t } = useTranslation();
+  // [team 二开] 非管理员不显示删除
+  const canDeleteContent = useCanDeleteContent();
 
   return {
     // Common menu items
@@ -71,7 +74,7 @@ export const useQuickActionsFactory = () => {
       title: t("delete"),
       icon: DeleteOutline,
       action: handler,
-      shouldRender,
+      shouldRender: shouldRender && canDeleteContent,
     }),
 
     // Layout-level actions (for work item list views)
