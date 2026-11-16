@@ -152,9 +152,10 @@ class UserProjectInvitationsViewset(BaseViewSet):
         projects = Project.objects.filter(id__in=project_ids, workspace__slug=slug).only("id", "network")
         # Check if user has permission to join each project
         for project in projects:
-            if project.network == ProjectNetwork.SECRET.value and workspace_member.role != ROLE.ADMIN.value:
+            # [team 二开] 私有项目任何人（含工作区管理员）都不能自己加入，只能由项目管理员邀请
+            if project.network == ProjectNetwork.SECRET.value:
                 return Response(
-                    {"error": "Only workspace admins can join private project"},
+                    {"error": "私有项目不能自己加入，请联系项目管理员邀请你"},
                     status=status.HTTP_403_FORBIDDEN,
                 )
 

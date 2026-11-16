@@ -119,7 +119,7 @@ class ProjectViewSet(BaseViewSet):
             member=request.user,
             workspace__slug=slug,
             is_active=True,
-            role=ROLE.MEMBER.value,
+            role__in=[ROLE.ADMIN.value, ROLE.MEMBER.value],  # [team 二开] 工作区管理员也看不到自己不在其中的私有项目
         ).exists():
             projects = projects.filter(
                 Q(
@@ -215,7 +215,7 @@ class ProjectViewSet(BaseViewSet):
             member=request.user,
             workspace__slug=slug,
             is_active=True,
-            role=ROLE.MEMBER.value,
+            role__in=[ROLE.ADMIN.value, ROLE.MEMBER.value],  # [team 二开] 工作区管理员也看不到自己不在其中的私有项目
         ).exists():
             projects = projects.filter(
                 Q(
