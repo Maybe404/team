@@ -1,5 +1,5 @@
 // team-mcp：团队协作 MCP 的服务定义（stdio 和 HTTP 两种入口共用）。
-// 任务和文档存在 Plane，经验库存在 Plane 的经验库项目（私人经验在本机），
+// 任务和文档存在织机，经验库存在织机的经验库项目（私人经验在本机），
 // 所有写入都要先过规范闸门（norms），不合规的会被退回给调用方 Agent 修改。
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { z } from "zod";
 import { formatLessons, GENERAL, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
 import { htmlToMd, mdToHtml } from "./markdown.ts";
 import { COMMENT_KINDS, formatGate, gate, LESSON_GUIDE, SELF_CHECK, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
-import { Plane, PlaneError, type Member, type Project, type WorkItem } from "./plane.ts";
+import { 织机, PlaneError, type Member, type Project, type WorkItem } from "./plane.ts";
 import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
 import { buildDigest, publishDigest } from "./review.ts";
 import { usageGuide } from "./usage.ts";
@@ -21,7 +21,7 @@ export const VERSION = (JSON.parse(readFileSync(join(import.meta.dirname, "..", 
 
 export type Env = {
   config: Config;
-  plane: Plane;
+  plane: 织机;
   /** true：本机 stdio 进程，能读本地目录的 git remote；false：远程 HTTP 服务，靠调用方传 repo 参数 */
   local: boolean;
   /** 远程无状态服务拿不到 initialize 里的客户端名，用 User-Agent 的产品名代替（如 claude-code） */
@@ -42,7 +42,7 @@ function setupGuide(reason: string) {
   const web = CONFIG.webUrl.replace(/\/$/, "");
   return `${reason}
 
-首次使用按下面做（每个人用自己的账号和 Token，Plane 上的操作会记在你名下）：
+首次使用按下面做（每个人用自己的账号和 Token，织机上的操作会记在你名下）：
 1. 请管理员在 ${web} 的工作区设置里邀请你的邮箱，你用这个邮箱注册并接受邀请。
 2. 打开 ${web}/settings/profile/api-tokens 新建一个 API Token，页面上会显示带好 Token 的添加命令。
 3. 在终端执行那条命令（或在 Agent 的 MCP 设置里按页面上的字段手动添加），然后重启 Agent。
@@ -57,7 +57,7 @@ const server = new McpServer(
 规则：
 1. 第一次写入前读一次规范（get_guide topic=writing），同一次对话里读过就不用再读；不合规的写入会被退回并说明原因。
 2. 去 AI 味：页面、任务描述、评论、经验这四类写入，落笔前都要按「去 AI 味」的规则写，写完先用 check_text 预检，按提示改；整篇 500 汉字以上的页面再用 analyze_tone 出整篇报告，按报告改写后再写入。写入时服务端还会再检查一遍，被退回时逐条改完重交，不要换个说法绕过检查。
-3. 只在团队项目的仓库里工作时使用。每次调用工具都要把当前仓库的 git remote 地址（git remote get-url origin 的输出）填进 repo 参数。仓库要由项目管理员在 Plane「项目设置 → 关联代码仓库」登记过，没登记的仓库里除了 whoami 和规范类工具都用不了，这是正常的，不要想办法绕过，也不要填别的仓库地址来蒙混。
+3. 只在团队项目的仓库里工作时使用。每次调用工具都要把当前仓库的 git remote 地址（git remote get-url origin 的输出）填进 repo 参数。仓库要由项目管理员在织机「项目设置 → 关联代码仓库」登记过，没登记的仓库里除了 whoami 和规范类工具都用不了，这是正常的，不要想办法绕过，也不要填别的仓库地址来蒙混。
 4. 团队任务动手前先 search_lessons 查相关经验，结束后经用户同意用 propose_lesson 提交新经验，团队经验需要人审核才会生效。
 5. 状态“已完成”“已取消”只能由人设置；Agent 做完后用 update_task 改成“待审查”，同时在 comment 里写带证据的结论。
 6. 只写团队工作。个人笔记、密钥和个人信息不要写进来。
@@ -94,13 +94,13 @@ async function run(fn: () => Promise<ReturnType<typeof text>>) {
     return await fn();
   } catch (e) {
     if (e instanceof PlaneError && (e.status === 401 || /token is not valid|credentials were not provided/i.test(e.body)))
-      return fail(setupGuide("Plane 拒绝了这个 API Token（401），可能已被删除或填错。"));
+      return fail(setupGuide("织机拒绝了这个 API Token（401），可能已被删除或填错。"));
     if (e instanceof PlaneError && e.status === 403 && /只能评论|只能阅读|建立关联/.test(e.body)) {
       const m = e.body.match(/"(?:detail|error)"\s*:\s*"([^"]+)"/);
       return fail(`${m?.[1] ?? "没有权限"}\n想改别人的内容，可以用 comment_task 评论，提出修改建议。`);
     }
     if (e instanceof PlaneError && e.status === 403) return fail(`没有权限：${e.path}。${/API Token/.test(e.body) ? "Agent 不能做这类操作，请由人在网页上完成。" : "这个操作需要更高的项目角色，请找项目管理员。"}`);
-    if (e instanceof TypeError && /fetch failed/.test(e.message)) return fail(`连不上 Plane（${CONFIG.baseUrl}）。确认服务已启动、PLANE_BASE_URL 正确。`);
+    if (e instanceof TypeError && /fetch failed/.test(e.message)) return fail(`连不上织机（${CONFIG.baseUrl}）。确认服务已启动、PLANE_BASE_URL 正确。`);
     if (e instanceof NotBound) return fail(e.message);
     return fail(e instanceof Error ? e.message : String(e));
   }
@@ -276,7 +276,7 @@ server.registerPrompt(
   {
     title: "去 AI 味（成稿清理）",
     description: "按 lieflat-less-ai-tone 的流程：先检测出报告，等用户回复后再改写",
-    argsSchema: { doc: z.string().describe("要清理的文档：Plane 文档 ID，或直接贴正文") },
+    argsSchema: { doc: z.string().describe("要清理的文档：织机文档 ID，或直接贴正文") },
   },
   ({ doc }) => ({
     messages: [
@@ -299,8 +299,8 @@ server.registerTool(
       "对一篇长文（≥500 汉字）跑 less-ai-tone 的整篇检测，返回分级报告（A/B/C/F/X）。用于成稿清理，配合提示词 less-ai-tone 使用。短文本的逐句检查已经内置在所有写入工具里。",
     inputSchema: {
       markdown: z.string().optional().describe("正文"),
-      project: z.string().optional().describe("读取 Plane 文档时的项目，默认当前仓库关联的项目"),
-      doc_id: z.string().optional().describe("读取 Plane 文档时的文档 ID"),
+      project: z.string().optional().describe("读取织机文档时的项目，默认当前仓库关联的项目"),
+      doc_id: z.string().optional().describe("读取织机文档时的文档 ID"),
     },
     annotations: { readOnlyHint: true },
   },
@@ -379,7 +379,7 @@ server.registerTool(
   "whoami",
   {
     title: "当前账号和仓库",
-    description: "确认 team-mcp 连的是哪个 Plane、以哪个账号操作，以及当前仓库关联了哪些团队项目。首次使用或报错时先调用它。",
+    description: "确认 team-mcp 连的是哪个织机、以哪个账号操作，以及当前仓库关联了哪些团队项目。首次使用或报错时先调用它。",
     annotations: { readOnlyHint: true },
   },
   async () =>
@@ -622,7 +622,7 @@ server.registerTool(
   "list_docs",
   {
     title: "列出文档",
-    description: "列出项目里的文档（Plane Page），可按关键词搜索标题和正文",
+    description: "列出项目里的文档（织机 Page），可按关键词搜索标题和正文",
     inputSchema: { project: z.string().optional().describe("默认当前仓库关联的项目"), search: z.string().optional() },
     annotations: { readOnlyHint: true },
   },
@@ -748,7 +748,7 @@ server.registerTool(
   {
     title: "提交经验",
     description:
-      "沉淀一条经验。先读 get_guide（topic=lessons）判断值不值得提：要可复用、不明显、有代价、已验证；任务进展、能直接查到的事实、个人偏好、重复的都不要提。团队经验必须有来源（source_task 或 ## 来源），人靠它核验。scope=team 提交到团队经验库的“待审核”，由人在 Plane 上决定采纳或驳回；scope=private 只存在本机（仅本机 stdio 版可用，远程服务不支持）。提交前应先征得用户同意。",
+      "沉淀一条经验。先读 get_guide（topic=lessons）判断值不值得提：要可复用、不明显、有代价、已验证；任务进展、能直接查到的事实、个人偏好、重复的都不要提。团队经验必须有来源（source_task 或 ## 来源），人靠它核验。scope=team 提交到团队经验库的“待审核”，由人在织机上决定采纳或驳回；scope=private 只存在本机（仅本机 stdio 版可用，远程服务不支持）。提交前应先征得用户同意。",
     inputSchema: {
       title: z.string().describe("一句话说清经验，例如“Django 迁移里不要直接 import 模型”"),
       markdown: z.string().describe("按经验模板：## 场景、## 做法，可选 ## 原因、## 来源"),
@@ -787,7 +787,7 @@ server.registerTool(
       const similar = (await searchLessons(plane, title, tags, { includePending: true, skipPrivate: true })).filter((l) => l.scope === "team").slice(0, 3);
       const r = await proposeTeamLesson(plane, title, md, tags, belongs);
       const dup = similar.length ? `\n\n库里已有相近的经验，如果重复，请用户在网页上把其中一条驳回：\n${similar.map((l) => `- ${l.key} ${l.title}（${l.status}）${l.url}`).join("\n")}` : "";
-      return text(`已提交团队经验 ${r.key}（${belongs === GENERAL ? "通用，不属于具体项目" : `项目 ${belongs}`}），状态“待审核”，需要人在 Plane 上采纳后才会被检索到：${webUrl(`browse/${r.key}`)}${dup}`);
+      return text(`已提交团队经验 ${r.key}（${belongs === GENERAL ? "通用，不属于具体项目" : `项目 ${belongs}`}），状态“待审核”，需要人在织机上采纳后才会被检索到：${webUrl(`browse/${r.key}`)}${dup}`);
     }),
 );
 
@@ -802,7 +802,7 @@ server.registerTool(
     inputSchema: {
       stale_days: z.number().int().min(1).max(60).optional().describe("多少天没更新算“没动”，默认 3"),
       only_mine: z.boolean().optional().describe("只看指派给我或未指派的任务"),
-      publish: z.boolean().optional().describe("写成 Plane 文档"),
+      publish: z.boolean().optional().describe("写成织机文档"),
     },
   },
   async ({ stale_days, only_mine, publish }) =>

@@ -1,4 +1,4 @@
-// Plane REST 客户端（/api/v1，API Token 认证）。只封装 MCP 用得到的接口。
+// 织机 REST 客户端（/api/v1，API Token 认证）。只封装 MCP 用得到的接口。
 
 export type PlaneConfig = { baseUrl: string; token: string; workspace: string; webUrl?: string };
 
@@ -58,14 +58,14 @@ export class PlaneError extends Error {
   body: string;
   path: string;
   constructor(status: number, body: string, path: string) {
-    super(`Plane ${status} ${path}: ${body.slice(0, 300)}`);
+    super(`织机 ${status} ${path}: ${body.slice(0, 300)}`);
     this.status = status;
     this.body = body;
     this.path = path;
   }
 }
 
-export class Plane {
+export class 织机 {
   private cfg: PlaneConfig;
   constructor(cfg: PlaneConfig) {
     this.cfg = cfg;

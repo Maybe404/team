@@ -1,4 +1,4 @@
-// 产品使用指南：给不熟悉 Plane 的成员和他们的 Agent 看。说明每个功能干什么、什么时候用，
+// 产品使用指南：给不熟悉织机的成员和他们的 Agent 看。说明每个功能干什么、什么时候用，
 // 以及哪些能通过 MCP 做、哪些要去网页上做。内容要和实际能力保持一致，改了工具记得同步这里。
 
 export function usageGuide(webUrl: string, workspace: string): string {

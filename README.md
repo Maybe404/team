@@ -1,11 +1,11 @@
-# team
+# 织机 Loom
 
 团队一体化协作平台：任务、文档、经验库和定时回顾，人和 Agent 围绕同一个任务协作。
 
 | 目录 | 内容 |
 |---|---|
-| `plane/` | Plane 源码（git subtree，基于上游 `preview`），二开改动都标了 `[team 二开]` |
-| `mcp/` | team-mcp：Plane 对接、规范闸门、经验库、回顾 |
+| `plane/` | 织机的应用源码（基于开源项目 Plane 二次开发，git subtree，上游 `preview`），二开改动都标了 `[team 二开]` |
+| `mcp/` | team-mcp：对接织机、规范闸门、经验库、回顾 |
 | `dev/` | 本地开发：基础设施、源码启动脚本、种子数据 |
 | `deploy/` | 部署配置 |
 
@@ -147,7 +147,7 @@ MCP 随服务器升级，成员这边不用动。Agent 每次调用工具会带�
 
 ## 本地开发
 
-基础设施（Postgres、Redis、RabbitMQ、MinIO）用 Docker 跑，Plane 应用从源码启动。端口统一用 47xxx 段，见 `dev/ports.env`。
+基础设施（Postgres、Redis、RabbitMQ、MinIO）用 Docker 跑，织机应用从源码启动。端口统一用 47xxx 段，见 `dev/ports.env`。
 
 ```bash
 dev/setup-env.sh   # 生成各应用 .env（首次）
@@ -180,3 +180,7 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 - 文档公开链接：`TeamPageShare`（迁移 `0127`），管理接口 `app/views/page/team_share.py`，公开接口 `space/views/team_page.py`（服务端白名单清洗 HTML），公开页 `apps/space/app/team-pages/`。没有复用 Plane 的 DeployBoard，因为公开接口按 anchor 查它时不分类型，会连带暴露整个项目
 
 同步上游：`git subtree pull --prefix=plane <上游地址> preview --squash`
+
+## 许可与来源
+
+织机基于开源项目 [Plane](https://github.com/makeplane/plane)（AGPL-3.0）二次开发，源码文件头里的原作者版权声明保持不变。按 AGPL 的要求，对外提供服务时需要向使用者提供对应版本的源码（本仓库即是）。去 AI 味规则来自第三方 skill「去 AI 味 v2」（CC BY-NC 4.0）。

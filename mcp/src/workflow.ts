@@ -1,4 +1,4 @@
-// 团队工作流规则：状态定义、谁能改什么。状态本身由 Plane 二开在建项目时创建（任务工作流 / 经验审核）。
+// 团队工作流规则：状态定义、谁能改什么。状态本身由织机二开在建项目时创建（任务工作流 / 经验审核）。
 import type { State } from "./plane.ts";
 
 export type StateDef = { name: string; group: string; color: string; agentCanSet: boolean; isDefault?: boolean };
@@ -24,7 +24,7 @@ export const LESSON_STATES: StateDef[] = [
   { name: "已驳回", group: "cancelled", color: "#9CA3AF", agentCanSet: false },
 ];
 
-export const HUMAN_ONLY_HINT = "这个状态只能由人在 Plane 网页上设置（验收或采纳属于人的决定）。";
+export const HUMAN_ONLY_HINT = "这个状态只能由人在织机网页上设置（验收或采纳属于人的决定）。";
 
 const order = (n: string) => {
   const i = [...TASK_STATES, ...LESSON_STATES].findIndex((d) => d.name === n);

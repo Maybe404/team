@@ -64,14 +64,14 @@ export const AdminSidebarHelpSection = observer(function AdminSidebarHelpSection
       })}
     >
       {isSidebarCollapsed ? (
-        <Tooltip label="Redirect to Plane" side="right">
+        <Tooltip label="Redirect to Loom" side="right">
           <IconButton
             variant="secondary"
             size="md"
-            aria-label="Redirect to Plane"
+            aria-label="Redirect to Loom"
             showTooltip={false}
             nativeButton={false}
-            render={<a href={redirectionLink} aria-label="Redirect to Plane" />}
+            render={<a href={redirectionLink} aria-label="Redirect to Loom" />}
             icon={<Icon icon={NewTabOutline} />}
           />
         </Tooltip>
@@ -81,9 +81,9 @@ export const AdminSidebarHelpSection = observer(function AdminSidebarHelpSection
           size="sm"
           stretch="auto"
           nativeButton={false}
-          render={<a href={redirectionLink} aria-label="Redirect to Plane" />}
+          render={<a href={redirectionLink} aria-label="Redirect to Loom" />}
           icon={<Icon icon={NewTabOutline} />}
-          label="Redirect to Plane"
+          label="Redirect to Loom"
         />
       )}
       <div className={cn("flex items-center gap-1", isSidebarCollapsed ? "flex-col" : "ml-auto")}>

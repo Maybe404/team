@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // team-review：定时回顾。
 //   team-review                     生成并发布今天的回顾，打印到标准输出
-//   team-review --dry-run           只打印，不写 Plane
+//   team-review --dry-run           只打印，不写织机
 //   team-review --daemon --at 09:00 常驻，每天 09:00（本机时区）执行一次；启动时如果今天还没发布会先补一次
 // 配置和 team-mcp 相同：PLANE_BASE_URL、PLANE_WEB_URL、PLANE_API_TOKEN、PLANE_WORKSPACE，
 // 另有 TEAM_REVIEW_AT（默认 09:00）、TEAM_REVIEW_STALE_DAYS（默认 3）、TEAM_REVIEW_PROJECT（默认 REVIEW）。
 import { parseArgs } from "node:util";
-import { Plane } from "./plane.ts";
+import { 织机 } from "./plane.ts";
 import { buildDigest, digestTitle, getReviewProject, publishDigest } from "./review.ts";
 
 const { values } = parseArgs({
@@ -28,7 +28,7 @@ function env(name: string): string {
   return v;
 }
 
-const plane = new Plane({
+const plane = new 织机({
   baseUrl: process.env.PLANE_BASE_URL || "http://localhost:47800",
   webUrl: process.env.PLANE_WEB_URL || "http://localhost:47300",
   token: env("PLANE_API_TOKEN"),

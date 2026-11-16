@@ -29,7 +29,7 @@ function ProjectSettingsPage() {
         need to get things done.
       </div>
       <div className="flex gap-2">
-        {/* [team 二开] 去掉指向 Plane 官网的 Learn more */}
+        {/* [team 二开] 去掉指向 Loom 官网的 Learn more */}
         <Button
           variant="primary"
           size="sm"

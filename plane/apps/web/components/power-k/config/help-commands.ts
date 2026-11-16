@@ -40,7 +40,7 @@ export const usePowerKHelpCommands = (): TPowerKCommandConfig[] => {
         window.open("https://docs.plane.so/", "_blank", "noopener,noreferrer");
       },
       isEnabled: () => true,
-      isVisible: () => false, // [team 二开] 不跳转 Plane 官网
+      isVisible: () => false, // [team 二开] 不跳转 Loom 官网
       closeOnSelect: true,
     },
     {
@@ -53,7 +53,7 @@ export const usePowerKHelpCommands = (): TPowerKCommandConfig[] => {
         window.open("https://forum.plane.so", "_blank", "noopener,noreferrer");
       },
       isEnabled: () => true,
-      isVisible: () => false, // [team 二开] 不跳转 Plane 官网
+      isVisible: () => false, // [team 二开] 不跳转 Loom 官网
       closeOnSelect: true,
     },
     {
@@ -66,7 +66,7 @@ export const usePowerKHelpCommands = (): TPowerKCommandConfig[] => {
         window.open("https://github.com/makeplane/plane/issues/new/choose", "_blank", "noopener,noreferrer");
       },
       isEnabled: () => true,
-      isVisible: () => false, // [team 二开] 不跳转 Plane 官网
+      isVisible: () => false, // [team 二开] 不跳转 Loom 官网
       closeOnSelect: true,
     },
   ];

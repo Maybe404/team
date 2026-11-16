@@ -3,7 +3,7 @@
     "label": "Werkruimte-instellingen",
     "page_label": "{workspace} - Algemene instellingen",
     "key_created": "Sleutel aangemaakt",
-    "copy_key": "Kopieer en bewaar deze geheime sleutel in Plane Pages. Je kunt deze sleutel niet meer zien nadat je op Sluiten klikt. Er is een CSV-bestand met de sleutel gedownload.",
+    "copy_key": "Kopieer en bewaar deze geheime sleutel in Loom Pages. Je kunt deze sleutel niet meer zien nadat je op Sluiten klikt. Er is een CSV-bestand met de sleutel gedownload.",
     "token_copied": "Token gekopieerd naar klembord.",
     "settings": {
       "general": {
@@ -268,7 +268,7 @@
       "project_states": {
         "title": "Projectstatussen",
         "heading": "Bekijk het voortgangsoverzicht voor alle projecten.",
-        "description": "Projectstatussen is een functie die alleen in Plane beschikbaar is om de voortgang van al je projecten te volgen op basis van elke projecteigenschap.",
+        "description": "Projectstatussen is een functie die alleen in Loom beschikbaar is om de voortgang van al je projecten te volgen op basis van elke projecteigenschap.",
         "go_to_settings": "Naar instellingen"
       },
       "projects": {
@@ -361,7 +361,7 @@
         },
         "redirect_uris": {
           "label": "Redirect-URI's (gescheiden door spaties)",
-          "description": "Gebruikers worden naar dit pad doorgestuurd nadat ze zich bij Plane hebben geauthenticeerd.",
+          "description": "Gebruikers worden naar dit pad doorgestuurd nadat ze zich bij Loom hebben geauthenticeerd.",
           "placeholder": "https://example.com https://example.com/"
         },
         "app_available_description": "Verbind een Plane-werkruimte om ermee aan de slag te gaan",
@@ -418,7 +418,7 @@
         "app_consent_workspace_permissions_title": "{app} wil graag",
         "app_consent_user_permissions_title": "{app} kan ook toestemming van een gebruiker vragen voor de volgende bronnen. Deze rechten worden alleen door en van een gebruiker aangevraagd en geautoriseerd.",
         "app_consent_accept_title": "Door te accepteren",
-        "app_consent_accept_1": "Verleen je de app toegang tot je Plane-gegevens waar je de app ook kunt gebruiken, binnen of buiten Plane",
+        "app_consent_accept_1": "Verleen je de app toegang tot je Plane-gegevens waar je de app ook kunt gebruiken, binnen of buiten Loom",
         "app_consent_accept_2": "Ga je akkoord met het Privacybeleid en de Gebruiksvoorwaarden van {app}",
         "accepting": "Accepteren...",
         "accept": "Accepteren",
@@ -460,7 +460,7 @@
         "upload_and_save": "Uploaden & opslaan",
         "app_consent_no_access_title": "Verzoek om te installeren",
         "app_consent_no_access_description": "Deze app kan pas worden geïnstalleerd nadat een werkruimtebeheerder die installeert. Neem contact op met je werkruimtebeheerder om verder te gaan.",
-        "app_consent_unapproved_title": "Deze app is nog niet beoordeeld of goedgekeurd door Plane.",
+        "app_consent_unapproved_title": "Deze app is nog niet beoordeeld of goedgekeurd door Loom.",
         "app_consent_unapproved_description": "Zorg dat je deze app vertrouwt voordat je die met je werkruimte verbindt.",
         "go_to_app": "Naar app",
         "enable_app_mentions": "App-vermeldingen inschakelen",
@@ -485,12 +485,12 @@
         }
       },
       "plane-intelligence": {
-        "title": "Plane AI",
-        "heading": "Plane AI",
+        "title": "Loom AI",
+        "heading": "Loom AI",
         "description": "Zie je werk slimmer en sneller worden met AI die van nature verbonden is met je werk en kennisbank. "
       },
       "runners": {
-        "title": "Plane Runner",
+        "title": "Loom Runner",
         "heading": "Scripts",
         "new_script": "Nieuw script",
         "description": "Automatiseer je workflows met aangepaste scripts en automatiseringsregels."
@@ -499,7 +499,7 @@
     "empty_state": {
       "api_tokens": {
         "title": "Geen toegangstokens aangemaakt",
-        "description": "Plane-API's kunnen worden gebruikt om je gegevens in Plane te integreren met elk extern systeem. Maak een token aan om te beginnen."
+        "description": "Plane-API's kunnen worden gebruikt om je gegevens in Loom te integreren met elk extern systeem. Maak een token aan om te beginnen."
       },
       "webhooks": {
         "title": "Geen webhooks toegevoegd",

@@ -1,7 +1,7 @@
 // 定时回顾：扫出需要人关注的任务，生成一份 Markdown 日报。
 import { getLessonProject } from "./lessons.ts";
 import { mdToHtml } from "./markdown.ts";
-import { assertMember, type Plane, type WorkItem } from "./plane.ts";
+import { assertMember, type 织机, type WorkItem } from "./plane.ts";
 
 type Row = { key: string; name: string; state: string; days: number; url: string; project: string; who: string[] };
 /** projectIds：只扫这些项目（MCP 里传当前仓库关联的项目）；不传时扫你加入的所有项目（定时回顾用）。 */
@@ -10,7 +10,7 @@ export type DigestOpts = { staleDays: number; onlyMine: boolean; team?: boolean;
 const DAY = 86_400_000;
 
 /** team=true 是团队回顾（定时任务用），最后一节按人列出手上的任务；否则是个人回顾，最后一节是“指派给我的”。 */
-export async function buildDigest(plane: Plane, opts: DigestOpts) {
+export async function buildDigest(plane: 织机, opts: DigestOpts) {
   const me = await plane.me();
   const lessonProject = await getLessonProject(plane).catch(() => undefined);
   const reviewIdent = (process.env.TEAM_REVIEW_PROJECT || "REVIEW").toUpperCase();
@@ -107,9 +107,9 @@ function byPerson(rows: Row[]): string {
   return `## 各人手上的任务\n\n${body || "无"}`;
 }
 
-// ---------- 发布到 Plane ----------
+// ---------- 发布到织机 ----------
 
-export async function getReviewProject(plane: Plane) {
+export async function getReviewProject(plane: 织机) {
   const ident = (process.env.TEAM_REVIEW_PROJECT || "REVIEW").toUpperCase();
   const hit = (await plane.listProjects()).find((p) => p.identifier === ident);
   return hit ? assertMember(hit) : (await plane.createProject("每日回顾", ident, "team-mcp 每天生成的回顾，列出需要人关注的任务和待审核的经验。"));
@@ -121,7 +121,7 @@ export function digestTitle(name?: string) {
 }
 
 /** 生成当天的回顾并写成 Page；同一天重复执行会更新同一篇。团队回顾和每个人的个人回顾各是一篇，互不覆盖。 */
-export async function publishDigest(plane: Plane, opts: DigestOpts & { webUrl: (p: string) => string }) {
+export async function publishDigest(plane: 织机, opts: DigestOpts & { webUrl: (p: string) => string }) {
   const { md, total } = await buildDigest(plane, opts);
   const project = await getReviewProject(plane);
   const title = digestTitle(opts.team ? undefined : (await plane.me()).display_name);
