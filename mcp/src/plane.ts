@@ -36,6 +36,8 @@ export type WorkItem = {
   parent?: string | null;
 };
 export type Member = { id: string; email?: string; display_name: string; first_name?: string; last_name?: string };
+export type LinkedPage = { id: string; name: string; owned_by: string; access: number; archived: boolean };
+export type LinkedIssue = { id: string; key: string; name: string; state: string };
 export type Link = { id: string; url: string; title?: string | null };
 export type Comment = { id: string; comment_html: string; actor: string; created_at: string };
 export type Page = {
@@ -172,6 +174,17 @@ export class Plane {
   }
   addLink(projectId: string, itemId: string, url: string, title: string) {
     return this.req("POST", this.ws(`projects/${projectId}/work-items/${itemId}/links/`), { url, title });
+  }
+
+  // 文档 ↔ 工作项关联（二开接口）
+  listIssuePages(projectId: string, itemId: string) {
+    return this.req<LinkedPage[]>("GET", this.ws(`projects/${projectId}/work-items/${itemId}/pages/`));
+  }
+  linkPage(projectId: string, itemId: string, pageId: string) {
+    return this.req<LinkedPage[]>("POST", this.ws(`projects/${projectId}/work-items/${itemId}/pages/`), { page_id: pageId });
+  }
+  listPageIssues(projectId: string, pageId: string) {
+    return this.req<LinkedIssue[]>("GET", this.ws(`projects/${projectId}/pages/${pageId}/work-items/`));
   }
 
   // Page（二开接口）

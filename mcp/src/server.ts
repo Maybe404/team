@@ -63,7 +63,8 @@ const server = new McpServer(
 6. 只写团队工作。个人笔记、密钥和个人信息不要写进来。
 7. 没有删除、成员管理、项目设置类工具，这些由人在网页上做；不再需要的内容由人在网页上归档。
 8. 这里的内容由 Agent 写、人来看：写法以人能一眼看懂、能核验为准，标题讲结论，结构清楚，证据写全。提交经验前先读 get_guide（topic=lessons），只提值得沉淀的，宁缺毋滥。
-9. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_guide（topic=usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
+9. 别人的工作项和文档只能评论，不能改（创建人、指派人、作者、管理员才能改）；被拒绝时用 comment_task 提建议，不要换个办法硬改。写交付文档时用 write_doc 的 task 参数或 link_doc 把它关联到任务。
+10. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_guide（topic=usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
   },
 );
 
@@ -94,6 +95,10 @@ async function run(fn: () => Promise<ReturnType<typeof text>>) {
   } catch (e) {
     if (e instanceof PlaneError && (e.status === 401 || /token is not valid|credentials were not provided/i.test(e.body)))
       return fail(setupGuide("Plane 拒绝了这个 API Token（401），可能已被删除或填错。"));
+    if (e instanceof PlaneError && e.status === 403 && /只能评论|只能阅读|建立关联/.test(e.body)) {
+      const m = e.body.match(/"(?:detail|error)"\s*:\s*"([^"]+)"/);
+      return fail(`${m?.[1] ?? "没有权限"}\n想改别人的内容，可以用 comment_task 评论，提出修改建议。`);
+    }
     if (e instanceof PlaneError && e.status === 403) return fail(`没有权限：${e.path}。${/API Token/.test(e.body) ? "Agent 不能做这类操作，请由人在网页上完成。" : "这个操作需要更高的项目角色，请找项目管理员。"}`);
     if (e instanceof TypeError && /fetch failed/.test(e.message)) return fail(`连不上 Plane（${CONFIG.baseUrl}）。确认服务已启动、PLANE_BASE_URL 正确。`);
     if (e instanceof NotBound) return fail(e.message);
@@ -446,11 +451,12 @@ server.registerTool(
   async ({ task, comments }) =>
     run(async () => {
       const { project, item, key } = await resolveTask(task);
-      const [st, cs, members, links, all] = await Promise.all([
+      const [st, cs, members, links, pages, all] = await Promise.all([
         plane.listStates(project.id),
         plane.listComments(project.id, item.id),
         plane.listProjectMembers(project.id),
         plane.listLinks(project.id, item.id).catch(() => []),
+        plane.listIssuePages(project.id, item.id).catch(() => []),
         plane.listWorkItems(project.id),
       ]);
       const state = st.find((s) => s.id === item.state)?.name ?? "?";
@@ -465,6 +471,9 @@ server.registerTool(
       const extra = [
         children.length
           ? `## 子任务（${children.length}）\n\n${children.map((c) => `- ${project.identifier}-${c.sequence_id} [${stateName.get(c.state) ?? "?"}] ${c.name}`).join("\n")}`
+          : "",
+        pages.length
+          ? `## 关联文档（${pages.length}）\n\n${pages.map((d) => `- [${d.name}](${webUrl(`projects/${project.id}/pages/${d.id}`)})${d.owned_by ? `　作者：${d.owned_by}` : ""}　（文档 ID ${d.id}）`).join("\n")}`
           : "",
         links.length ? `## 链接\n\n${links.map((l) => `- [${l.title || l.url}](${l.url})`).join("\n")}` : "",
       ].filter(Boolean).join("\n\n");
@@ -640,7 +649,9 @@ server.registerTool(
         if (e instanceof PlaneError && e.status === 404) throw new Error(`项目 ${p.identifier} 里没有文档 ${doc_id}，或者它是别人的私有文档。用 list_docs 查。`);
         throw e;
       });
-      return text(`# ${d.name}\n\n链接：${webUrl(`projects/${p.id}/pages/${d.id}`)}\n\n${htmlToMd(d.description_html)}`);
+      const issues = await plane.listPageIssues(p.id, d.id).catch(() => []);
+      const rel = issues.length ? `\n\n## 关联工作项（${issues.length}）\n\n${issues.map((i) => `- ${i.key} [${i.state}] ${i.name}`).join("\n")}` : "";
+      return text(`# ${d.name}\n\n链接：${webUrl(`projects/${p.id}/pages/${d.id}`)}\n\n${htmlToMd(d.description_html)}${rel}`);
     }),
 );
 
@@ -657,7 +668,7 @@ server.registerTool(
       markdown: z.string().describe("正文，从二级标题开始，不要写一级标题"),
       doc_id: z.string().optional(),
       parent_id: z.string().optional().describe("新建时挂在哪篇文档下面"),
-      task: z.string().optional().describe("关联的任务编号，会在任务上加链接"),
+      task: z.string().optional().describe("关联的任务编号，写完自动把文档关联到这个任务（任务页和文档页都能看到）"),
     },
   },
   async ({ project, type, title, markdown, doc_id, parent_id, task }) =>
@@ -671,12 +682,40 @@ server.registerTool(
         ? await plane.updatePage(p.id, doc_id, { name: title, description_html: html })
         : await plane.createPage(p.id, title, html, parent_id);
       const url = webUrl(`projects/${p.id}/pages/${d.id}`);
+      let linked = "";
       if (t) {
-        await plane.addLink(t.project.id, t.item.id, url, `文档：${title}`).catch(() => undefined);
+        linked = await plane
+          .linkPage(t.project.id, t.item.id, d.id)
+          .then(() => `\n已关联到任务 ${t.key}，任务页和文档页里都能看到。`)
+          .catch((e) => `\n文档已写入，但没能关联到 ${t.key}：${e instanceof PlaneError ? (e.body.match(/"(?:detail|error)"\s*:\s*"([^"]+)"/)?.[1] ?? e.body) : e}`);
       }
       return text(
-        `${doc_id ? "已更新" : "已新建"}文档「${title}」（${d.id}）：${url}${d.live_editing ? "\n有人正在网页上编辑这篇文档，改动已实时合并。" : ""}${g.report ? `\n\n${g.report}` : ""}`,
+        `${doc_id ? "已更新" : "已新建"}文档「${title}」（${d.id}）：${url}${d.live_editing ? "\n有人正在网页上编辑这篇文档，改动已实时合并。" : ""}${linked}${g.report ? `\n\n${g.report}` : ""}`,
       );
+    }),
+);
+
+server.registerTool(
+  "link_doc",
+  {
+    title: "关联文档到任务",
+    description: "把已有的文档关联到任务，不改文档内容。关联后任务页的「关联文档」和文档页的「关联工作项」里都能看到。创建人、指派人、文档作者或管理员才能关联。",
+    inputSchema: {
+      task: z.string().describe("任务编号"),
+      doc_id: z.string().describe("文档 ID，list_docs 或 get_task 里能查到"),
+      project: z.string().optional().describe("默认当前仓库关联的项目"),
+    },
+  },
+  async ({ task, doc_id, project }) =>
+    run(async () => {
+      const t = await resolveTask(task, "write");
+      const p = await projectFor(project ?? t.project.identifier, "read");
+      const d = await plane.getPage(p.id, doc_id).catch((e) => {
+        if (e instanceof PlaneError && e.status === 404) throw new Error(`项目 ${p.identifier} 里没有文档 ${doc_id}，或者它是别人的私有文档。用 list_docs 查。`);
+        throw e;
+      });
+      await plane.linkPage(t.project.id, t.item.id, d.id);
+      return text(`已把文档「${d.name}」关联到 ${t.key}：${webUrl(`browse/${t.key}`)}`);
     }),
 );
 

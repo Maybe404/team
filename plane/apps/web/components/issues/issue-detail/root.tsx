@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanEditIssue } from "@/hooks/use-can-edit-issue";
 import { useMemo } from "react";
 import { observer } from "mobx-react";
 // plane imports
@@ -218,12 +219,11 @@ export const IssueDetailRoot = observer(function IssueDetailRoot(props: TIssueDe
   // issue details
   const issue = getIssueById(issueId);
   // checking if issue is editable, based on user role
-  const isEditable = allowPermissions(
-    [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
-    EUserPermissionsLevel.PROJECT,
-    workspaceSlug,
-    projectId
-  );
+  // [team 二开] 还要是创建人、指派人或工作区管理员；其他成员只能评论
+  const canEditIssue = useCanEditIssue(issue);
+  const isEditable =
+    canEditIssue &&
+    allowPermissions([EUserPermissions.ADMIN, EUserPermissions.MEMBER], EUserPermissionsLevel.PROJECT, workspaceSlug, projectId);
 
   return (
     <>

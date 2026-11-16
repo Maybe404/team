@@ -68,7 +68,17 @@ docker compose -p team exec -T plane-db sh -c 'PGPASSWORD=$POSTGRES_PASSWORD pg_
 | 角色 | 能做的 |
 |---|---|
 | 管理员 | 成员能做的全部；邀请成员、建项目、登记关联仓库、把人加进项目；验收任务（改成已完成/已取消）、采纳或驳回经验；删除 |
-| 成员 | 在加入的项目里读写任务、文档、评论；提交经验；归档。不能删除 |
+| 成员 | 在加入的项目里新建任务和文档、评论、提交经验、归档；只能修改自己的内容（见下）。不能删除 |
+
+**谁能改什么**（网页和 Agent 一样，服务端强制）：
+
+| 内容 | 能改的人 | 其他成员 |
+|---|---|---|
+| 工作项 | 创建人、指派人、管理员 | 只能评论 |
+| 页面（文档） | 作者、管理员 | 只能阅读和评论 |
+| 关联文档 ↔ 工作项 | 工作项的创建人或指派人、文档作者、管理员 | 不能建立 |
+
+想改别人的内容，在评论里提建议，让对方自己改。任务指派给你之后，你就能改它的状态和内容。
 
 Plane 自带的“访客”角色用不上，邀请时不要选。Agent 用的 API Token 不论谁的，都不能删除、管理成员或改项目设置，这些只能由人在网页上做。
 
@@ -160,6 +170,8 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 - 长期运行镜像：`deploy/plane/docker-compose.team.yml`、`deploy/team.sh`
 - 项目关联仓库：`Project.team_repos`（迁移 `0126`），网页 `apps/web/components/project/settings/team-repos.tsx`；建项目默认用团队工作流状态、自动归档 1 个月
 - Agent Token 限权：API Token 请求不能 DELETE、不能管理成员和邀请、不能改项目设置（`team_delete_guard.py`）
+- 编辑权限（自己的自己改）：`plane/apps/api/plane/utils/team_edit_policy.py`，挂在 `team_delete_guard.enforce_delete_policy` 里；网页端 `apps/web/hooks/use-can-edit-issue.ts`、`store/pages/project-page.ts` 同步隐藏编辑
+- 文档 ↔ 工作项关联：`TeamPageIssue`（迁移 `0128`），业务 `utils/team_page_issue.py`，网页接口 `app/views/page/team_page_issue.py`，Agent 接口 `api/views/team_page.py`，界面 `apps/web/components/team/page-issue-links.tsx`（工作项侧栏「关联文档」、文档菜单「关联工作项」）
 - 全员共享项目：经验库（审核状态）和每日回顾自动收录工作区管理员和成员，`plane/apps/api/plane/utils/team_shared.py`
 - 使用指南 `mcp/src/usage.ts`（工具 get_guide topic=usage、资源 team://guide/usage）：改了工具能力要同步它
 - 团队 MCP 是服务器上的 HTTP 服务（`mcp/src/http.ts`，compose 里的 `team-mcp`），Caddy 把 `/mcp/*` 转给它（`Caddyfile.ce`）；API Tokens 页显示添加命令（`apps/web/components/api-token/team-mcp-install.tsx`）

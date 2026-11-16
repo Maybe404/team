@@ -64,6 +64,7 @@ export class ProjectPage extends BasePage implements TProjectPage {
       // computed
       canCurrentUserAccessPage: computed,
       canCurrentUserEditPage: computed,
+      isCurrentUserWorkspaceAdmin: computed,
       canCurrentUserDuplicatePage: computed,
       canCurrentUserLockPage: computed,
       canCurrentUserChangeAccess: computed,
@@ -104,11 +105,15 @@ export class ProjectPage extends BasePage implements TProjectPage {
    * @description returns true if the current logged in user can edit the page
    */
   get canCurrentUserEditPage() {
-    const highestRole = this.getHighestRoleAcrossProjects();
-    const isPagePublic = this.access === EPageAccess.PUBLIC;
+    // [team 二开] 只有作者和工作区管理员能改，其他成员只能阅读和评论（服务端 team_edit_policy.py 同样拦截）
+    return this.isCurrentUserOwner || this.isCurrentUserWorkspaceAdmin;
+  }
+
+  get isCurrentUserWorkspaceAdmin() {
+    const { workspaceSlug } = this.rootStore.router;
+    if (!workspaceSlug) return false;
     return (
-      (isPagePublic && !!highestRole && highestRole >= EUserPermissions.MEMBER) ||
-      (!isPagePublic && this.isCurrentUserOwner)
+      this.rootStore.user.permission.getWorkspaceRoleByWorkspaceSlug(workspaceSlug.toString()) === EUserPermissions.ADMIN
     );
   }
 
@@ -174,15 +179,11 @@ export class ProjectPage extends BasePage implements TProjectPage {
    * @description returns true if the page can be edited
    */
   get isContentEditable() {
-    const highestRole = this.getHighestRoleAcrossProjects();
-    const isOwner = this.isCurrentUserOwner;
-    const isPublic = this.access === EPageAccess.PUBLIC;
     const isArchived = this.archived_at;
     const isLocked = this.is_locked;
 
-    return (
-      !isArchived && !isLocked && (isOwner || (isPublic && !!highestRole && highestRole >= EUserPermissions.MEMBER))
-    );
+    // [team 二开] 只有作者和工作区管理员能编辑
+    return !isArchived && !isLocked && this.canCurrentUserEditPage;
   }
 
   getRedirectionLink = computedFn(() => {

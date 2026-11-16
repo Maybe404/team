@@ -23,6 +23,7 @@ import { calculateTimeAgo, cn, renderFormattedDate } from "@plane/utils";
 import { SidebarPropertyListItem } from "@/components/common/layout/sidebar/property-list-item";
 import { EstimateSelect } from "@/components/dropdowns/estimate/estimate-select";
 import { IssueParentSelectRoot } from "@/components/issues/parent-select-root";
+import { TeamIssuePages } from "@/components/team/page-issue-links";
 // hooks
 import { useProjectEstimates } from "@/hooks/store/estimates";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
@@ -142,6 +143,11 @@ export const IssueDetailSidebarSections = observer(function IssueDetailSidebarSe
               />
             </SidebarPropertyListItem>
           )}
+        </IssueDetailSidebarGroup>
+
+        {/* [team 二开] 关联文档：一键关联，文档页里也能看到 */}
+        <IssueDetailSidebarGroup label="关联文档">
+          <TeamIssuePages workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
         </IssueDetailSidebarGroup>
 
         {hasProjectStructureProperties && (

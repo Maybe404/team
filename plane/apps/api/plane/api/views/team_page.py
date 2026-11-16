@@ -190,3 +190,37 @@ class TeamPageDetailAPIEndpoint(TeamPageBase):
         data = serialize_page(page, project_id, include_body=True)
         data["live_editing"] = bool(live_result and live_result.get("live"))
         return Response(data)
+
+
+# 文档 ↔ 工作项关联（Agent 用）：只能查和建立，取消关联只能由人在网页上做（API Token 不能 DELETE）
+class TeamIssuePagesAPIEndpoint(BaseAPIView):
+    permission_classes = [ProjectEntityPermission]
+
+    def get(self, request, slug, project_id, issue_id):
+        from plane.utils.team_page_issue import pages_of_issue
+
+        return Response(pages_of_issue(request.user, slug, project_id, issue_id))
+
+    def post(self, request, slug, project_id, issue_id):
+        from plane.db.models import Issue
+        from plane.utils.team_page_issue import link, pages_of_issue, visible_pages
+
+        issue = Issue.objects.filter(pk=issue_id, workspace__slug=slug, project_id=project_id).first()
+        page = visible_pages(request.user, slug, project_id).filter(pk=request.data.get("page_id")).first()
+        if not issue or not page:
+            return Response({"error": "工作项或文档不存在"}, status=status.HTTP_404_NOT_FOUND)
+        ok, err = link(request.user, project_id, issue, page)
+        if not ok:
+            return Response({"error": err}, status=status.HTTP_403_FORBIDDEN)
+        return Response(pages_of_issue(request.user, slug, project_id, issue_id), status=status.HTTP_201_CREATED)
+
+
+class TeamPageIssuesAPIEndpoint(BaseAPIView):
+    permission_classes = [ProjectEntityPermission]
+
+    def get(self, request, slug, project_id, pk):
+        from plane.utils.team_page_issue import issues_of_page, visible_pages
+
+        if not visible_pages(request.user, slug, project_id).filter(pk=pk).exists():
+            return Response({"error": "Page 不存在"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(issues_of_page(pk, project_id))

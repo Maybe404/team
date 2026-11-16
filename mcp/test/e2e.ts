@@ -142,10 +142,10 @@ let docId = "";
 
 await step("工具、资源、提示词都已注册", async () => {
   const tools = (await client.listTools()).tools.map((t) => t.name);
-  for (const t of ["create_task", "write_doc", "propose_lesson", "search_lessons", "review_digest", "check_text", "analyze_tone", "whoami", "get_guide"]) {
+  for (const t of ["create_task", "write_doc", "propose_lesson", "search_lessons", "review_digest", "check_text", "analyze_tone", "whoami", "get_guide", "link_doc"]) {
     expect(tools.includes(t), `缺少工具 ${t}`);
   }
-  for (const t of ["bind_repo", "setup_project", "invite_member", "add_project_member", "list_members", "list_projects", "search_tasks", "link_doc", "get_writing_guide", "get_usage_guide"]) expect(!tools.includes(t), `不该有工具 ${t}`);
+  for (const t of ["bind_repo", "setup_project", "invite_member", "add_project_member", "list_members", "list_projects", "search_tasks", "get_writing_guide", "get_usage_guide"]) expect(!tools.includes(t), `不该有工具 ${t}`);
   const res = await client.readResource({ uri: "team://guide/writing" });
   expect(String((res.contents[0] as { text: string }).text).includes("团队写作规范"), "写作规范资源为空");
   const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
@@ -352,7 +352,7 @@ await step("改成待审查必须附带证据的结论，并关联交付文档",
   });
   expect(!r.isError && r.text.includes("待审查") && r.text.includes("结论"), r.text);
   const t = await call("get_task", { task: taskKey });
-  expect(t.text.includes("## 链接") && t.text.includes("订单分页方案") && t.text.includes("状态：待审查"), t.text);
+  expect(t.text.includes("## 关联文档") && t.text.includes("订单分页方案") && t.text.includes("状态：待审查"), t.text);
 });
 
 await step("read_doc 读回 Markdown", async () => {
@@ -372,6 +372,41 @@ await step("write_doc 整篇更新", async () => {
   expect(!r.isError, r.text);
   const back = await call("read_doc", { project: PROJECT, doc_id: docId });
   expect(back.text.includes("## 验证") && back.text.match(/## 背景/g)?.length === 1, back.text);
+});
+
+await step("文档和任务双向关联：任务页和文档页都能看到", async () => {
+  const t = await call("get_task", { task: taskKey });
+  expect(t.text.includes("## 关联文档") && t.text.includes("订单分页方案"), t.text);
+  const d = await call("read_doc", { project: PROJECT, doc_id: docId });
+  expect(d.text.includes("## 关联工作项") && d.text.includes(taskKey), d.text);
+});
+
+await step("别人的工作项只能评论：成员不能改管理员的任务", async () => {
+  const r = await bob("update_task", { task: taskKey, state: "进行中" });
+  expect(r.isError && r.text.includes("只能评论"), r.text);
+  const c = await bob("comment_task", { task: taskKey, kind: "进展", markdown: "我看了一下，分页方案里的索引还要再确认一遍。" });
+  expect(!c.isError, c.text);
+});
+
+await step("别人的文档只能阅读：成员不能改管理员的文档", async () => {
+  const r = await bob("write_doc", { project: PROJECT, type: "design", title: "订单分页方案", doc_id: docId, markdown: goodDesign });
+  expect(r.isError && r.text.includes("只能阅读"), r.text);
+});
+
+await step("成员自己的文档可以关联到别人的任务；和自己都无关的不行", async () => {
+  const mine = await bob("write_doc", { project: PROJECT, type: "design", title: "游标排序补充", markdown: goodDesign, task: taskKey });
+  expect(!mine.isError && mine.text.includes("已关联到任务"), mine.text);
+  const t = await call("get_task", { task: taskKey });
+  expect(t.text.includes("游标排序补充"), t.text);
+  const other = await bob("link_doc", { task: taskKey, doc_id: docId, project: PROJECT });
+  expect(other.isError && other.text.includes("建立关联"), other.text);
+});
+
+await step("管理员能改成员的文档", async () => {
+  const id = (await bob("list_docs", { project: PROJECT })).text.match(/游标排序补充.*?([0-9a-f-]{36})/s)?.[1];
+  expect(id, "没找到成员的文档");
+  const r = await call("write_doc", { project: PROJECT, type: "design", title: "游标排序补充", doc_id: id, markdown: `${goodDesign}\n## 验证\n\n管理员补了一段验证说明。\n` });
+  expect(!r.isError, r.text);
 });
 
 await step("list_docs 能按正文搜索", async () => {

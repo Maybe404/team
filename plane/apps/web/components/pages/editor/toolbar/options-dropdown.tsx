@@ -6,7 +6,8 @@
 
 import { useMemo, useState } from "react";
 import { observer } from "mobx-react";
-import { ClipboardOutline, ExportOutline, GlobeOutline, HistoryOutline } from "@makeplane/propel/icons";
+import { ClipboardOutline, ExportOutline, GlobeOutline, HistoryOutline, WorkItemsOutline } from "@makeplane/propel/icons";
+import { useParams } from "react-router";
 // plane imports
 import { setToast } from "@plane/blocks/toast";
 import { Switch } from "@makeplane/propel/components/switch";
@@ -23,6 +24,7 @@ import type { TPageInstance } from "@/store/pages/base-page";
 import { PageActions } from "../../dropdowns";
 import { ExportPageModal } from "../../modals/export-page-modal";
 import { TeamPageShareModal } from "../../modals/team-share-modal";
+import { TeamPageIssuesModal } from "@/components/team/page-issue-links";
 import { PAGE_NAVIGATION_PANE_TABS_QUERY_PARAM } from "../../navigation-pane";
 
 type Props = {
@@ -35,6 +37,8 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
   // states
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isLinkIssuesOpen, setIsLinkIssuesOpen] = useState(false);
+  const { workspaceSlug, projectId } = useParams();
   // navigation
   const router = useAppRouter();
   // store values
@@ -112,6 +116,14 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
           shouldRender: !page.archived_at,
         },
         {
+          // [team 二开] 文档 ↔ 工作项一键关联
+          key: "team-link-issues",
+          action: () => setIsLinkIssuesOpen(true),
+          title: "关联工作项",
+          icon: WorkItemsOutline,
+          shouldRender: !page.archived_at,
+        },
+        {
           key: "export",
           action: () => setIsExportModalOpen(true),
           title: "Export",
@@ -130,6 +142,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
       updateQueryParams,
       router,
       setIsExportModalOpen,
+      setIsLinkIssuesOpen,
       page.archived_at,
     ]
   );
@@ -141,6 +154,13 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         pageTitle={name ?? ""}
+      />
+      <TeamPageIssuesModal
+        isOpen={isLinkIssuesOpen}
+        onClose={() => setIsLinkIssuesOpen(false)}
+        workspaceSlug={String(workspaceSlug ?? "")}
+        projectId={String(projectId ?? "")}
+        pageId={page.id ?? ""}
       />
       <TeamPageShareModal
         isOpen={isShareModalOpen}
@@ -160,6 +180,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
           "delete",
           "toggle-access",
           "export",
+          "team-link-issues",
           "team-public-link",
         ]}
         page={page}

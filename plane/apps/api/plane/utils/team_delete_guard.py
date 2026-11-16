@@ -12,6 +12,7 @@
 from rest_framework.exceptions import PermissionDenied
 
 from plane.db.models import DeployBoard, WorkspaceMember
+from plane.utils.team_edit_policy import enforce_edit_policy
 
 ADMIN_ROLE = 20
 
@@ -86,6 +87,7 @@ def _is_api_token(request) -> bool:
 
 
 def enforce_delete_policy(view, request, kwargs):
+    enforce_edit_policy(view, request, kwargs)
     if _is_api_token(request):
         if request.method == "DELETE":
             raise PermissionDenied(AGENT_MESSAGE)

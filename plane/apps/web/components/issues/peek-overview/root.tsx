@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanEditIssue } from "@/hooks/use-can-edit-issue";
 import { useState, useMemo, useCallback } from "react";
 import { observer } from "mobx-react";
 import { usePathname } from "next/navigation";
@@ -43,7 +44,7 @@ export const IssuePeekOverview = observer(function IssuePeekOverview(props: IWor
   const {
     peekIssue,
     setPeekIssue,
-    issue: { fetchIssue },
+    issue: { fetchIssue, getIssueById },
     fetchActivities,
   } = useIssueDetail();
   const issueStoreType = useIssueStoreType();
@@ -225,15 +226,21 @@ export const IssuePeekOverview = observer(function IssuePeekOverview(props: IWor
     }
   );
 
+  // [team 二开] 要在提前返回之前调用 hook
+  const canEditIssue = useCanEditIssue(peekIssue?.issueId ? getIssueById(peekIssue.issueId) : undefined);
+
   if (!peekIssue?.workspaceSlug || !peekIssue?.projectId || !peekIssue?.issueId) return <></>;
 
   // Check if issue is editable, based on user role
-  const isEditable = allowPermissions(
-    [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
-    EUserPermissionsLevel.PROJECT,
-    peekIssue?.workspaceSlug,
-    peekIssue?.projectId
-  );
+  // [team 二开] 还要是创建人、指派人或工作区管理员；其他成员只能评论
+  const isEditable =
+    canEditIssue &&
+    allowPermissions(
+      [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
+      EUserPermissionsLevel.PROJECT,
+      peekIssue?.workspaceSlug,
+      peekIssue?.projectId
+    );
 
   return (
     <IssueView
