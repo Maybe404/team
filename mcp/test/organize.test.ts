@@ -1,0 +1,131 @@
+// 模块、视图、任务筛选：用内存里的假 Loom 跑 MCP 工具，不依赖网络和数据库。
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { createServer } from "../src/server.ts";
+
+const REPO = "git@github.com:org/demo.git";
+const states = [
+  { id: "s1", name: "待开始", group: "unstarted", color: "" },
+  { id: "s2", name: "进行中", group: "started", color: "" },
+  { id: "s3", name: "已完成", group: "completed", color: "" },
+];
+const now = "2026-11-16T00:00:00Z";
+const mkItem = (n: number, state: string, name: string) => ({
+  id: `i${n}`, name, sequence_id: n, description_html: "", state, priority: "none", assignees: ["u1"], labels: [], project: "p1", created_at: now, updated_at: now,
+});
+const items = [mkItem(1, "s2", "登录页改版"), mkItem(2, "s1", "订单导出"), mkItem(3, "s2", "修复支付回调")];
+const modules = [
+  { id: "m1", name: "v1.2 登录改版", status: "in-progress", total_issues: 1, completed_issues: 0 },
+  { id: "m2", name: "v1.2 订单导出", status: "planned", total_issues: 1, completed_issues: 0 },
+];
+const members: Record<string, Set<string>> = { m1: new Set(["i1"]), m2: new Set(["i2"]) };
+const views: Record<string, unknown>[] = [];
+const calls: string[] = [];
+
+const plane = {
+  workspace: "w",
+  webUrl: (p: string) => `http://loom/w/${p}`,
+  me: async () => ({ id: "u1", email: "a@b.c", display_name: "小明" }),
+  listProjects: async () => [{ id: "p1", name: "Demo", identifier: "DEMO", is_member: true, team_repos: ["github.com/org/demo"] }],
+  listProjectMembers: async () => [{ id: "u1", email: "a@b.c", display_name: "小明" }],
+  listStates: async () => states,
+  listLabels: async () => [],
+  listWorkItems: async () => items,
+  getWorkItemByKey: async (k: string) => items.find((i) => `DEMO-${i.sequence_id}` === k)!,
+  listComments: async () => [],
+  listLinks: async () => [],
+  listIssuePages: async () => [],
+  listModules: async () => modules,
+  listModuleIssueIds: async (_p: string, m: string) => [...(members[m] ?? [])],
+  addModuleIssues: async (_p: string, m: string, ids: string[]) => { calls.push(`add ${m} ${ids}`); ids.forEach((i) => members[m].add(i)); },
+  removeModuleIssue: async (_p: string, m: string, id: string) => { calls.push(`remove ${m} ${id}`); members[m].delete(id); },
+  createModule: async (_p: string, b: Record<string, unknown>) => { calls.push(`createModule ${JSON.stringify(b)}`); return { id: "m3", ...b }; },
+  updateModule: async (_p: string, id: string, b: unknown) => { calls.push(`updateModule ${id} ${JSON.stringify(b)}`); return { id }; },
+  listCycles: async () => [{ id: "c1", name: "第 1 周" }],
+  listCycleIssueIds: async () => ["i3"],
+  listViews: async () => views,
+  createView: async (_p: string, b: Record<string, unknown>) => { const v = { id: "v1", description: "", access: 1, owned_by_id: "u1", display_filters: {}, ...b }; views.push(v); return v; },
+  updateView: async (_p: string, id: string, b: Record<string, unknown>) => { const v = views.find((x) => x.id === id)!; Object.assign(v, b); return v; },
+  updateWorkItem: async () => ({}),
+  createWorkItem: async (_p: string, b: Record<string, unknown>) => { items.push(mkItem(4, "s1", String(b.name))); return items[3]; },
+};
+
+const [ct, st] = InMemoryTransport.createLinkedPair();
+const server = createServer({ config: { token: "t", workspace: "w", webUrl: "http://loom", baseUrl: "http://loom" } as never, plane: plane as never, local: false });
+await server.connect(st);
+const client = new Client({ name: "test", version: "0" });
+await client.connect(ct);
+const call = async (name: string, args: Record<string, unknown>) => {
+  const r = (await client.callTool({ name, arguments: { repo: REPO, ...args } })) as { content: { text: string }[]; isError?: boolean };
+  return { text: r.content[0].text, error: !!r.isError };
+};
+
+test("list_tasks 按模块、周期筛选，并标出所属模块", async () => {
+  const all = await call("list_tasks", {});
+  assert.match(all.text, /DEMO-1 .*模块：v1\.2 登录改版/);
+  const byModule = await call("list_tasks", { module: "登录改版" });
+  assert.match(byModule.text, /DEMO-1/);
+  assert.doesNotMatch(byModule.text, /DEMO-2|DEMO-3/);
+  const byCycle = await call("list_tasks", { cycle: "第 1 周" });
+  assert.match(byCycle.text, /DEMO-3/);
+  assert.doesNotMatch(byCycle.text, /DEMO-1/);
+  const bad = await call("list_tasks", { module: "不存在" });
+  assert.ok(bad.error);
+  assert.match(bad.text, /现有模块：v1\.2 登录改版、v1\.2 订单导出/);
+});
+
+test("update_task 放进、移出模块", async () => {
+  const r = await call("update_task", { task: "DEMO-3", modules: ["订单导出"], remove_modules: [] });
+  assert.match(r.text, /放进模块 v1\.2 订单导出/);
+  assert.ok(calls.includes("add m2 i3"));
+  const r2 = await call("update_task", { task: "DEMO-3", remove_modules: ["v1.2 订单导出"] });
+  assert.match(r2.text, /移出模块 v1\.2 订单导出/);
+  assert.ok(calls.includes("remove m2 i3"));
+  const both = await call("update_task", { task: "DEMO-3", modules: ["v1.2 订单导出"], remove_modules: ["v1.2 订单导出"] });
+  assert.ok(both.error);
+});
+
+test("create_task 可以直接放进模块", async () => {
+  const r = await call("create_task", {
+    title: "导出加上筛选条件",
+    description: "## 目标\n\n订单导出页支持按状态筛选。\n\n## 验收标准\n\n- [ ] 选择状态后导出的文件只含该状态的订单",
+    modules: ["v1.2 订单导出"],
+  });
+  assert.match(r.text, /放进模块 v1\.2 订单导出/);
+  assert.ok(calls.includes("add m2 i4"));
+});
+
+test("save_module：新建、改名、已完成只能人设置", async () => {
+  const c = await call("save_module", { name: "v1.3 权限管理", description: "上线角色和权限配置，管理员能给成员分配角色。", status: "已计划" });
+  assert.match(c.text, /已新建模块/);
+  assert.ok(calls.some((x) => x.startsWith("createModule") && x.includes('"status":"planned"')));
+  const dup = await call("save_module", { name: "v1.2 登录改版" });
+  assert.ok(dup.error);
+  const done = await call("save_module", { module: "v1.2 登录改版", status: "已完成" });
+  assert.ok(done.error);
+  assert.match(done.text, /只能由人/);
+  const up = await call("save_module", { module: "登录改版", target_date: "2026-12-01" });
+  assert.match(up.text, /已更新模块/);
+});
+
+test("save_view：把需求翻成筛选条件，list_views 翻回人话", async () => {
+  const c = await call("save_view", {
+    name: "v1.2 进行中的任务",
+    description: "看 v1.2 两个需求里正在做的任务。",
+    filters: { states: ["进行中"], modules: ["v1.2 登录改版", "v1.2 订单导出"], assignees: ["me"] },
+    layout: "kanban",
+    group_by: "state",
+  });
+  assert.match(c.text, /已新建视图/);
+  const v = views[0] as { rich_filters: { and: Record<string, string>[] }; display_filters: Record<string, unknown> };
+  assert.deepEqual(v.rich_filters.and, [{ state_id__in: "s2" }, { assignee_id__in: "u1" }, { module_id__in: "m1,m2" }]);
+  assert.equal(v.display_filters.layout, "kanban");
+  const l = await call("list_views", {});
+  assert.match(l.text, /状态是 进行中.*负责人是 小明.*模块是 v1\.2 登录改版 或 v1\.2 订单导出/);
+  const dup = await call("save_view", { name: "v1.2 进行中的任务" });
+  assert.ok(dup.error);
+  const up = await call("save_view", { view: "v1.2 进行中", filters: { priorities: ["urgent"] } });
+  assert.match(up.text, /优先级是 urgent/);
+});

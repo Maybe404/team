@@ -10,8 +10,8 @@ import { matchProjects, normalizeRepoUrl, notBoundMessage, repoRemotes, workDirs
 import { z } from "zod";
 import { formatLessons, GENERAL, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
 import { htmlToMd, mdToHtml } from "./markdown.ts";
-import { COMMENT_KINDS, formatGate, gate, LESSON_GUIDE, SELF_CHECK, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
-import { Loom, PlaneError, type Member, type Project, type WorkItem } from "./plane.ts";
+import { COMMENT_KINDS, formatGate, gate, gatePlain, LESSON_GUIDE, SELF_CHECK, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
+import { Loom, PlaneError, type Member, type Module, type Project, type View, type WorkItem } from "./plane.ts";
 import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
 import { buildDigest, publishDigest } from "./review.ts";
 import { usageGuide } from "./usage.ts";
@@ -33,7 +33,7 @@ const REPO_PARAM = z
   .optional()
   .describe("当前仓库 git remote get-url origin 的输出，每次都带");
 const NO_REPO = new Set(["get_guide", "check_text"]);
-const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson"]);
+const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson", "save_module", "save_view"]);
 
 export function createServer({ config: CONFIG, plane, local, clientName }: Env) {
 
@@ -64,7 +64,8 @@ const server = new McpServer(
 7. 没有删除、成员管理、项目设置类工具，这些由人在网页上做；不再需要的内容由人在网页上归档。
 8. 这里的内容由 Agent 写、人来看：写法以人能一眼看懂、能核验为准，标题讲结论，结构清楚，证据写全。提交经验前先读 get_guide（topic=lessons），只提值得沉淀的，宁缺毋滥。
 9. 别人的工作项和文档只能评论，不能改（创建人、指派人、作者、管理员才能改）；被拒绝时用 comment_task 提建议，不要换个办法硬改。写交付文档时用 write_doc 的 task 参数或 link_doc 把它关联到任务。
-10. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_guide（topic=usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
+10. 项目里按版本或需求整理任务用模块：建任务前先 list_modules，有合适的放进去（create_task、update_task 的 modules 参数），没有再 save_module 新建；用户想经常看某种筛选时用 save_view 建视图。
+11. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_guide（topic=usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
   },
 );
 
@@ -95,6 +96,10 @@ async function run(fn: () => Promise<ReturnType<typeof text>>) {
   } catch (e) {
     if (e instanceof PlaneError && (e.status === 401 || /token is not valid|credentials were not provided/i.test(e.body)))
       return fail(setupGuide("Loom 拒绝了这个 API Token（401），可能已被删除或填错。"));
+    if (e instanceof PlaneError && e.status === 400 && /Modules are not enabled/.test(e.body))
+      return fail("这个项目没有开启「模块」功能，需要项目管理员在网页上打开：项目设置 → 功能 → 模块。");
+    if (e instanceof PlaneError && e.status === 400 && /没有开启/.test(e.body))
+      return fail(e.body.match(/"error"\s*:\s*"([^"]+)"/)?.[1] ?? "这个项目没有开启对应功能，请项目管理员在项目设置 → 功能 里打开。");
     if (e instanceof PlaneError && e.status === 403 && /只能评论|只能阅读|建立关联/.test(e.body)) {
       const m = e.body.match(/"(?:detail|error)"\s*:\s*"([^"]+)"/);
       return fail(`${m?.[1] ?? "没有权限"}\n想改别人的内容，可以用 comment_task 评论，提出修改建议。`);
@@ -158,6 +163,119 @@ async function resolveTask(ref: string, mode: "read" | "write" = "read"): Promis
     throw e;
   });
   return { project, item, key: `${project.identifier}-${item.sequence_id}` };
+}
+
+
+// ---------- 模块、周期、视图 ----------
+
+const MODULE_STATUS: Record<string, string> = {
+  backlog: "未排期",
+  planned: "已计划",
+  "in-progress": "进行中",
+  paused: "已暂停",
+  completed: "已完成",
+  cancelled: "已取消",
+};
+const MODULE_STATUS_BY_NAME = Object.fromEntries(Object.entries(MODULE_STATUS).map(([k, v]) => [v, k]));
+// 和任务一样，“已完成”“已取消”是人的决定
+const HUMAN_ONLY_MODULE_STATUS = new Set(["已完成", "已取消"]);
+
+/** 按 ID、名称（忽略大小写）或唯一的名称片段找一项，找不到或有歧义时报出现有的名字。 */
+function pickByName<T extends { id: string; name: string }>(list: T[], ref: string, what: string, hint = ""): T {
+  const r = ref.trim();
+  const k = r.toLowerCase();
+  const hit = list.find((x) => x.id === r) ?? list.find((x) => x.name.toLowerCase() === k);
+  if (hit) return hit;
+  const like = list.filter((x) => x.name.toLowerCase().includes(k));
+  if (like.length === 1) return like[0];
+  throw new Error(
+    `${like.length ? `「${ref}」匹配到多个${what}，请写完整名称` : `项目里没有${what}「${ref}」`}。现有${what}：${list.map((x) => x.name).join("、") || "无"}。${hint}`,
+  );
+}
+
+const NO_MODULE_HINT = "要新建模块用 save_module。";
+
+/** 项目里各模块包含哪些工作项（模块数量有限，逐个取一次）。 */
+async function moduleIndex(projectId: string) {
+  const modules = await plane.listModules(projectId);
+  const members = new Map<string, Set<string>>();
+  await Promise.all(
+    modules.slice(0, 40).map(async (m) => members.set(m.id, new Set(await plane.listModuleIssueIds(projectId, m.id)))),
+  );
+  const namesOf = (issueId: string) => modules.filter((m) => members.get(m.id)?.has(issueId)).map((m) => m.name);
+  return { modules, members, namesOf };
+}
+
+const FILTER_FIELDS = z
+  .object({
+    states: z.array(z.string()).optional().describe("状态名，例如 [\"进行中\",\"阻塞\"]"),
+    state_groups: z.array(z.enum(["backlog", "unstarted", "started", "completed", "cancelled"])).optional(),
+    assignees: z.array(z.string()).optional().describe("me、邮箱或显示名"),
+    priorities: z.array(z.enum(["urgent", "high", "medium", "low", "none"])).optional(),
+    labels: z.array(z.string()).optional().describe("标签名"),
+    modules: z.array(z.string()).optional().describe("模块名"),
+    cycles: z.array(z.string()).optional().describe("周期名"),
+  })
+  .describe("视图的筛选条件，各项之间是“并且”，同一项里的多个值是“或者”");
+type ViewFilters = z.infer<typeof FILTER_FIELDS>;
+
+async function buildRichFilters(p: Project, f: ViewFilters) {
+  const conds: Record<string, string>[] = [];
+  const add = (key: string, ids: string[]) => ids.length && conds.push({ [`${key}__in`]: ids.join(",") });
+  if (f.states?.length) {
+    const st = await plane.listStates(p.id);
+    add("state_id", f.states.map((n) => findState(st, n).id));
+  }
+  if (f.state_groups?.length) add("state_group", f.state_groups);
+  if (f.assignees?.length) add("assignee_id", (await resolveMembers(p.id, f.assignees)).map((m) => m.id));
+  if (f.priorities?.length) add("priority", f.priorities);
+  if (f.labels?.length) {
+    const labels = await plane.listLabels(p.id);
+    add("label_id", f.labels.map((n) => pickByName(labels, n, "标签").id));
+  }
+  if (f.modules?.length) {
+    const modules = await plane.listModules(p.id);
+    add("module_id", f.modules.map((n) => pickByName(modules, n, "模块", NO_MODULE_HINT).id));
+  }
+  if (f.cycles?.length) {
+    const cycles = await plane.listCycles(p.id);
+    add("cycle_id", f.cycles.map((n) => pickByName(cycles, n, "周期", "周期只能在网页上建。").id));
+  }
+  return conds.length ? { and: conds } : {};
+}
+
+/** 把视图里存的筛选条件翻成人能看懂的一句话。 */
+async function describeFilters(p: Project, v: View): Promise<string> {
+  const conds = (v.rich_filters as { and?: Record<string, string>[] }).and ?? (Object.keys(v.rich_filters).length ? [v.rich_filters as Record<string, string>] : []);
+  if (!conds.length) return "无筛选（全部工作项）";
+  const [st, members, labels, modules, cycles] = await Promise.all([
+    plane.listStates(p.id),
+    plane.listProjectMembers(p.id),
+    plane.listLabels(p.id),
+    plane.listModules(p.id).catch(() => []),
+    plane.listCycles(p.id).catch(() => []),
+  ]);
+  const name = (list: { id: string; name: string }[], id: string) => list.find((x) => x.id === id)?.name ?? id;
+  const LABEL: Record<string, [string, (id: string) => string]> = {
+    state_id: ["状态", (id) => name(st, id)],
+    state_group: ["状态组", (id) => id],
+    assignee_id: ["负责人", (id) => members.find((m) => m.id === id)?.display_name ?? id],
+    priority: ["优先级", (id) => id],
+    label_id: ["标签", (id) => name(labels, id)],
+    module_id: ["模块", (id) => name(modules, id)],
+    cycle_id: ["周期", (id) => name(cycles, id)],
+  };
+  return conds
+    .map((c) =>
+      Object.entries(c)
+        .map(([k, val]) => {
+          const [field, op] = k.split("__");
+          const [label, fmt] = LABEL[field] ?? [field, (x: string) => x];
+          return `${label}${op === "in" || op === "exact" ? "是" : `（${op}）`} ${String(val).split(",").map(fmt).join(" 或 ")}`;
+        })
+        .join("，"),
+    )
+    .join("；并且 ");
 }
 
 // ---------- 仓库范围 ----------
@@ -392,7 +510,7 @@ server.registerTool(
           ? `关联的是 ${unjoined.map((p) => p.identifier).join("、")}，但你还不是成员，请项目管理员在网页上把你加进项目`
           : `未关联。${notBoundMessage(sc, CONFIG.webUrl, local)}`;
       return text(
-        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nPlane：${CONFIG.webUrl}${local ? `（API ${CONFIG.baseUrl}）` : ""}\nteam-mcp：${VERSION}（${local ? "本机" : "远程"}）\n仓库：${sc.remotes.join("、") || "未提供"}\n团队项目：${repo}\n不熟悉怎么用？调用 get_guide（topic=usage）看任务、页面、周期、模块、视图的用法。`,
+        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nLoom：${CONFIG.webUrl}${local ? `（API ${CONFIG.baseUrl}）` : ""}\nteam-mcp：${VERSION}（${local ? "本机" : "远程"}）\n仓库：${sc.remotes.join("、") || "未提供"}\n团队项目：${repo}\n不熟悉怎么用？调用 get_guide（topic=usage）看任务、页面、周期、模块、视图的用法。`,
       );
     }),
 );
@@ -405,20 +523,38 @@ server.registerTool(
   "list_tasks",
   {
     title: "列出任务",
-    description: "列出某个项目的任务，可按状态过滤。默认不含已完成和已取消。",
+    description:
+      "列出某个项目的任务，可按状态、模块、周期、负责人过滤，每条任务后面会标出所属模块。默认不含已完成和已取消。按版本或需求看任务时，先用 list_modules 看有哪些模块，再用 module 过滤。",
     inputSchema: {
       project: z.string().optional().describe("项目标识，默认当前仓库关联的项目"),
       states: z.array(z.string()).optional().describe("只看这些状态，例如 [\"进行中\",\"阻塞\"]"),
       include_closed: z.boolean().optional(),
       search: z.string().optional().describe("标题关键词"),
       assignee: z.string().optional().describe("只看指派给某人的：me、邮箱或显示名"),
+      module: z.string().optional().describe("只看这个模块里的任务：模块名或 ID，可用 list_modules 查"),
+      cycle: z.string().optional().describe("只看这个周期里的任务：周期名或 ID（周期在网页上建）"),
     },
     annotations: { readOnlyHint: true },
   },
-  async ({ project, states, include_closed, search, assignee }) =>
+  async ({ project, states, include_closed, search, assignee, module, cycle }) =>
     run(async () => {
       const p = await projectFor(project, "read");
-      const [items, st, members] = await Promise.all([plane.listWorkItems(p.id), plane.listStates(p.id), plane.listProjectMembers(p.id)]);
+      const [items, st, members, mi] = await Promise.all([
+        plane.listWorkItems(p.id),
+        plane.listStates(p.id),
+        plane.listProjectMembers(p.id),
+        moduleIndex(p.id).catch(() => undefined),
+      ]);
+      let inModule: Set<string> | undefined;
+      if (module) {
+        const m = pickByName(mi?.modules ?? [], module, "模块", NO_MODULE_HINT);
+        inModule = mi?.members.get(m.id) ?? new Set();
+      }
+      let inCycle: Set<string> | undefined;
+      if (cycle) {
+        const c = pickByName(await plane.listCycles(p.id), cycle, "周期", "周期只能在网页上建。");
+        inCycle = new Set(await plane.listCycleIssueIds(p.id, c.id));
+      }
       const byId = new Map(st.map((s) => [s.id, s]));
       const names = new Map(members.map((m) => [m.id, m.display_name]));
       const who = assignee ? (await resolveMembers(p.id, [assignee]))[0].id : undefined;
@@ -429,12 +565,15 @@ server.registerTool(
           if (states?.length && !states.includes(s?.name ?? "")) return false;
           if (search && !i.name.toLowerCase().includes(search.toLowerCase())) return false;
           if (who && !i.assignees.includes(who)) return false;
+          if (inModule && !inModule.has(i.id)) return false;
+          if (inCycle && !inCycle.has(i.id)) return false;
           return true;
         })
         .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
         .map((i) => {
           const people = i.assignees.map((a) => names.get(a) ?? "?").join("、");
-          return `- ${p.identifier}-${i.sequence_id} [${byId.get(i.state)?.name ?? "?"}] ${i.name}（${people ? `${people}，` : ""}更新于 ${i.updated_at.slice(0, 10)}）`;
+          const mods = mi?.namesOf(i.id) ?? [];
+          return `- ${p.identifier}-${i.sequence_id} [${byId.get(i.state)?.name ?? "?"}] ${i.name}（${people ? `${people}，` : ""}${mods.length ? `模块：${mods.join("、")}，` : ""}更新于 ${i.updated_at.slice(0, 10)}）`;
         });
       return text(rows.join("\n") || "没有符合条件的任务");
     }),
@@ -451,14 +590,16 @@ server.registerTool(
   async ({ task, comments }) =>
     run(async () => {
       const { project, item, key } = await resolveTask(task);
-      const [st, cs, members, links, pages, all] = await Promise.all([
+      const [st, cs, members, links, pages, all, mi] = await Promise.all([
         plane.listStates(project.id),
         plane.listComments(project.id, item.id),
         plane.listProjectMembers(project.id),
         plane.listLinks(project.id, item.id).catch(() => []),
         plane.listIssuePages(project.id, item.id).catch(() => []),
         plane.listWorkItems(project.id),
+        moduleIndex(project.id).catch(() => undefined),
       ]);
+      const itemModules = mi?.namesOf(item.id) ?? [];
       const state = st.find((s) => s.id === item.state)?.name ?? "?";
       const stateName = new Map(st.map((s) => [s.id, s.name]));
       const names = new Map(members.map((m) => [m.id, m.display_name]));
@@ -467,6 +608,7 @@ server.registerTool(
       const meta = [
         `指派：${item.assignees.map((a) => names.get(a) ?? "?").join("、") || "无"}`,
         parent ? `父任务：${project.identifier}-${parent.sequence_id} ${parent.name}` : "",
+        `模块：${itemModules.join("、") || "无"}`,
       ].filter(Boolean).join("　");
       const extra = [
         children.length
@@ -502,9 +644,10 @@ server.registerTool(
       state: z.string().optional().describe("初始状态，默认“待开始”"),
       assignees: z.array(z.string()).optional().describe("指派给谁：me、邮箱或显示名"),
       parent: z.string().optional().describe("父任务编号，用于拆分子任务，例如 DEMO-3"),
+      modules: z.array(z.string()).optional().describe("放进哪些模块（版本或需求），模块名或 ID；先用 list_modules 看现有的，没有再用 save_module 建。一个任务可以在多个模块里"),
     },
   },
-  async ({ project, title, description, priority, state, assignees, parent }) =>
+  async ({ project, title, description, priority, state, assignees, parent, modules }) =>
     run(async () => {
       const g = checkOrReject(description, "task", { title });
       if (!g.ok) return fail(g.report);
@@ -514,6 +657,8 @@ server.registerTool(
       if (!agentCanSet(target)) return fail(HUMAN_ONLY_HINT);
       const people = await resolveMembers(p.id, assignees ?? []);
       const parentTask = parent ? await resolveTask(parent, "write") : undefined;
+      const allModules = modules?.length ? await plane.listModules(p.id) : [];
+      const wantModules = (modules ?? []).map((n) => pickByName(allModules, n, "模块", NO_MODULE_HINT));
       if (parentTask && parentTask.project.id !== p.id) return fail(`父任务 ${parentTask.key} 不在项目 ${p.identifier} 里，子任务要和父任务在同一个项目。`);
       const item = await plane.createWorkItem(p.id, {
         name: title,
@@ -524,7 +669,12 @@ server.registerTool(
         ...(parentTask ? { parent: parentTask.item.id } : {}),
       });
       const key = `${p.identifier}-${item.sequence_id}`;
-      const extras = [people.length ? `指派给 ${people.map((m) => m.display_name).join("、")}` : "", parentTask ? `挂在 ${parentTask.key} 下` : ""].filter(Boolean).join("，");
+      if (wantModules.length) await Promise.all(wantModules.map((m) => plane.addModuleIssues(p.id, m.id, [item.id])));
+      const extras = [
+        people.length ? `指派给 ${people.map((m) => m.display_name).join("、")}` : "",
+        parentTask ? `挂在 ${parentTask.key} 下` : "",
+        wantModules.length ? `放进模块 ${wantModules.map((m) => m.name).join("、")}` : "",
+      ].filter(Boolean).join("，");
       return text(`已新建 ${key}${extras ? `（${extras}）` : ""}：${webUrl(`browse/${key}`)}${g.report ? `\n\n${g.report}` : ""}`);
     }),
 );
@@ -533,7 +683,7 @@ server.registerTool(
   "update_task",
   {
     title: "更新任务",
-    description: `改任务的状态、标题、描述、优先级、指派人或父任务。Agent 可设的状态：${TASK_STATES.filter((s) => s.agentCanSet).map((s) => s.name).join("、")}；“已完成”“已取消”只能由人设置。改成“待审查”“阻塞”“待决定”时必须在 comment 里说明（分别写成结论、阻塞、决策评论；结论要带验证证据）。`,
+    description: `改任务的状态、标题、描述、优先级、指派人、父任务，或把任务放进、移出模块。Agent 可设的状态：${TASK_STATES.filter((s) => s.agentCanSet).map((s) => s.name).join("、")}；“已完成”“已取消”只能由人设置。改成“待审查”“阻塞”“待决定”时必须在 comment 里说明（分别写成结论、阻塞、决策评论；结论要带验证证据）。`,
     inputSchema: {
       task: z.string(),
       state: z.string().optional(),
@@ -542,6 +692,8 @@ server.registerTool(
       priority: z.enum(["urgent", "high", "medium", "low", "none"]).optional(),
       assignees: z.array(z.string()).optional().describe("新的指派人列表，整体替换；传 [] 清空"),
       parent: z.string().optional().describe("改挂到哪个父任务下；传 none 取消父任务"),
+      modules: z.array(z.string()).optional().describe("再放进这些模块（模块名或 ID），已在的不受影响；一个任务可以在多个模块里"),
+      remove_modules: z.array(z.string()).optional().describe("从这些模块里移出（模块名或 ID），任务本身不会被删"),
       comment: z
         .string()
         .optional()
@@ -551,7 +703,7 @@ server.registerTool(
       role: z.string().optional().describe("你在这个任务里的角色，用于评论署名"),
     },
   },
-  async ({ task, state, title, description, priority, assignees, parent, comment, role }) =>
+  async ({ task, state, title, description, priority, assignees, parent, modules, remove_modules, comment, role }) =>
     run(async () => {
       const { project, item, key } = await resolveTask(task, "write");
       const kind = state ? STATE_COMMENT_KIND[state] : undefined;
@@ -584,12 +736,25 @@ server.registerTool(
           body.parent = pt.item.id;
         }
       }
-      if (!Object.keys(body).length && !comment) return fail("没有要改的字段");
+      const moduleChanges: string[] = [];
+      let toAdd: Module[] = [];
+      let toRemove: Module[] = [];
+      if (modules?.length || remove_modules?.length) {
+        const all = await plane.listModules(project.id);
+        toAdd = (modules ?? []).map((n) => pickByName(all, n, "模块", NO_MODULE_HINT));
+        toRemove = (remove_modules ?? []).map((n) => pickByName(all, n, "模块"));
+        if (toAdd.some((m) => toRemove.some((r) => r.id === m.id))) return fail("同一个模块不能既放进又移出");
+        if (toAdd.length) moduleChanges.push(`放进模块 ${toAdd.map((m) => m.name).join("、")}`);
+        if (toRemove.length) moduleChanges.push(`移出模块 ${toRemove.map((m) => m.name).join("、")}`);
+      }
+      if (!Object.keys(body).length && !comment && !moduleChanges.length) return fail("没有要改的字段");
       if (Object.keys(body).length) await plane.updateWorkItem(project.id, item.id, body);
+      await Promise.all(toAdd.map((m) => plane.addModuleIssues(project.id, m.id, [item.id])));
+      await Promise.all(toRemove.map((m) => plane.removeModuleIssue(project.id, m.id, item.id).catch(() => undefined)));
       if (comment) {
         await plane.createComment(project.id, item.id, mdToHtml(`**${commentKind}** · ${await signature(role)}\n\n${comment.trim()}`));
       }
-      return text(`已更新 ${key}${state ? `，状态改为「${state}」` : ""}${comment ? `，并写入「${commentKind}」评论` : ""}。${notes.length ? `\n\n${notes.join("\n")}` : ""}`);
+      return text(`已更新 ${key}${state ? `，状态改为「${state}」` : ""}${moduleChanges.length ? `，${moduleChanges.join("，")}` : ""}${comment ? `，并写入「${commentKind}」评论` : ""}。${notes.length ? `\n\n${notes.join("\n")}` : ""}`);
     }),
 );
 
@@ -613,6 +778,161 @@ server.registerTool(
       const signed = `**${kind}** · ${await signature(role)}\n\n${markdown.trim()}`;
       await plane.createComment(project.id, item.id, mdToHtml(signed));
       return text(`已在 ${key} 写入「${kind}」评论。${g.report ? `\n\n${g.report}` : ""}`);
+    }),
+);
+
+// ---------- 模块 ----------
+
+server.registerTool(
+  "list_modules",
+  {
+    title: "列出模块",
+    description:
+      "列出项目的模块（版本或需求的分组）：名称、状态、起止日期、负责人、任务完成进度。按版本或需求整理、查看任务前先看这个。模块是项目管理的主要分组方式。",
+    inputSchema: { project: z.string().optional().describe("项目标识，默认当前仓库关联的项目") },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ project }) =>
+    run(async () => {
+      const p = await projectFor(project, "read");
+      const [modules, members] = await Promise.all([plane.listModules(p.id), plane.listProjectMembers(p.id)]);
+      if (!modules.length) return text(`项目 ${p.identifier} 还没有模块。按版本或需求分组任务时，用 save_module 新建（名称写成“版本号 需求名”，例如“v1.2 登录改版”）。`);
+      const lead = new Map(members.map((m) => [m.id, m.display_name]));
+      const rows = modules.map((m) => {
+        const done = m.completed_issues ?? 0;
+        const total = m.total_issues ?? 0;
+        const dates = [m.start_date, m.target_date].filter(Boolean).join(" → ");
+        const meta = [
+          MODULE_STATUS[m.status] ?? m.status,
+          total ? `完成 ${done}/${total}` : "还没有任务",
+          dates,
+          m.lead ? `负责人 ${lead.get(m.lead) ?? "?"}` : "",
+        ].filter(Boolean).join("，");
+        return `- **${m.name}**（${meta}）${m.description ? `\n  ${m.description.replace(/\n+/g, " ").slice(0, 120)}` : ""}\n  ${webUrl(`projects/${p.id}/modules/${m.id}`)}`;
+      });
+      return text(`项目 ${p.identifier} 共 ${modules.length} 个模块：\n\n${rows.join("\n")}`);
+    }),
+);
+
+server.registerTool(
+  "save_module",
+  {
+    title: "新建或修改模块",
+    description:
+      "新建模块，或修改已有模块（module 传现有模块名或 ID 就是修改）。模块用来把同一个版本或同一个需求的任务归在一起，名称写成“版本号 需求名”，例如“v1.2 登录改版”。状态“已完成”“已取消”只能由人在网页上设置。没有删除，不用的模块由人在网页上归档。把任务放进或移出模块用 create_task、update_task 的 modules 参数。",
+    inputSchema: {
+      project: z.string().optional().describe("项目标识，默认当前仓库关联的项目"),
+      module: z.string().optional().describe("要修改的模块名或 ID；不传就是新建"),
+      name: z.string().min(2).optional().describe("模块名称，新建时必填；改名时传新名称"),
+      description: z.string().optional().describe("一两句话说明这个模块要交付什么、做到什么算完成"),
+      status: z.enum(["未排期", "已计划", "进行中", "已暂停", "已完成", "已取消"]).optional(),
+      start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("开始日期 YYYY-MM-DD"),
+      target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("目标完成日期 YYYY-MM-DD"),
+      lead: z.string().optional().describe("负责人：me、邮箱或显示名"),
+    },
+  },
+  async ({ project, module, name, description, status, start_date, target_date, lead }) =>
+    run(async () => {
+      const p = await projectFor(project, "write");
+      for (const [label, v] of [["名称", name], ["说明", description]] as const) {
+        if (!v) continue;
+        const r = gatePlain(v);
+        if (!r.ok) return fail(`模块${label}${formatGate(r)}\n\n${SELF_CHECK}`);
+      }
+      if (status && HUMAN_ONLY_MODULE_STATUS.has(status)) return fail(HUMAN_ONLY_HINT);
+      const body: Record<string, unknown> = {};
+      if (name) body.name = name;
+      if (description !== undefined) body.description = description;
+      if (status) body.status = MODULE_STATUS_BY_NAME[status];
+      if (start_date) body.start_date = start_date;
+      if (target_date) body.target_date = target_date;
+      if (lead) body.lead = (await resolveMembers(p.id, [lead]))[0].id;
+      if (start_date && target_date && start_date > target_date) return fail("开始日期不能晚于目标日期");
+      if (module) {
+        const m = pickByName(await plane.listModules(p.id), module, "模块", NO_MODULE_HINT);
+        if (!Object.keys(body).length) return fail("没有要改的字段");
+        await plane.updateModule(p.id, m.id, body);
+        return text(`已更新模块「${name ?? m.name}」：${webUrl(`projects/${p.id}/modules/${m.id}`)}`);
+      }
+      if (!name) return fail("新建模块要传 name");
+      const exists = (await plane.listModules(p.id)).find((x) => x.name.toLowerCase() === name.toLowerCase());
+      if (exists) return fail(`已经有同名模块「${exists.name}」，要修改它请传 module 参数。`);
+      const created = await plane.createModule(p.id, body);
+      return text(`已新建模块「${name}」：${webUrl(`projects/${p.id}/modules/${created.id}`)}\n把任务放进来：create_task 或 update_task 的 modules 参数。`);
+    }),
+);
+
+// ---------- 视图 ----------
+
+server.registerTool(
+  "list_views",
+  {
+    title: "列出视图",
+    description: "列出项目里保存的视图（保存下来的筛选，例如“指派给我且进行中”），每个视图的筛选条件会翻成一句话。",
+    inputSchema: { project: z.string().optional().describe("项目标识，默认当前仓库关联的项目") },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ project }) =>
+    run(async () => {
+      const p = await projectFor(project, "read");
+      const views = await plane.listViews(p.id);
+      if (!views.length) return text(`项目 ${p.identifier} 还没有视图。用 save_view 按需求新建。`);
+      const rows = await Promise.all(
+        views.map(async (v) => {
+          const display = v.display_filters as { layout?: string; group_by?: string | null; order_by?: string };
+          return `- **${v.name}**${v.description ? `：${v.description}` : ""}\n  筛选：${await describeFilters(p, v)}\n  展示：${[display.layout, display.group_by ? `按 ${display.group_by} 分组` : "", display.order_by ? `排序 ${display.order_by}` : ""].filter(Boolean).join("，")}\n  ${webUrl(`projects/${p.id}/views/${v.id}`)}`;
+        }),
+      );
+      return text(`项目 ${p.identifier} 共 ${views.length} 个视图：\n\n${rows.join("\n")}`);
+    }),
+);
+
+server.registerTool(
+  "save_view",
+  {
+    title: "新建或修改视图",
+    description:
+      "新建视图，或修改自己创建的视图（view 传现有视图名或 ID 就是修改）。用户说“我想经常看 XX”“帮我建一个看板看本版本的任务”时用它：把需求翻成筛选条件（状态、负责人、优先级、标签、模块、周期），选好展示方式。修改时传了 filters 就整体替换原筛选。没有删除，不用的视图由人在网页上删。",
+    inputSchema: {
+      project: z.string().optional().describe("项目标识，默认当前仓库关联的项目"),
+      view: z.string().optional().describe("要修改的视图名或 ID；不传就是新建"),
+      name: z.string().min(2).optional().describe("视图名称，要让人一眼看出看的是什么，例如“v1.2 进行中的任务”"),
+      description: z.string().optional().describe("一句话说明这个视图给谁看、看什么"),
+      filters: FILTER_FIELDS.optional(),
+      layout: z.enum(["list", "kanban", "calendar", "spreadsheet", "gantt_chart"]).optional().describe("list 列表、kanban 看板、calendar 日历、spreadsheet 表格、gantt_chart 甘特图"),
+      group_by: z.enum(["state", "priority", "labels", "assignees", "created_by", "cycle", "module"]).nullable().optional().describe("分组方式，null 取消分组；看板常按 state"),
+      order_by: z.enum(["-created_at", "created_at", "-updated_at", "updated_at", "-priority", "priority", "sort_order", "-start_date", "start_date", "-target_date", "target_date"]).optional(),
+    },
+  },
+  async ({ project, view, name, description, filters, layout, group_by, order_by }) =>
+    run(async () => {
+      const p = await projectFor(project, "write");
+      for (const [label, v] of [["名称", name], ["说明", description]] as const) {
+        if (!v) continue;
+        const r = gatePlain(v);
+        if (!r.ok) return fail(`视图${label}${formatGate(r)}\n\n${SELF_CHECK}`);
+      }
+      const body: Record<string, unknown> = {};
+      if (name) body.name = name;
+      if (description !== undefined) body.description = description;
+      if (filters) body.rich_filters = await buildRichFilters(p, filters);
+      const display: Record<string, unknown> = {};
+      if (layout) display.layout = layout;
+      if (group_by !== undefined) display.group_by = group_by;
+      if (order_by) display.order_by = order_by;
+      if (Object.keys(display).length) body.display_filters = display;
+      const all = await plane.listViews(p.id);
+      if (view) {
+        const v = pickByName(all.map((x) => ({ ...x })), view, "视图");
+        if (!Object.keys(body).length) return fail("没有要改的字段");
+        const saved = await plane.updateView(p.id, v.id, body);
+        return text(`已更新视图「${saved.name}」：${webUrl(`projects/${p.id}/views/${v.id}`)}\n筛选：${await describeFilters(p, saved)}`);
+      }
+      if (!name) return fail("新建视图要传 name");
+      const dup = all.find((x) => x.name.toLowerCase() === name.toLowerCase());
+      if (dup) return fail(`已经有同名视图「${dup.name}」，要修改它请传 view 参数。`);
+      const saved = await plane.createView(p.id, body);
+      return text(`已新建视图「${saved.name}」：${webUrl(`projects/${p.id}/views/${saved.id}`)}\n筛选：${await describeFilters(p, saved)}`);
     }),
 );
 

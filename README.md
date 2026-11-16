@@ -173,6 +173,8 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 - 编辑权限（自己的自己改）：`plane/apps/api/plane/utils/team_edit_policy.py`，挂在 `team_delete_guard.enforce_delete_policy` 里；网页端 `apps/web/hooks/use-can-edit-issue.ts`、`store/pages/project-page.ts` 同步隐藏编辑
 - 文档里的流程图：语言为 `mermaid` 的代码块，下方实时渲染（`packages/editor/src/extensions/code/code-block-node-view.tsx`，mermaid 按需加载）
 - 文档里的 HTML 页面块：`packages/editor/src/extensions/html-embed/`（斜杠命令「HTML 页面」）。内容存在节点属性里，沙箱 iframe（无 same-origin）渲染，可拖拽缩放、整页放大、下载，上限 2MB；API 白名单 `utils/content_validator.py`，公开分享页 `space/views/team_page.py`，MCP 里写成 ```html-embed 围栏（`mcp/src/markdown.ts`，图片也用 `![](asset:…)` 往返，全文改写不会丢）
+- 视图的 Agent 接口：`plane/apps/api/plane/api/views/team_view.py`（列表、新建、修改，改别人的视图被拒绝，不提供删除）；MCP 里 `list_modules` / `save_module` / `list_views` / `save_view` 和任务的 `modules` 参数见 `mcp/src/server.ts`
+- 关联弹窗的候选列表接口：`plane/apps/api/plane/app/views/page/team_page_issue.py` 里的 `TeamLinkCandidatesEndpoint`
 - 文档 ↔ 工作项关联：`TeamPageIssue`（迁移 `0128`），业务 `utils/team_page_issue.py`，网页接口 `app/views/page/team_page_issue.py`，Agent 接口 `api/views/team_page.py`，界面 `apps/web/components/team/page-issue-links.tsx`（工作项侧栏「关联文档」、文档菜单「关联工作项」）
 - 全员共享项目：经验库（审核状态）和每日回顾自动收录工作区管理员和成员，`plane/apps/api/plane/utils/team_shared.py`
 - 使用指南 `mcp/src/usage.ts`（工具 get_guide topic=usage、资源 team://guide/usage）：改了工具能力要同步它

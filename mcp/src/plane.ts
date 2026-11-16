@@ -35,6 +35,35 @@ export type WorkItem = {
   completed_at?: string | null;
   parent?: string | null;
 };
+export type Module = {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: string;
+  start_date?: string | null;
+  target_date?: string | null;
+  lead?: string | null;
+  total_issues?: number;
+  completed_issues?: number;
+};
+export type Cycle = {
+  id: string;
+  name: string;
+  description?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  total_issues?: number;
+  completed_issues?: number;
+};
+export type View = {
+  id: string;
+  name: string;
+  description: string;
+  rich_filters: { and?: Record<string, string>[] } | Record<string, never>;
+  display_filters: Record<string, unknown>;
+  access: number;
+  owned_by_id: string;
+};
 export type Member = { id: string; email?: string; display_name: string; first_name?: string; last_name?: string };
 export type LinkedPage = { id: string; name: string; owned_by: string; access: number; archived: boolean };
 export type LinkedIssue = { id: string; key: string; name: string; state: string };
@@ -199,5 +228,47 @@ export class Loom {
   }
   updatePage(projectId: string, pageId: string, body: { name?: string; description_html?: string }) {
     return this.req<Page>("PATCH", this.ws(`projects/${projectId}/pages/${pageId}/`), body);
+  }
+
+  // 模块
+  listModules(projectId: string) {
+    return this.all<Module>(this.ws(`projects/${projectId}/modules/`), 200);
+  }
+  createModule(projectId: string, body: Record<string, unknown>) {
+    return this.req<Module>("POST", this.ws(`projects/${projectId}/modules/`), body);
+  }
+  updateModule(projectId: string, moduleId: string, body: Record<string, unknown>) {
+    return this.req<Module>("PATCH", this.ws(`projects/${projectId}/modules/${moduleId}/`), body);
+  }
+  /** 模块里所有工作项的 ID */
+  async listModuleIssueIds(projectId: string, moduleId: string): Promise<string[]> {
+    const rows = await this.all<{ id?: string; issue?: string }>(this.ws(`projects/${projectId}/modules/${moduleId}/module-issues/`), 1000);
+    return rows.map((r) => r.id ?? r.issue ?? "").filter(Boolean);
+  }
+  addModuleIssues(projectId: string, moduleId: string, issueIds: string[]) {
+    return this.req("POST", this.ws(`projects/${projectId}/modules/${moduleId}/module-issues/`), { issues: issueIds });
+  }
+  removeModuleIssue(projectId: string, moduleId: string, issueId: string) {
+    return this.req("DELETE", this.ws(`projects/${projectId}/modules/${moduleId}/module-issues/${issueId}/`));
+  }
+
+  // 周期（只读，在网页上维护）
+  listCycles(projectId: string) {
+    return this.all<Cycle>(this.ws(`projects/${projectId}/cycles/`), 200);
+  }
+  async listCycleIssueIds(projectId: string, cycleId: string): Promise<string[]> {
+    const rows = await this.all<{ id?: string; issue?: string }>(this.ws(`projects/${projectId}/cycles/${cycleId}/cycle-issues/`), 1000);
+    return rows.map((r) => r.id ?? r.issue ?? "").filter(Boolean);
+  }
+
+  // 视图（二开接口）
+  listViews(projectId: string) {
+    return this.req<View[]>("GET", this.ws(`projects/${projectId}/views/`));
+  }
+  createView(projectId: string, body: Record<string, unknown>) {
+    return this.req<View>("POST", this.ws(`projects/${projectId}/views/`), body);
+  }
+  updateView(projectId: string, viewId: string, body: Record<string, unknown>) {
+    return this.req<View>("PATCH", this.ws(`projects/${projectId}/views/${viewId}/`), body);
   }
 }

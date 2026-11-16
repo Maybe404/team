@@ -21,6 +21,13 @@ export function gate(markdown: string, type: DocType, opts: { commentKind?: Comm
   return { ok: errors.length === 0, errors, warnings: issues.filter((i) => i.level === "warn") };
 }
 
+/** 没有模板的短文本（模块、视图的名称和说明）：只查隐私、句式和 AI 味。 */
+export function gatePlain(markdown: string): GateResult {
+  const issues: Issue[] = [...checkPrivacy(markdown), ...checkStyle(markdown), ...checkTone(markdown)];
+  const errors = issues.filter((i) => i.level === "error");
+  return { ok: errors.length === 0, errors, warnings: issues.filter((i) => i.level === "warn") };
+}
+
 export function formatGate(result: GateResult): string {
   const fmt = (i: Issue) =>
     `- [${i.rule}]${i.line ? ` 第 ${i.line} 行` : ""}${i.excerpt ? ` 「${i.excerpt}」` : ""}：${i.message}`;

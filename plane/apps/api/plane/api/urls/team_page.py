@@ -6,6 +6,7 @@
 
 from django.urls import path
 
+from plane.api.views.team_view import TeamViewDetailAPIEndpoint, TeamViewListCreateAPIEndpoint
 from plane.api.views.team_page import (
     TeamIssuePagesAPIEndpoint,
     TeamPageDetailAPIEndpoint,
@@ -33,5 +34,16 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:pk>/work-items/",
         TeamPageIssuesAPIEndpoint.as_view(http_method_names=["get"]),
         name="team-page-issues",
+    ),
+    # 项目视图
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/views/",
+        TeamViewListCreateAPIEndpoint.as_view(http_method_names=["get", "post"]),
+        name="team-views",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/views/<uuid:pk>/",
+        TeamViewDetailAPIEndpoint.as_view(http_method_names=["patch"]),
+        name="team-view-detail",
     ),
 ]

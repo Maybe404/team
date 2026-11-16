@@ -10,7 +10,9 @@
 |---|---|
 | 规范 | `get_guide`、`check_text`、`analyze_tone`；资源 `team://guide/writing`、`team://templates/<type>`、`team://skills/less-ai-tone`；提示词 `team-write`、`less-ai-tone` |
 | 账号与仓库 | `whoami` |
-| 任务 | `list_tasks`、`get_task`、`create_task`、`update_task`、`comment_task`（支持指派 `assignees` 和子任务 `parent`） |
+| 任务 | `list_tasks`（可按状态、负责人、模块 `module`、周期 `cycle` 筛选）、`get_task`、`create_task`、`update_task`、`comment_task`（支持指派 `assignees`、子任务 `parent`、放进或移出模块 `modules` / `remove_modules`） |
+| 模块 | `list_modules`、`save_module`（按版本或需求给任务分组，项目管理的主要方式） |
+| 视图 | `list_views`、`save_view`（把筛选条件和展示方式存成视图，可按状态、负责人、优先级、标签、模块、周期组合） |
 | 文档 | `list_docs`、`read_doc`、`write_doc` |
 | 经验 | `search_lessons`、`propose_lesson` |
 | 回顾 | `review_digest`（`publish: true` 写成你当天的个人回顾） |
@@ -92,7 +94,7 @@ claude mcp add --transport http team http://<地址>/mcp/<工作区> --header "A
 | `TEAM_REVIEW_STALE_DAYS` | 进行中多少天没动算超时，默认 3 |
 | `TEAM_PYTHON` | 语气检查用的 Python 解释器，默认 `python3` |
 
-依赖二开的 Pages 接口（`plane/apps/api/plane/api/views/team_page.py`），官方 Plane上文档相关工具不可用。
+依赖二开的 Pages 接口（`plane/apps/api/plane/api/views/team_page.py`），官方 Plane 上文档相关工具不可用。
 
 ## 开发
 

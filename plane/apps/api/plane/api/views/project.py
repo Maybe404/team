@@ -276,6 +276,8 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
                     )
 
                     add_workspace_members_to_shared(serializer.instance)  # [team 二开]
+                    # [team 二开] 模块和视图是整理任务的主要方式，新项目默认开启
+                    Project.objects.filter(pk=serializer.instance.id).update(module_view=True, issue_views_view=True)
                     project = self.get_queryset().filter(pk=serializer.instance.id).first()
 
                     # Defer the activity-log task until the surrounding
