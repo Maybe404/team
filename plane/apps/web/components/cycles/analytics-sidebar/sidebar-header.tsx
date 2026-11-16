@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanEditCycle } from "@/hooks/use-can-edit-module-cycle";
 import { useEffect } from "react";
 import { observer } from "mobx-react";
 import { Controller, useForm } from "react-hook-form";
@@ -120,10 +121,13 @@ export const CycleSidebarHeader = observer(function CycleSidebarHeader(props: Pr
     return isDateValid;
   };
 
-  const isEditingAllowed = allowPermissions(
+  const canEditByTeamPolicy = useCanEditCycle(cycleDetails);
+  const isEditingAllowed =
+    canEditByTeamPolicy &&
+    allowPermissions(
     [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
     EUserPermissionsLevel.PROJECT
-  );
+    );
 
   return (
     <div className="flex w-full flex-col gap-3">

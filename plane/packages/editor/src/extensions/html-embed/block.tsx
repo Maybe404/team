@@ -5,7 +5,7 @@
 import { NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { HTML_EMBED_MAX_BYTES } from "./extension-config";
 import type { THtmlEmbedAttributes } from "./extension-config";
@@ -39,15 +39,19 @@ const downloadHtml = (html: string, name: string) => {
 const barBtn =
   "flex size-7 items-center justify-center rounded text-secondary hover:bg-layer-transparent-hover hover:text-primary";
 
+// 整页放大只盖住右侧内容区（不遮挡左侧导航），左侧导航收起后自然变宽；找不到内容区时才铺满整个窗口
+const getMainArea = () => document.getElementById("app-main-content");
+
 function Fullscreen(props: { html: string; name: string; onClose: () => void }) {
   const { html, name, onClose } = props;
+  const main = getMainArea();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return createPortal(
-    <div className="fixed inset-0 z-[1000] flex flex-col bg-surface-1">
+    <div className={`${main ? "absolute" : "fixed"} inset-0 z-[1000] flex flex-col bg-surface-1`}>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-subtle px-4">
         <span className="flex-1 truncate text-body-sm-medium text-primary">{name || "HTML 页面"}</span>
         <button type="button" className={barBtn} title="下载 HTML" onClick={() => downloadHtml(html, name)}>
@@ -63,7 +67,7 @@ function Fullscreen(props: { html: string; name: string; onClose: () => void }) 
       </div>
       <iframe title={name || "html"} sandbox={SANDBOX} srcDoc={html} referrerPolicy="no-referrer" className="w-full flex-1 border-0 bg-white" />
     </div>,
-    document.body
+    main ?? document.body
   );
 }
 
@@ -80,6 +84,39 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
   const dragging = size !== null;
   const width = size?.width ?? attrs.width;
   const height = size?.height ?? attrs.height;
+  // 宽度是正文栏宽的百分比，可以超过 100%：超出的部分向两侧居中延伸，但不会超出右侧内容区
+  const [geo, setGeo] = useState<{ parentW: number; left: number; right: number } | null>(null);
+  const measure = useCallback(() => {
+    const parent = wrapRef.current?.parentElement;
+    if (!parent) return;
+    const area = getMainArea();
+    const pr = parent.getBoundingClientRect();
+    const ar = area ? area.getBoundingClientRect() : { left: 0, right: window.innerWidth };
+    const margin = 24;
+    // 正文栏左右两侧还能延伸多少
+    setGeo({
+      parentW: pr.width,
+      left: Math.max(0, pr.left - ar.left - margin),
+      right: Math.max(0, ar.right - margin - pr.right),
+    });
+  }, []);
+  useLayoutEffect(() => {
+    measure();
+    window.addEventListener("resize", measure);
+    const area = getMainArea();
+    const ro = typeof ResizeObserver !== "undefined" && area ? new ResizeObserver(measure) : null;
+    if (ro && area) ro.observe(area);
+    return () => {
+      window.removeEventListener("resize", measure);
+      ro?.disconnect();
+    };
+  }, [measure]);
+  const maxPx = geo ? geo.parentW + geo.left + geo.right : 0;
+  const widthPx = geo ? Math.min((width / 100) * geo.parentW, maxPx) : undefined;
+  const extra = geo && widthPx ? Math.max(0, widthPx - geo.parentW) : 0;
+  const marginLeft = geo ? -Math.max(extra - geo.right, Math.min(extra / 2, geo.left)) : 0;
+  const wrapStyle =
+    widthPx !== undefined ? { width: widthPx, marginLeft } : { width: `${Math.min(width, 100)}%` };
 
   const load = useCallback(
     (html: string, name: string) => {
@@ -111,8 +148,17 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
     let latest = { width: attrs.width, height: attrs.height };
     const target = e.currentTarget;
     target.setPointerCapture(e.pointerId);
+    const P = parentW;
+    const edgeOf = (w: number) => (w <= P ? w : P + (w - P) / 2);
+    const startEdge = edgeOf(startW);
+    const maxW = geo ? geo.parentW + geo.left + geo.right : P;
     const move = (ev: PointerEvent) => {
-      const w = mode === "y" ? attrs.width : Math.min(100, Math.max(20, ((startW + ev.clientX - startX) / parentW) * 100));
+      let w = attrs.width;
+      if (mode !== "y") {
+        const edge = startEdge + ev.clientX - startX;
+        const px = edge <= P ? edge : P + 2 * (edge - P);
+        w = Math.min(maxW, Math.max(0.2 * P, px)) / P * 100;
+      }
       const h = mode === "x" ? attrs.height : Math.min(2000, Math.max(120, startH + ev.clientY - startY));
       latest = { width: Math.round(w), height: Math.round(h) };
       setSize(latest);
@@ -134,7 +180,7 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
       <div
         ref={wrapRef}
         className={`group/html relative overflow-visible rounded-lg border bg-surface-1 ${selected ? "border-accent-strong" : "border-subtle"}`}
-        style={{ width: `${width}%` }}
+        style={wrapStyle}
       >
         <div className="flex h-9 items-center gap-2 border-b border-subtle px-3">
           <Icon>

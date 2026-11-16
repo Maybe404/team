@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanEditModule } from "@/hooks/use-can-edit-module-cycle";
 import { useState } from "react";
 import { observer } from "mobx-react";
 import { MoreHorizontalOutline } from "@makeplane/propel/icons";
@@ -53,12 +54,15 @@ export const ModuleQuickActions = observer(function ModuleQuickActions(props: Pr
   // derived values
   const moduleDetails = getModuleById(moduleId);
   // auth
-  const isEditingAllowed = allowPermissions(
+  const canEditByTeamPolicy = useCanEditModule(moduleDetails);
+  const isEditingAllowed =
+    canEditByTeamPolicy &&
+    allowPermissions(
     [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
     EUserPermissionsLevel.PROJECT,
     workspaceSlug,
     projectId
-  );
+    );
 
   const moduleLink = `${workspaceSlug}/projects/${projectId}/modules/${moduleId}`;
   const handleCopyText = () =>

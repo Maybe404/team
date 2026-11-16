@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanEditModule } from "@/hooks/use-can-edit-module-cycle";
 import type { SyntheticEvent } from "react";
 import React, { useRef } from "react";
 import { observer } from "mobx-react";
@@ -65,10 +66,13 @@ export const ModuleCardItem = observer(function ModuleCardItem(props: Props) {
   const { setValue: toggleFavoriteMenu, storedValue } = useLocalStorage<boolean>(IS_FAVORITE_MENU_OPEN, false);
   // derived values
   const moduleDetails = getModuleById(moduleId);
-  const isEditingAllowed = allowPermissions(
+  const canEditByTeamPolicy = useCanEditModule(moduleDetails);
+  const isEditingAllowed =
+    canEditByTeamPolicy &&
+    allowPermissions(
     [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
     EUserPermissionsLevel.PROJECT
-  );
+    );
   const isDisabled = !isEditingAllowed || !!moduleDetails?.archived_at;
   const renderIcon = Boolean(moduleDetails?.start_date) || Boolean(moduleDetails?.target_date);
 

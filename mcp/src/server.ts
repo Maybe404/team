@@ -63,7 +63,7 @@ const server = new McpServer(
 6. 只写团队工作。个人笔记、密钥和个人信息不要写进来。
 7. 没有删除、成员管理、项目设置类工具，这些由人在网页上做；不再需要的内容由人在网页上归档。
 8. 这里的内容由 Agent 写、人来看：写法以人能一眼看懂、能核验为准，标题讲结论，结构清楚，证据写全。提交经验前先读 get_guide（topic=lessons），只提值得沉淀的，宁缺毋滥。
-9. 别人的工作项和文档只能评论，不能改（创建人、指派人、作者、管理员才能改）；被拒绝时用 comment_task 提建议，不要换个办法硬改。写交付文档时用 write_doc 的 task 参数或 link_doc 把它关联到任务。
+9. 别人的工作项和文档只能评论，不能改（创建人、指派人、作者、管理员才能改）；别人建的模块只能查看（创建人、负责人、管理员才能改），但可以把任务放进模块；被拒绝时用 comment_task 提建议，不要换个办法硬改。写交付文档时用 write_doc 的 task 参数或 link_doc 把它关联到任务。
 10. 项目里按版本或需求整理任务用模块：建任务前先 list_modules，有合适的放进去（create_task、update_task 的 modules 参数），没有再 save_module 新建；用户想经常看某种筛选时用 save_view 建视图。
 11. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_guide（topic=usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
   },
@@ -100,7 +100,7 @@ async function run(fn: () => Promise<ReturnType<typeof text>>) {
       return fail("这个项目没有开启「模块」功能，需要项目管理员在网页上打开：项目设置 → 功能 → 模块。");
     if (e instanceof PlaneError && e.status === 400 && /没有开启/.test(e.body))
       return fail(e.body.match(/"error"\s*:\s*"([^"]+)"/)?.[1] ?? "这个项目没有开启对应功能，请项目管理员在项目设置 → 功能 里打开。");
-    if (e instanceof PlaneError && e.status === 403 && /只能评论|只能阅读|建立关联/.test(e.body)) {
+    if (e instanceof PlaneError && e.status === 403 && /只能评论|只能阅读|只能查看|建立关联/.test(e.body)) {
       const m = e.body.match(/"(?:detail|error)"\s*:\s*"([^"]+)"/);
       return fail(`${m?.[1] ?? "没有权限"}\n想改别人的内容，可以用 comment_task 评论，提出修改建议。`);
     }

@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanEditModule } from "@/hooks/use-can-edit-module-cycle";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
@@ -246,10 +247,13 @@ export const ModuleAnalyticsSidebar = observer(function ModuleAnalyticsSidebar(p
       ? "0 work items"
       : `${moduleDetails.completed_estimate_points}/${moduleDetails.total_estimate_points}`;
 
-  const isEditingAllowed = allowPermissions(
+  const canEditByTeamPolicy = useCanEditModule(moduleDetails);
+  const isEditingAllowed =
+    canEditByTeamPolicy &&
+    allowPermissions(
     [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
     EUserPermissionsLevel.PROJECT
-  );
+    );
 
   return (
     <div className="relative flex flex-col gap-6 py-4">

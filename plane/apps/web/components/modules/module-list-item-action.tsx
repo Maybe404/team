@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useCanEditModule } from "@/hooks/use-can-edit-module-cycle";
 import React from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
@@ -50,10 +51,13 @@ export const ModuleListItemAction = observer(function ModuleListItemAction(props
   // derived values
 
   const moduleStatus = MODULE_STATUS.find((status) => status.value === moduleDetails.status);
-  const isEditingAllowed = allowPermissions(
+  const canEditByTeamPolicy = useCanEditModule(moduleDetails);
+  const isEditingAllowed =
+    canEditByTeamPolicy &&
+    allowPermissions(
     [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
     EUserPermissionsLevel.PROJECT
-  );
+    );
   const isDisabled = !isEditingAllowed || !!moduleDetails?.archived_at;
   const renderIcon = Boolean(moduleDetails.start_date) || Boolean(moduleDetails.target_date);
 

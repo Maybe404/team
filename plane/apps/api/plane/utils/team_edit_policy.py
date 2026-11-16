@@ -6,16 +6,20 @@
 #
 # - 工作项：创建人、当前指派人、工作区管理员能改；其他成员只能评论。
 # - 文档（Page）：作者和工作区管理员能改；其他成员只能阅读和评论。
+# - 模块、周期：创建人（模块还包括负责人）、工作区管理员能改名称、状态、日期等；其他成员只能看。
+#   把任务放进、移出模块或周期属于日常整理，所有项目成员都可以，不受这条限制。
 # - 工作区管理员什么都能改。Agent 用 API Token，按 Token 所属账号同样受限。
 #
 # 在视图基类 initial() 里检查（见 team_delete_guard.enforce_delete_policy），网页和 API 都会经过。
 from rest_framework.exceptions import PermissionDenied
 
-from plane.db.models import Issue, IssueAssignee, Page, WorkspaceMember
+from plane.db.models import Cycle, Issue, IssueAssignee, Module, Page, WorkspaceMember
 
 ADMIN_ROLE = 20
 
 ISSUE_MESSAGE = "这是别人的工作项，你只能评论。需要修改请让创建人或指派人来改，或请管理员处理。"
+MODULE_MESSAGE = "这是别人建的模块，你只能查看。需要修改请让创建人或负责人来改，或请管理员处理。把任务放进模块不受限制。"
+CYCLE_MESSAGE = "这是别人建的周期，你只能查看。需要修改请让创建人来改，或请管理员处理。把任务放进周期不受限制。"
 PAGE_MESSAGE = "这是别人的文档，你只能阅读和评论。需要修改请让作者来改，或请管理员处理。"
 
 # 视图类名 -> (URL 里的对象 ID 参数名, 需要检查的 HTTP 方法)
@@ -27,6 +31,16 @@ PAGE_EDIT_VIEWS = {
     "PageViewSet": ("page_id", {"PATCH", "PUT"}),
     "PagesDescriptionViewSet": ("page_id", {"PATCH", "PUT"}),
     "TeamPageDetailAPIEndpoint": ("pk", {"PATCH", "PUT"}),
+}
+
+
+MODULE_EDIT_VIEWS = {
+    "ModuleViewSet": ("pk", {"PATCH", "PUT"}),
+    "ModuleDetailAPIEndpoint": ("pk", {"PATCH", "PUT"}),
+}
+CYCLE_EDIT_VIEWS = {
+    "CycleViewSet": ("pk", {"PATCH", "PUT"}),
+    "CycleDetailAPIEndpoint": ("pk", {"PATCH", "PUT"}),
 }
 
 
@@ -46,6 +60,14 @@ def can_edit_page(user, page) -> bool:
     return page.owned_by_id == user.id or is_workspace_admin(user, page.workspace_id)
 
 
+def can_edit_module(user, module) -> bool:
+    return module.created_by_id == user.id or module.lead_id == user.id or is_workspace_admin(user, module.workspace_id)
+
+
+def can_edit_cycle(user, cycle) -> bool:
+    return cycle.owned_by_id == user.id or cycle.created_by_id == user.id or is_workspace_admin(user, cycle.workspace_id)
+
+
 def enforce_edit_policy(view, request, kwargs):
     name = view.__class__.__name__
     user = request.user
@@ -63,3 +85,15 @@ def enforce_edit_policy(view, request, kwargs):
             page = Page.objects.filter(pk=kwargs[param]).only("id", "owned_by_id", "workspace_id").first()
             if page and not can_edit_page(user, page):
                 raise PermissionDenied(PAGE_MESSAGE)
+    elif name in MODULE_EDIT_VIEWS:
+        param, methods = MODULE_EDIT_VIEWS[name]
+        if request.method in methods and kwargs.get(param):
+            module = Module.objects.filter(pk=kwargs[param]).only("id", "created_by_id", "lead_id", "workspace_id").first()
+            if module and not can_edit_module(user, module):
+                raise PermissionDenied(MODULE_MESSAGE)
+    elif name in CYCLE_EDIT_VIEWS:
+        param, methods = CYCLE_EDIT_VIEWS[name]
+        if request.method in methods and kwargs.get(param):
+            cycle = Cycle.objects.filter(pk=kwargs[param]).only("id", "owned_by_id", "created_by_id", "workspace_id").first()
+            if cycle and not can_edit_cycle(user, cycle):
+                raise PermissionDenied(CYCLE_MESSAGE)
