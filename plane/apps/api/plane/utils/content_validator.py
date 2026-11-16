@@ -75,6 +75,7 @@ CUSTOM_TAGS = {
     "label",
     "input",
     "image-component",
+    "html-embed-component",
 }
 ALLOWED_TAGS = nh3.ALLOWED_TAGS | CUSTOM_TAGS
 
@@ -133,6 +134,8 @@ ATTRIBUTES = {
         "alt",
         "title",
     },
+    # [team 二开] HTML 嵌入块：内容放在属性里，属性值是纯文本，不会被当成标签执行
+    "html-embed-component": {"data-html", "data-name", "data-height", "data-width"},
     "mention-component": {"id", "entity_identifier", "entity_name"},
     "th": {
         "colspan",

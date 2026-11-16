@@ -187,6 +187,11 @@ export const insertHorizontalRule = (editor: Editor, range?: Range) => {
   else editor.chain().focus().setHorizontalRule().run();
 };
 
+export const insertHtmlEmbed = (editor: Editor, range?: Range) => {
+  if (range) editor.chain().focus().deleteRange(range).insertHtmlEmbed().run();
+  else editor.chain().focus().insertHtmlEmbed().run();
+};
+
 export const insertCallout = (editor: Editor, range?: Range) => {
   if (range) editor.chain().focus().deleteRange(range).insertCallout().run();
   else editor.chain().focus().insertCallout().run();

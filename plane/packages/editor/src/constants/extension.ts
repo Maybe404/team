@@ -24,6 +24,7 @@ export enum CORE_EXTENSIONS {
   HEADINGS_LIST = "headingsList",
   HISTORY = "history",
   HORIZONTAL_RULE = "horizontalRule",
+  HTML_EMBED = "htmlEmbedComponent",
   IMAGE = "image",
   ITALIC = "italic",
   LIST_ITEM = "listItem",

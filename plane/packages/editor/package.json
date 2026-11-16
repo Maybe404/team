@@ -75,6 +75,7 @@
     "linkifyjs": "catalog:",
     "lodash-es": "catalog:",
     "lowlight": "catalog:",
+    "mermaid": "11.4.1",
     "prosemirror-codemark": "catalog:",
     "prosemirror-markdown": "catalog:",
     "tiptap-markdown": "catalog:",

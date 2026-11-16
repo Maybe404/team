@@ -1,0 +1,240 @@
+/**
+ * [team 二开] HTML 嵌入块的编辑器视图：沙箱渲染、拖拽缩放、整页放大、下载。
+ * 安全：iframe 不给 allow-same-origin，页面里的脚本拿不到我们站点的 cookie 和接口。
+ */
+import { NodeViewWrapper } from "@tiptap/react";
+import type { NodeViewProps } from "@tiptap/react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { HTML_EMBED_MAX_BYTES } from "./extension-config";
+import type { THtmlEmbedAttributes } from "./extension-config";
+
+const SANDBOX = "allow-scripts allow-popups allow-forms allow-modals";
+
+const Icon = ({ children }: { children: ReactNode }) => (
+  <svg
+    viewBox="0 0 24 24"
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    {children}
+  </svg>
+);
+
+const downloadHtml = (html: string, name: string) => {
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = /\.html?$/i.test(name) ? name : `${name || "page"}.html`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+const barBtn =
+  "flex size-7 items-center justify-center rounded text-secondary hover:bg-layer-transparent-hover hover:text-primary";
+
+function Fullscreen(props: { html: string; name: string; onClose: () => void }) {
+  const { html, name, onClose } = props;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="fixed inset-0 z-[1000] flex flex-col bg-surface-1">
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-subtle px-4">
+        <span className="flex-1 truncate text-body-sm-medium text-primary">{name || "HTML 页面"}</span>
+        <button type="button" className={barBtn} title="下载 HTML" onClick={() => downloadHtml(html, name)}>
+          <Icon>
+            <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
+          </Icon>
+        </button>
+        <button type="button" className={barBtn} title="关闭（Esc）" onClick={onClose}>
+          <Icon>
+            <path d="M6 6l12 12M18 6 6 18" />
+          </Icon>
+        </button>
+      </div>
+      <iframe title={name || "html"} sandbox={SANDBOX} srcDoc={html} referrerPolicy="no-referrer" className="w-full flex-1 border-0 bg-white" />
+    </div>,
+    document.body
+  );
+}
+
+export function HtmlEmbedBlock(props: NodeViewProps) {
+  const { node, editor, updateAttributes, selected, deleteNode } = props;
+  const attrs = node.attrs as THtmlEmbedAttributes;
+  const editable = editor.isEditable;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const [full, setFull] = useState(false);
+  const [paste, setPaste] = useState("");
+  const [showPaste, setShowPaste] = useState(false);
+  const dragging = size !== null;
+  const width = size?.width ?? attrs.width;
+  const height = size?.height ?? attrs.height;
+
+  const load = useCallback(
+    (html: string, name: string) => {
+      if (new Blob([html]).size > HTML_EMBED_MAX_BYTES) {
+        alert("HTML 超过 2MB，请精简后再试（图片建议用外链）。");
+        return;
+      }
+      updateAttributes({ html, name });
+    },
+    [updateAttributes]
+  );
+
+  const onFile = async (file?: File) => {
+    if (!file) return;
+    load(await file.text(), file.name);
+  };
+
+  // 拖拽缩放：mode 决定能动哪个方向
+  const startResize = (mode: "x" | "y" | "xy") => (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const box = wrapRef.current;
+    const parentW = box?.parentElement?.clientWidth ?? 0;
+    if (!box || !parentW) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = box.clientWidth;
+    const startH = attrs.height;
+    let latest = { width: attrs.width, height: attrs.height };
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const w = mode === "y" ? attrs.width : Math.min(100, Math.max(20, ((startW + ev.clientX - startX) / parentW) * 100));
+      const h = mode === "x" ? attrs.height : Math.min(2000, Math.max(120, startH + ev.clientY - startY));
+      latest = { width: Math.round(w), height: Math.round(h) };
+      setSize(latest);
+    };
+    const up = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      setSize(null);
+      updateAttributes(latest);
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+  };
+
+  const empty = !attrs.html;
+
+  return (
+    <NodeViewWrapper className="html-embed my-3" contentEditable={false}>
+      <div
+        ref={wrapRef}
+        className={`group/html relative overflow-visible rounded-lg border bg-surface-1 ${selected ? "border-accent-strong" : "border-subtle"}`}
+        style={{ width: `${width}%` }}
+      >
+        <div className="flex h-9 items-center gap-2 border-b border-subtle px-3">
+          <Icon>
+            <path d="m8 8-4 4 4 4m8-8 4 4-4 4M14 5l-4 14" />
+          </Icon>
+          <span className="flex-1 truncate text-body-xs-medium text-secondary">{attrs.name || "HTML 页面"}</span>
+          {!empty && (
+            <>
+              <button type="button" className={barBtn} title="下载 HTML" onClick={() => downloadHtml(attrs.html, attrs.name)}>
+                <Icon>
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
+                </Icon>
+              </button>
+              <button type="button" className={barBtn} title="整页放大" onClick={() => setFull(true)}>
+                <Icon>
+                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                </Icon>
+              </button>
+            </>
+          )}
+          {editable && !empty && (
+            <button type="button" className={barBtn} title="换一个 HTML 文件" onClick={() => fileRef.current?.click()}>
+              <Icon>
+                <path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5" />
+              </Icon>
+            </button>
+          )}
+          {editable && (
+            <button type="button" className={barBtn} title="删除此块" onClick={() => deleteNode()}>
+              <Icon>
+                <path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+              </Icon>
+            </button>
+          )}
+        </div>
+
+        {empty ? (
+          <div className="flex flex-col items-center gap-3 p-8 text-center text-body-sm-regular text-secondary">
+            {editable ? (
+              <>
+                <div>选择一个 .html 文件，会在文档里独立渲染（上限 2MB）</div>
+                <div className="flex gap-2">
+                  <button type="button" className="rounded border border-subtle px-3 py-1.5 hover:bg-layer-transparent-hover" onClick={() => fileRef.current?.click()}>
+                    选择 HTML 文件
+                  </button>
+                  <button type="button" className="rounded border border-subtle px-3 py-1.5 hover:bg-layer-transparent-hover" onClick={() => setShowPaste((v) => !v)}>
+                    粘贴 HTML 代码
+                  </button>
+                </div>
+                {showPaste && (
+                  <div className="flex w-full flex-col gap-2">
+                    <textarea
+                      value={paste}
+                      onChange={(e) => setPaste(e.target.value)}
+                      rows={6}
+                      className="w-full rounded border border-subtle bg-layer-1 p-2 font-mono text-caption-md-regular text-primary"
+                      placeholder="<!doctype html>…"
+                    />
+                    <button
+                      type="button"
+                      className="self-end rounded bg-accent-primary px-3 py-1.5 text-on-color"
+                      onClick={() => paste.trim() && load(paste, "")}
+                    >
+                      插入
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div>（空的 HTML 块）</div>
+            )}
+          </div>
+        ) : (
+          <div className="relative" style={{ height }}>
+            <iframe
+              title={attrs.name || "html"}
+              sandbox={SANDBOX}
+              srcDoc={attrs.html}
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              className="size-full border-0 bg-white"
+              style={{ pointerEvents: dragging ? "none" : "auto" }}
+            />
+            {editable && (
+              <>
+                {/* 右边、下边、右下角三个拉伸手柄 */}
+                <div onPointerDown={startResize("x")} className="absolute top-0 -right-1.5 h-full w-3 cursor-ew-resize" />
+                <div onPointerDown={startResize("y")} className="absolute -bottom-1.5 left-0 h-3 w-full cursor-ns-resize" />
+                <div
+                  onPointerDown={startResize("xy")}
+                  title="拖动调整大小"
+                  className="absolute -right-1.5 -bottom-1.5 size-4 cursor-nwse-resize rounded-sm border-2 border-accent-strong bg-surface-1 opacity-0 group-hover/html:opacity-100"
+                />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      <input ref={fileRef} type="file" accept=".html,.htm,text/html" hidden onChange={(e) => { void onFile(e.target.files?.[0]); e.target.value = ""; }} />
+      {full && <Fullscreen html={attrs.html} name={attrs.name} onClose={() => setFull(false)} />}
+    </NodeViewWrapper>
+  );
+}

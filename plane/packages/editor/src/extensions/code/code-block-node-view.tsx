@@ -9,7 +9,7 @@ import { NodeViewWrapper, NodeViewContent } from "@tiptap/react";
 import ts from "highlight.js/lib/languages/typescript";
 import { common, createLowlight } from "lowlight";
 import { CopyOutline, TickOutline } from "@makeplane/propel/icons";
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
 // ui
 import { IconButton } from "@makeplane/propel/components/icon-button";
 // types
@@ -22,12 +22,63 @@ lowlight.register("ts", ts);
 
 type Props = {
   node: ProseMirrorNode;
+  editor?: { isEditable: boolean };
 };
+
+// [team 二开] language 为 mermaid 的代码块，下方实时渲染流程图（mermaid 按需加载，不影响首屏）
+function MermaidPreview({ code }: { code: string }) {
+  const rid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const [svg, setSvg] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!code.trim()) {
+      setSvg("");
+      setError("");
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const { default: mermaid } = await import("mermaid");
+          const dark = document.documentElement.getAttribute("data-theme")?.includes("dark");
+          mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "default" });
+          await mermaid.parse(code);
+          const { svg: out } = await mermaid.render(`m${rid}${Date.now()}`, code);
+          if (!cancelled) {
+            setSvg(out);
+            setError("");
+          }
+        } catch (e) {
+          // 渲染失败时保留上一次的图，只提示错误
+          if (!cancelled) setError(e instanceof Error ? e.message.split("\n")[0] : "流程图语法有误");
+        }
+      })();
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [code, rid]);
+
+  return (
+    <div contentEditable={false} className="mb-2 rounded-lg border border-subtle bg-surface-1 p-3">
+      {error && <div className="mb-2 text-caption-md-regular text-danger-primary">流程图语法有误：{error}</div>}
+      {svg ? (
+        <div className="flex justify-center overflow-x-auto [&_svg]:h-auto [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: svg }} />
+      ) : (
+        !error && <div className="text-caption-md-regular text-tertiary">正在渲染流程图…</div>
+      )}
+    </div>
+  );
+}
 
 export function CodeBlockComponent({ node }: Props) {
   const [copied, setCopied] = useState(false);
   // derived values
   const attrs = node.attrs as TCodeBlockAttributes;
+  const isMermaid = attrs[ECodeBlockAttributeNames.LANGUAGE]?.toLowerCase() === "mermaid";
 
   const copyToClipboard = async (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
     try {
@@ -56,6 +107,7 @@ export function CodeBlockComponent({ node }: Props) {
       <pre className="my-2 rounded-lg bg-layer-3 p-4 text-primary">
         <NodeViewContent<"code"> as="code" className="whitespace-pre-wrap" />
       </pre>
+      {isMermaid && <MermaidPreview code={node.textContent} />}
     </NodeViewWrapper>
   );
 }

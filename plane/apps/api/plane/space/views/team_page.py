@@ -21,6 +21,7 @@ def _live_share(share):
 
 _IMG = re.compile(r"<image-component\b([^>]*)>(?:\s*</image-component>)?", re.I)
 _MENTION = re.compile(r"<mention-component\b([^>]*)>(?:\s*</mention-component>)?", re.I)
+_EMBED = re.compile(r"<html-embed-component\b((?:[^>\"]|\"[^\"]*\")*)>(?:\s*</html-embed-component>)?", re.I)
 _ATTR = re.compile(r'([\w-]+)="([^"]*)"')
 
 _TAGS = {
@@ -64,9 +65,32 @@ def render_public_html(html, share):
         a = dict(_ATTR.findall(m.group(1)))
         return f"<span>@{names.get(a.get('entity_identifier', ''), '成员')}</span>"
 
-    out = _IMG.sub(img, html or "")
+    # [team 二开] HTML 嵌入块：先换成占位文本，清洗后再换成沙箱 iframe（内容不经过标签清洗，靠沙箱隔离）
+    embeds = []
+
+    def embed(m):
+        a = dict(_ATTR.findall(m.group(1)))
+        embeds.append(a)
+        return f"@@HTMLEMBED{len(embeds) - 1}@@"
+
+    out = _EMBED.sub(embed, html or "")
+    out = _IMG.sub(img, out)
     out = _MENTION.sub(mention, out)
-    return nh3.clean(out, tags=_TAGS, attributes=_ATTRS, url_schemes={"http", "https", "mailto"}, link_rel="noopener noreferrer nofollow")
+    out = nh3.clean(out, tags=_TAGS, attributes=_ATTRS, url_schemes={"http", "https", "mailto"}, link_rel="noopener noreferrer nofollow")
+    for i, a in enumerate(embeds):
+        # 属性值在 description_html 里已是转义过的，直接作为 srcdoc 属性值使用
+        src = a.get("data-html", "")
+        height = a.get("data-height", "420")
+        height = int(height) if height.isdigit() else 420
+        width = a.get("data-width", "100")
+        width = int(width) if width.isdigit() else 100
+        frame = (
+            f'<iframe sandbox="allow-scripts allow-popups allow-forms" referrerpolicy="no-referrer" '
+            f'style="width:{min(width, 100)}%;height:{min(height, 2000)}px;border:1px solid #ddd;border-radius:8px;background:#fff" '
+            f'srcdoc="{src}"></iframe>'
+        )
+        out = out.replace(f"@@HTMLEMBED{i}@@", frame)
+    return out
 
 
 class TeamPublicPageEndpoint(APIView):

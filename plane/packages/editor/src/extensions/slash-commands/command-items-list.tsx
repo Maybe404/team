@@ -37,6 +37,7 @@ import {
   toggleBackgroundColor,
   insertImage,
   insertCallout,
+  insertHtmlEmbed,
   setText,
   openEmojiPicker,
 } from "@/helpers/editor-commands";
@@ -187,6 +188,15 @@ export const getSlashCommandFilteredSections =
             description: "Insert callout",
             searchTerms: ["callout", "comment", "message", "info", "alert"],
             command: ({ editor, range }: CommandProps) => insertCallout(editor, range),
+          },
+          {
+            commandKey: "html-embed",
+            key: "html-embed",
+            title: "HTML 页面",
+            icon: <CodeOutline className="size-3.5" />,
+            description: "嵌入一个 HTML 页面，独立渲染，可缩放、可整页放大",
+            searchTerms: ["html", "embed", "iframe", "网页", "页面", "嵌入"],
+            command: ({ editor, range }: CommandProps) => insertHtmlEmbed(editor, range),
           },
           {
             commandKey: "divider",
