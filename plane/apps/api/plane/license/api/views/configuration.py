@@ -114,7 +114,7 @@ class EmailCredentialCheckEndpoint(BaseAPIView):
             use_ssl=EMAIL_USE_SSL == "1",
         )
         # Prepare email details
-        subject = "Email Notification from Plane"
+        subject = "Email Notification from Loom"
         message = "This is a sample email notification sent from Plane application."
         # Send the email
         try:

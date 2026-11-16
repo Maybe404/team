@@ -95,7 +95,7 @@
     "intake": {
       "step_zero": {
         "title": "Streamline requests with intake",
-        "description": "A Plane-only feature that lets Guests create work items for bugs, requests, or tickets."
+        "description": "A Loom-only feature that lets Guests create work items for bugs, requests, or tickets."
       },
       "step_one": {
         "title": "Open/closed intake requests",

@@ -268,7 +268,7 @@
       "project_states": {
         "title": "Project states",
         "heading": "See progress overview for all projects.",
-        "description": "Project States is a Plane-only feature for tracking progress of all your projects by any project property.",
+        "description": "Project States is a Loom-only feature for tracking progress of all your projects by any project property.",
         "go_to_settings": "Go to settings"
       },
       "projects": {
