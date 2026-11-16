@@ -1,5 +1,5 @@
 /**
- * [team 二开] 加载动画：织机图标轻轻呼吸，替换上游的 gif。
+ * [team 二开] 加载动画：Loom图标轻轻呼吸，替换上游的 gif。
  */
 
 import { PlaneLogo } from "@plane/blocks/icons";

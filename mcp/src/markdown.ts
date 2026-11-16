@@ -1,4 +1,4 @@
-// Agent 读写都用 Markdown；织机存的是 HTML。在这里来回转换。
+// Agent 读写都用 Markdown；Loom 存的是 HTML。在这里来回转换。
 import { marked } from "marked";
 import TurndownService from "turndown";
 // @ts-expect-error 该插件没有类型声明
@@ -32,7 +32,7 @@ export function mdToHtml(md: string): string {
     const r = ratio ? ` aspectRatio="${ratio}"` : "";
     return `<image-component src="${id}" width="${width || "35%"}" height="auto"${r} alignment="${align || "left"}" status="uploaded"></image-component>`;
   });
-  // 织机编辑器的任务列表：<ul data-type="taskList"><li data-type="taskItem" data-checked="true">
+  // Loom 编辑器的任务列表：<ul data-type="taskList"><li data-type="taskItem" data-checked="true">
   html = html.replace(/<ul>\s*(<li><input[^>]*type="checkbox"[\s\S]*?)<\/ul>/g, (_m, items: string) => {
     const lis = items.replace(
       /<li><input([^>]*)type="checkbox"([^>]*)>\s*([\s\S]*?)<\/li>/g,

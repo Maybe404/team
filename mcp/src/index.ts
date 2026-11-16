@@ -3,8 +3,8 @@
 // 团队日常使用的是 HTTP 入口（http.ts），见 README。
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./config.ts";
-import { 织机 } from "./plane.ts";
+import { Loom } from "./plane.ts";
 import { createServer } from "./server.ts";
 
 const config = loadConfig();
-await createServer({ config, plane: new 织机(config), local: true }).connect(new StdioServerTransport());
+await createServer({ config, plane: new Loom(config), local: true }).connect(new StdioServerTransport());

@@ -1,9 +1,9 @@
-// 经验库：团队经验存在织机的经验库项目（每条一个工作项），私人经验存在本机。
+// 经验库：团队经验存在 Loom 的经验库项目（每条一个工作项），私人经验存在本机。
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { htmlToMd, mdToHtml } from "./markdown.ts";
-import { assertMember, type Label, type 织机, type Project, type WorkItem } from "./plane.ts";
+import { assertMember, type Label, type Loom, type Project, type WorkItem } from "./plane.ts";
 import { findState } from "./workflow.ts";
 
 export type Lesson = {
@@ -52,16 +52,16 @@ function slugify(s: string) {
   );
 }
 
-export async function getLessonProject(plane: 织机): Promise<Project> {
+export async function getLessonProject(plane: Loom): Promise<Project> {
   const ident = (process.env.TEAM_LESSONS_PROJECT || "LESSON").toUpperCase();
   const projects = await plane.listProjects();
   const hit = projects.find((p) => p.identifier === ident);
   if (hit) return assertMember(hit);
-  // 织机二开会给经验库建审核状态，并把工作区成员都加进来
+  // Loom 二开会给经验库建审核状态，并把工作区成员都加进来
   return plane.createProject("经验库", ident, "团队共享的踩坑记录、有效做法和检查项。Agent 提交到“待审核”，由人决定是否采纳。");
 }
 
-async function ensureLabels(plane: 织机, projectId: string, names: string[]): Promise<Label[]> {
+async function ensureLabels(plane: Loom, projectId: string, names: string[]): Promise<Label[]> {
   const existing = await plane.listLabels(projectId);
   const out: Label[] = [];
   for (const n of names) {
@@ -72,7 +72,7 @@ async function ensureLabels(plane: 织机, projectId: string, names: string[]): 
 }
 
 /** belongs：所属项目标识，或 GENERAL（不属于任何项目）。用标签「项目:XXX」/「通用」记录，网页上能直接按它筛选。 */
-export async function proposeTeamLesson(plane: 织机, title: string, bodyMd: string, tags: string[], belongs: string) {
+export async function proposeTeamLesson(plane: Loom, title: string, bodyMd: string, tags: string[], belongs: string) {
   const project = await getLessonProject(plane);
   const states = await plane.listStates(project.id);
   const labels = await ensureLabels(plane, project.id, [...tags, belongs === GENERAL ? GENERAL : projectLabel(belongs)]);
@@ -115,7 +115,7 @@ async function readPrivateLessons(): Promise<Lesson[]> {
 }
 
 export async function searchLessons(
-  plane: 织机,
+  plane: Loom,
   query: string,
   tags: string[],
   opts: { includePending?: boolean; limit?: number; skipPrivate?: boolean; projects?: string[] } = {},

@@ -1,4 +1,4 @@
-// 文风规则（去 AI 味）。所有写入织机的文字都要过这里。
+// 文风规则（去 AI 味）。所有写入 Loom 的文字都要过这里。
 // level: error 拒绝写入；warn 提示但放行。
 // 规则只做确定性检查，改写由调用方 Agent 自己完成。
 
@@ -38,7 +38,7 @@ function lineOf(text: string, index: number): number {
 function stripCode(md: string): string {
   // 代码块和行内代码里的内容不做文风检查，用等长空白占位，保证行号不变
   return md
-    .replace(/```[\s\S]*?```/g, (m) => m.replace(/[^\n]/g, " "))
+    .replace(/(`{3,})[^\n]*\n[\s\S]*?\n\1`*/g, (m) => m.replace(/[^\n]/g, " ")) // 围栏可能多于三个反引号（html-embed 里含 ``` 时）
     .replace(/`[^`\n]*`/g, (m) => " ".repeat(m.length));
 }
 

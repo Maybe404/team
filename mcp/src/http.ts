@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// team-mcp 的 HTTP 入口：长期运行的服务，成员只填一个网址和自己的织机 API Token 就能用，不用在本机装任何东西。
+// team-mcp 的 HTTP 入口：长期运行的服务，成员只填一个网址和自己的 Loom API Token 就能用，不用在本机装任何东西。
 //
-//   POST /mcp/<工作区 slug>    Authorization: Bearer <织机 API Token>
+//   POST /mcp/<工作区 slug>    Authorization: Bearer <Loom API Token>
 //
-// 无状态：每个请求新建一个 server，Token 只用于转发给织机，不落盘。织机上的所有权限仍由织机判断，
+// 无状态：每个请求新建一个 server，Token 只用于转发给 Loom，不落盘。Loom 上的所有权限仍由 Loom 判断，
 // 操作记在 Token 所属的账号名下。
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { 织机 } from "./plane.ts";
+import { Loom } from "./plane.ts";
 import { createServer, VERSION } from "./server.ts";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -60,7 +60,7 @@ const http = createHttpServer(async (req, res) => {
 
   const token = tokenOf(req);
   if (!token) {
-    return rpcError(res, 401, `缺少织机 API Token。到 ${webUrl}/settings/profile/api-tokens 新建一个，按页面上的命令添加。`, {
+    return rpcError(res, 401, `缺少 Loom API Token。到 ${webUrl}/settings/profile/api-tokens 新建一个，按页面上的命令添加。`, {
       "WWW-Authenticate": 'Bearer realm="team-mcp"',
     });
   }
@@ -68,7 +68,7 @@ const http = createHttpServer(async (req, res) => {
   try {
     const body = await readBody(req);
     const config = { baseUrl, webUrl, workspace, token };
-    const server = createServer({ config, plane: new 织机(config), local: false, clientName: clientOf(req) });
+    const server = createServer({ config, plane: new Loom(config), local: false, clientName: clientOf(req) });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => {
       void transport.close();
@@ -82,4 +82,4 @@ const http = createHttpServer(async (req, res) => {
   }
 });
 
-http.listen(PORT, () => console.log(`team-mcp ${VERSION} 监听 :${PORT}，织机 ${baseUrl}`));
+http.listen(PORT, () => console.log(`team-mcp ${VERSION} 监听 :${PORT}，Loom ${baseUrl}`));

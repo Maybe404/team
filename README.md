@@ -1,11 +1,11 @@
-# 织机 Loom
+# Loom
 
 团队一体化协作平台：任务、文档、经验库和定时回顾，人和 Agent 围绕同一个任务协作。
 
 | 目录 | 内容 |
 |---|---|
-| `plane/` | 织机的应用源码（基于开源项目 Plane 二次开发，git subtree，上游 `preview`），二开改动都标了 `[team 二开]` |
-| `mcp/` | team-mcp：对接织机、规范闸门、经验库、回顾 |
+| `plane/` | Loom 的应用源码（基于开源项目 Plane 二次开发，git subtree，上游 `preview`），二开改动都标了 `[team 二开]` |
+| `mcp/` | team-mcp：对接 Loom、规范闸门、经验库、回顾 |
 | `dev/` | 本地开发：基础设施、源码启动脚本、种子数据 |
 | `deploy/` | 部署配置 |
 
@@ -147,7 +147,7 @@ MCP 随服务器升级，成员这边不用动。Agent 每次调用工具会带�
 
 ## 本地开发
 
-基础设施（Postgres、Redis、RabbitMQ、MinIO）用 Docker 跑，织机应用从源码启动。端口统一用 47xxx 段，见 `dev/ports.env`。
+基础设施（Postgres、Redis、RabbitMQ、MinIO）用 Docker 跑，Loom 应用从源码启动。端口统一用 47xxx 段，见 `dev/ports.env`。
 
 ```bash
 dev/setup-env.sh   # 生成各应用 .env（首次）
@@ -183,4 +183,4 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 
 ## 许可与来源
 
-织机基于开源项目 [Plane](https://github.com/makeplane/plane)（AGPL-3.0）二次开发，源码文件头里的原作者版权声明保持不变。按 AGPL 的要求，对外提供服务时需要向使用者提供对应版本的源码（本仓库即是）。去 AI 味规则来自第三方 skill「去 AI 味 v2」（CC BY-NC 4.0）。
+Loom 基于开源项目 [Plane](https://github.com/makeplane/plane)（AGPL-3.0）二次开发，源码文件头里的原作者版权声明保持不变。按 AGPL 的要求，对外提供服务时需要向使用者提供对应版本的源码（本仓库即是）。去 AI 味规则来自第三方 skill「去 AI 味 v2」（CC BY-NC 4.0）。

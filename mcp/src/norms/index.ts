@@ -1,4 +1,4 @@
-// 规范闸门：所有写入工具在调用织机之前都要经过 gate()。
+// 规范闸门：所有写入工具在调用 Loom 之前都要经过 gate()。
 import { checkStyle, type Issue } from "./style.ts";
 import { checkTone } from "./tone.ts";
 import { checkPrivacy } from "./privacy.ts";
@@ -86,7 +86,7 @@ export const WRITING_GUIDE = `# 团队写作规范
 
 - 密钥：API Key、Token、私钥、明文密码。用占位符（例如 \`<API_KEY>\`），真实值放本机环境变量。
 - 个人信息：手机号、身份证号、银行卡号。
-- 本机文件：指向本机的图片和文件链接。需要的图片在织机网页上传。
+- 本机文件：指向本机的图片和文件链接。需要的图片在 Loom 网页上传。
 - 本机绝对路径（提示）：改成仓库内的相对路径。
 
 私人项目、私人笔记、和团队无关的内容不要写进来；私人经验用 propose_lesson 的 scope=private，只存在本机。

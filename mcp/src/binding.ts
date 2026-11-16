@@ -1,11 +1,11 @@
-// 仓库绑定：织机项目设置里登记了“关联代码仓库”，Agent 当前所在仓库的 git remote 能对上，才能读写这个项目。
+// 仓库绑定：Loom 项目设置里登记了“关联代码仓库”，Agent 当前所在仓库的 git remote 能对上，才能读写这个项目。
 // 没对上（个人项目、私人目录、没有 git 的地方）时只能调用 whoami 和规范类工具，防止把无关内容写进团队空间，
 // 也防止在别的仓库里读到团队数据。登记由项目管理员在网页上完成，Agent 改不了。
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { Project } from "./plane.ts";
 
-/** 与织机二开里的 normalize_repo_url 保持一致：git@github.com:Org/Repo.git → github.com/org/repo */
+/** 与 Loom 二开里的 normalize_repo_url 保持一致：git@github.com:Org/Repo.git → github.com/org/repo */
 export function normalizeRepoUrl(url: string): string {
   let u = (url || "").trim();
   u = u.replace(/^[a-z+]+:\/\//i, "");

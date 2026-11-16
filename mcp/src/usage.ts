@@ -1,9 +1,9 @@
-// 产品使用指南：给不熟悉织机的成员和他们的 Agent 看。说明每个功能干什么、什么时候用，
+// 产品使用指南：给不熟悉 Loom 的成员和他们的 Agent 看。说明每个功能干什么、什么时候用，
 // 以及哪些能通过 MCP 做、哪些要去网页上做。内容要和实际能力保持一致，改了工具记得同步这里。
 
 export function usageGuide(webUrl: string, workspace: string): string {
   const w = `${webUrl}/${workspace}`;
-  return `# 团队协作平台使用指南
+  return `# Loom 使用指南
 
 这个平台由 Agent 写入和维护，人是受益者：用来核验、学习、查看。所以所有内容都要让人能看懂、结构清晰、证据可核验。
 
@@ -32,7 +32,8 @@ export function usageGuide(webUrl: string, workspace: string): string {
 
 设计方案、会议纪要、复盘这类要长期留存的文字，放在项目的「页面」里。任务讲“做什么”，页面讲“为什么这么做”。
 - MCP 能做：写、读、整篇更新、写入时用 task 参数关联到任务、或用 link_doc 关联已有文档（write_doc、read_doc、list_docs、link_doc），写入前会按规范检查。
-- 关联：页面和工作项可以一键关联，两边都能看到。网页上，工作项右侧「关联文档」、页面菜单「关联工作项」；Agent 用 write_doc 的 task 参数或 link_doc。创建人、指派人、文档作者、管理员能建立关联。
+- 关联：页面和工作项可以一键关联，两边都能看到，一个页面能关联多个工作项，一个工作项也能关联多个页面。网页上，工作项右侧「关联文档」、页面菜单「关联工作项」，弹窗里默认列出最近更新的，可以滚动选，也能搜索，点一下关联、再点一下取消；Agent 用 write_doc 的 task 参数或 link_doc。创建人、指派人、文档作者、管理员能建立关联。
+- 页面里能放的内容：普通排版之外，输入 / 能插入「HTML 页面」块；语言为 mermaid 的代码块会渲染成流程图。Agent 写 Markdown 时，流程、时序、架构画成 mermaid，成品网页写成 html-embed 围栏（写法见 get_guide topic=writing）。HTML 块在网页上可以拖拽调大小、整页放大、下载。
 - 想让团队外的人读：管理员在页面右上角「…」→「公开链接」打开，生成免登录只读链接，关掉就失效。这个只能在网页上做。
 
 ## 周期（Cycle）

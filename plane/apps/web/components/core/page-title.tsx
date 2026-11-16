@@ -16,7 +16,7 @@ export function PageHead(props: PageHeadTitleProps) {
 
   useEffect(() => {
     if (title) {
-      document.title = title ?? "织机 Loom | 人与 Agent 协作的团队工作台";
+      document.title = title ?? "Loom | 人与 Agent 协作的团队工作台";
     }
   }, [title]);
 

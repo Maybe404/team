@@ -1,44 +1,26 @@
 /**
- * [team 二开] 织机 Loom 品牌图标：圆角方块里经纬交织的平纹，象征任务、文档、经验织在一起。
+ * [team 二开] Loom 品牌图标：一团线绕成的线团，一缕线头飘出来，黑白两色，跟随文字颜色。
  */
 
 import * as React from "react";
 
 export type PlaneLockupProps = React.ComponentPropsWithoutRef<"svg">;
 
-export function PlaneLockup({ width = "180", height = "52", className, color = "currentColor" }: PlaneLockupProps) {
-  const TILE = "#3F76FF";
+export function PlaneLockup({ width = "132", height = "52", className, color = "currentColor" }: PlaneLockupProps) {
   return (
-    <svg width={width} height={height} viewBox="0 0 180 52" xmlns="http://www.w3.org/2000/svg" className={className}>
+    <svg width={width} height={height} viewBox="0 0 132 52" xmlns="http://www.w3.org/2000/svg" className={className} style={color !== "currentColor" ? { color } : undefined}>
       <g transform="scale(0.8125)">
-        <rect width="64" height="64" rx="15" fill={TILE} />
-<line x1="9" y1="17" x2="55" y2="17" stroke="#fff" strokeWidth="7.0" strokeLinecap="round"/>
-<line x1="9" y1="32" x2="55" y2="32" stroke="#fff" strokeWidth="7.0" strokeLinecap="round"/>
-<line x1="9" y1="47" x2="55" y2="47" stroke="#fff" strokeWidth="7.0" strokeLinecap="round"/>
-<line x1="17" y1="9" x2="17" y2="55" stroke="#fff" strokeWidth="7.0" strokeLinecap="round"/>
-<line x1="32" y1="9" x2="32" y2="55" stroke="#fff" strokeWidth="7.0" strokeLinecap="round"/>
-<line x1="47" y1="9" x2="47" y2="55" stroke="#fff" strokeWidth="7.0" strokeLinecap="round"/>
-<rect x="11.3" y="11.3" width="11.4" height="11.4" fill={TILE}/>
-<line x1="17" y1="10.8" x2="17" y2="23.2" stroke="#fff" strokeWidth="7.0"/>
-<rect x="11.3" y="26.3" width="11.4" height="11.4" fill={TILE}/>
-<line x1="10.8" y1="32" x2="23.2" y2="32" stroke="#fff" strokeWidth="7.0"/>
-<rect x="11.3" y="41.3" width="11.4" height="11.4" fill={TILE}/>
-<line x1="17" y1="40.8" x2="17" y2="53.2" stroke="#fff" strokeWidth="7.0"/>
-<rect x="26.3" y="11.3" width="11.4" height="11.4" fill={TILE}/>
-<line x1="25.8" y1="17" x2="38.2" y2="17" stroke="#fff" strokeWidth="7.0"/>
-<rect x="26.3" y="26.3" width="11.4" height="11.4" fill={TILE}/>
-<line x1="32" y1="25.8" x2="32" y2="38.2" stroke="#fff" strokeWidth="7.0"/>
-<rect x="26.3" y="41.3" width="11.4" height="11.4" fill={TILE}/>
-<line x1="25.8" y1="47" x2="38.2" y2="47" stroke="#fff" strokeWidth="7.0"/>
-<rect x="41.3" y="11.3" width="11.4" height="11.4" fill={TILE}/>
-<line x1="47" y1="10.8" x2="47" y2="23.2" stroke="#fff" strokeWidth="7.0"/>
-<rect x="41.3" y="26.3" width="11.4" height="11.4" fill={TILE}/>
-<line x1="40.8" y1="32" x2="53.2" y2="32" stroke="#fff" strokeWidth="7.0"/>
-<rect x="41.3" y="41.3" width="11.4" height="11.4" fill={TILE}/>
-<line x1="47" y1="40.8" x2="47" y2="53.2" stroke="#fff" strokeWidth="7.0"/>
+<ellipse cx="29" cy="29" rx="20" ry="11" transform="rotate(0.0 29 29)" fill="none" stroke="currentColor" strokeWidth="1.7"/>
+<ellipse cx="29" cy="29" rx="20" ry="11" transform="rotate(25.7 29 29)" fill="none" stroke="currentColor" strokeWidth="1.7"/>
+<ellipse cx="29" cy="29" rx="20" ry="11" transform="rotate(51.4 29 29)" fill="none" stroke="currentColor" strokeWidth="1.7"/>
+<ellipse cx="29" cy="29" rx="20" ry="11" transform="rotate(77.1 29 29)" fill="none" stroke="currentColor" strokeWidth="1.7"/>
+<ellipse cx="29" cy="29" rx="20" ry="11" transform="rotate(102.9 29 29)" fill="none" stroke="currentColor" strokeWidth="1.7"/>
+<ellipse cx="29" cy="29" rx="20" ry="11" transform="rotate(128.6 29 29)" fill="none" stroke="currentColor" strokeWidth="1.7"/>
+<ellipse cx="29" cy="29" rx="20" ry="11" transform="rotate(154.3 29 29)" fill="none" stroke="currentColor" strokeWidth="1.7"/>
+<path d="M44.5 43.5 C50 49 53 54 58 53 C62 52 61.5 46.5 57.5 47.5 C54 48.5 56 54 61 56" fill="none" stroke="currentColor" strokeWidth="2.21" strokeLinecap="round"/>
       </g>
-      <text x="62" y="35" fill={color} fontSize="26" fontWeight="700" fontFamily="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">
-        织机 Loom
+      <text x="58" y="36" fill="currentColor" fontSize="30" fontWeight="700" letterSpacing="-0.5" fontFamily="system-ui, -apple-system, 'Segoe UI', sans-serif">
+        Loom
       </text>
     </svg>
   );
