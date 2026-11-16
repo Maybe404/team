@@ -25,8 +25,7 @@ import { APIService } from "@/services/api.service";
 
 type LinkedPage = { id: string; name: string; owned_by: string; archived: boolean };
 type LinkedIssue = { id: string; key: string; name: string; state: string };
-type PageOption = { id: string; name: string };
-type IssueOption = { id: string; name: string; sequence_id: number; project__identifier: string; state__name?: string };
+type Candidate = { id: string; name: string; key?: string; meta: string; updated_at: string };
 
 class TeamPageIssueService extends APIService {
   constructor() {
@@ -53,11 +52,8 @@ class TeamPageIssueService extends APIService {
   unlinkIssue(ws: string, project: string, page: string, issue: string): Promise<LinkedIssue[]> {
     return this.delete(`${this.base(ws, project)}/pages/${page}/team-issues/?issue_id=${issue}`).then((r) => r.data);
   }
-  projectPages(ws: string, project: string): Promise<PageOption[]> {
-    return this.get(`${this.base(ws, project)}/pages/`).then((r) => r.data);
-  }
-  searchIssues(ws: string, project: string, q: string): Promise<IssueOption[]> {
-    return this.get(`${this.base(ws, project)}/search-issues/`, { params: { search: q } }).then((r) => r.data);
+  candidates(ws: string, project: string, kind: "pages" | "issues", q: string): Promise<Candidate[]> {
+    return this.get(`${this.base(ws, project)}/team-link-candidates/`, { params: { kind, q } }).then((r) => r.data);
   }
 }
 const service = new TeamPageIssueService();
@@ -65,15 +61,28 @@ const service = new TeamPageIssueService();
 const errorMessage = (e: unknown) => (e as { error?: string })?.error ?? "请稍后再试";
 const fail = (e: unknown) => setToast({ type: "error", title: "操作失败", message: errorMessage(e) });
 
-function Row({ href, title, hint, onRemove }: { href: string; title: string; hint?: string; onRemove?: () => void }) {
+const ago = (iso: string) => {
+  const diff = (new Date(iso).getTime() - Date.now()) / 1000;
+  const rtf = new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto" });
+  for (const [unit, sec] of [["day", 86400], ["hour", 3600], ["minute", 60]] as const) {
+    if (Math.abs(diff) >= sec) return rtf.format(Math.round(diff / sec), unit);
+  }
+  return "刚刚";
+};
+
+function LinkedRow({ href, title, hint, onRemove }: { href: string; title: string; hint?: string; onRemove?: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 py-1.5">
-      <a href={href} className="min-w-0 flex-1 truncate text-caption-md-regular text-primary hover:underline">
+    <div className="group/row flex items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 py-1.5 hover:bg-layer-transparent-hover">
+      <a href={href} className="min-w-0 flex-1 truncate text-body-xs-regular text-primary hover:underline">
         {title}
         {hint && <span className="ml-2 text-caption-sm-regular text-tertiary">{hint}</span>}
       </a>
       {onRemove && (
-        <button type="button" onClick={onRemove} className="text-caption-sm-regular text-tertiary hover:text-primary">
+        <button
+          type="button"
+          onClick={onRemove}
+          className="shrink-0 text-caption-sm-regular text-tertiary opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-primary"
+        >
           取消关联
         </button>
       )}
@@ -81,13 +90,100 @@ function Row({ href, title, hint, onRemove }: { href: string; title: string; hin
   );
 }
 
+/**
+ * 关联弹窗里的选择器：不输入时列出最近更新的（推荐），输入后模糊搜索；列表可滚动，
+ * 点一下关联，再点一下取消，可连续选多个。
+ */
+function LinkPicker(props: {
+  items: Candidate[] | null;
+  linkedIds: Set<string>;
+  query: string;
+  onQuery: (q: string) => void;
+  placeholder: string;
+  emptyText: string;
+  onToggle: (item: Candidate, linked: boolean) => void;
+}) {
+  const { items, linkedIds, query, onQuery, placeholder, emptyText, onToggle } = props;
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 rounded-md border-[0.5px] border-subtle bg-surface-1 px-2.5 py-1.5 focus-within:border-accent-strong">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-tertiary">
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder={placeholder}
+          className="w-full bg-transparent text-body-xs-regular text-primary outline-none placeholder:text-placeholder"
+        />
+      </div>
+      <div className="px-1 text-caption-sm-medium text-tertiary">{query.trim() ? "搜索结果" : "最近更新"}</div>
+      <div className="vertical-scrollbar scrollbar-sm -mx-1 max-h-72 min-h-24 overflow-y-auto px-1">
+        {items === null && <div className="py-6 text-center text-caption-md-regular text-tertiary">加载中…</div>}
+        {items?.length === 0 && <div className="py-6 text-center text-caption-md-regular text-tertiary">{emptyText}</div>}
+        {items?.map((it) => {
+          const linked = linkedIds.has(it.id);
+          return (
+            <button
+              key={it.id}
+              type="button"
+              onClick={() => onToggle(it, linked)}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-layer-transparent-hover"
+            >
+              {it.key && <span className="shrink-0 text-caption-sm-regular text-tertiary">{it.key}</span>}
+              <span className="min-w-0 flex-1 truncate text-body-xs-regular text-primary">{it.name || "未命名"}</span>
+              <span className="shrink-0 text-caption-sm-regular text-tertiary">
+                {[it.meta, ago(it.updated_at)].filter(Boolean).join(" · ")}
+              </span>
+              {linked ? (
+                <span className="shrink-0 rounded bg-accent-subtle px-1.5 py-0.5 text-caption-sm-medium text-accent-primary">已关联</span>
+              ) : (
+                <span className="w-[42px] shrink-0" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** 防抖地取候选：query 为空时取最近更新的。 */
+function useCandidates(enabled: boolean, ws: string, project: string, kind: "pages" | "issues") {
+  const [query, setQuery] = useState("");
+  const [items, setItems] = useState<Candidate[] | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let stale = false;
+    const timer = setTimeout(
+      () => {
+        service
+          .candidates(ws, project, kind, query.trim())
+          .then((r) => !stale && setItems(r))
+          .catch(() => !stale && setItems([]));
+      },
+      query ? 250 : 0
+    );
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [enabled, ws, project, kind, query]);
+  const reset = () => {
+    setQuery("");
+    setItems(null);
+  };
+  return { query, setQuery, items, reset };
+}
+
 /** 工作项侧边栏：这个工作项关联的文档，可以一键关联 / 取消。 */
 export function TeamIssuePages(props: { workspaceSlug: string; projectId: string; issueId: string }) {
   const { workspaceSlug, projectId, issueId } = props;
   const [pages, setPages] = useState<LinkedPage[] | null>(null);
   const [picking, setPicking] = useState(false);
-  const [options, setOptions] = useState<PageOption[]>([]);
-  const [query, setQuery] = useState("");
+  const picker = useCandidates(picking, workspaceSlug, projectId, "pages");
 
   const load = useCallback(() => {
     service
@@ -97,36 +193,29 @@ export function TeamIssuePages(props: { workspaceSlug: string; projectId: string
   }, [workspaceSlug, projectId, issueId]);
   useEffect(load, [load]);
 
-  const openPicker = () => {
-    setPicking(true);
-    setQuery("");
-    service
-      .projectPages(workspaceSlug, projectId)
-      .then(setOptions)
-      .catch(() => setOptions([]));
-  };
-  const linkedIds = new Set((pages ?? []).map((p) => p.id));
-  const shown = options.filter((p) => !linkedIds.has(p.id) && p.name.toLowerCase().includes(query.toLowerCase())).slice(0, 30);
-
   return (
     <div className="flex flex-col gap-2">
       {(pages ?? []).map((p) => (
-        <Row
+        <LinkedRow
           key={p.id}
           href={`/${workspaceSlug}/projects/${projectId}/pages/${p.id}`}
           title={p.name || "未命名文档"}
           hint={p.owned_by}
-          onRemove={() =>
-            void service
-              .unlinkPage(workspaceSlug, projectId, issueId, p.id)
-              .then(setPages)
-              .catch(fail)
-          }
+          onRemove={() => void service.unlinkPage(workspaceSlug, projectId, issueId, p.id).then(setPages).catch(fail)}
         />
       ))}
       {pages && pages.length === 0 && <div className="text-caption-sm-regular text-tertiary">还没有关联文档</div>}
       <div>
-        <Button variant="secondary" size="sm" stretch="auto" label="关联文档" onClick={openPicker} />
+        <Button
+          variant="secondary"
+          size="sm"
+          stretch="auto"
+          label="关联文档"
+          onClick={() => {
+            picker.reset();
+            setPicking(true);
+          }}
+        />
       </div>
       <Dialog open={picking} onOpenChange={(open) => !open && setPicking(false)}>
         <DialogContent size="md">
@@ -134,42 +223,30 @@ export function TeamIssuePages(props: { workspaceSlug: string; projectId: string
             <DialogHeader>
               <DialogHeading>
                 <DialogTitle>关联文档</DialogTitle>
-                <DialogDescription>选一篇本项目的文档，关联后两边都能看到。</DialogDescription>
+                <DialogDescription>可以选多篇。点一下关联，再点一下取消。</DialogDescription>
               </DialogHeading>
             </DialogHeader>
             <DialogBody>
-              <div className="flex flex-col gap-2">
-                <input
-                  autoFocus
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索文档标题"
-                  className="w-full rounded-md border-[0.5px] border-subtle bg-transparent px-3 py-2 text-body-sm-regular outline-none"
-                />
-                {shown.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className="truncate rounded-md border-[0.5px] border-subtle px-3 py-2 text-left text-body-sm-regular hover:bg-layer-1"
-                    onClick={() =>
-                      void service
-                        .linkPage(workspaceSlug, projectId, issueId, p.id)
-                        .then((r) => {
-                          setPages(r);
-                          setPicking(false);
-                        })
-                        .catch(fail)
-                    }
-                  >
-                    {p.name || "未命名文档"}
-                  </button>
-                ))}
-                {shown.length === 0 && <div className="text-caption-sm-regular text-tertiary">没有可关联的文档</div>}
-              </div>
+              <LinkPicker
+                items={picker.items}
+                linkedIds={new Set((pages ?? []).map((p) => p.id))}
+                query={picker.query}
+                onQuery={picker.setQuery}
+                placeholder="搜索文档标题"
+                emptyText="没有找到文档"
+                onToggle={(it, linked) =>
+                  void (linked
+                    ? service.unlinkPage(workspaceSlug, projectId, issueId, it.id)
+                    : service.linkPage(workspaceSlug, projectId, issueId, it.id)
+                  )
+                    .then(setPages)
+                    .catch(fail)
+                }
+              />
             </DialogBody>
           </DialogMain>
           <DialogActions>
-            <Button variant="secondary" size="sm" stretch="auto" label="关闭" onClick={() => setPicking(false)} />
+            <Button variant="primary" size="sm" stretch="auto" label="完成" onClick={() => setPicking(false)} />
           </DialogActions>
         </DialogContent>
       </Dialog>
@@ -187,34 +264,19 @@ export function TeamPageIssuesModal(props: {
 }) {
   const { isOpen, onClose, workspaceSlug, projectId, pageId } = props;
   const [issues, setIssues] = useState<LinkedIssue[] | null>(null);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<IssueOption[]>([]);
+  const picker = useCandidates(isOpen, workspaceSlug, projectId, "issues");
+  const { reset } = picker;
 
   useEffect(() => {
     if (!isOpen || !projectId || !pageId) return;
-    setQuery("");
-    setResults([]);
+    reset();
     service
       .issuesOfPage(workspaceSlug, projectId, pageId)
       .then(setIssues)
       .catch(() => setIssues([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, workspaceSlug, projectId, pageId]);
 
-  useEffect(() => {
-    if (!isOpen || !query.trim()) {
-      setResults([]);
-      return;
-    }
-    const timer = setTimeout(() => {
-      service
-        .searchIssues(workspaceSlug, projectId, query.trim())
-        .then(setResults)
-        .catch(() => setResults([]));
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [isOpen, query, workspaceSlug, projectId]);
-
-  const linkedIds = new Set((issues ?? []).map((i) => i.id));
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent size="md">
@@ -222,58 +284,30 @@ export function TeamPageIssuesModal(props: {
           <DialogHeader>
             <DialogHeading>
               <DialogTitle>关联工作项</DialogTitle>
-              <DialogDescription>这篇文档关联的工作项。关联后，工作项页里也能看到这篇文档。</DialogDescription>
+              <DialogDescription>可以选多个。点一下关联，再点一下取消；工作项页里也会看到这篇文档。</DialogDescription>
             </DialogHeading>
           </DialogHeader>
           <DialogBody>
-            <div className="flex flex-col gap-2">
-              {(issues ?? []).map((i) => (
-                <Row
-                  key={i.id}
-                  href={`/${workspaceSlug}/browse/${i.key}`}
-                  title={`${i.key} ${i.name}`}
-                  hint={i.state}
-                  onRemove={() =>
-                    void service
-                      .unlinkIssue(workspaceSlug, projectId, pageId, i.id)
-                      .then(setIssues)
-                      .catch(fail)
-                  }
-                />
-              ))}
-              {issues && issues.length === 0 && <div className="text-caption-sm-regular text-tertiary">还没有关联工作项</div>}
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="搜索工作项标题或编号，点一下就关联"
-                className="mt-2 w-full rounded-md border-[0.5px] border-subtle bg-transparent px-3 py-2 text-body-sm-regular outline-none"
-              />
-              {results
-                .filter((r) => !linkedIds.has(r.id))
-                .slice(0, 20)
-                .map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    className="truncate rounded-md border-[0.5px] border-subtle px-3 py-2 text-left text-body-sm-regular hover:bg-layer-1"
-                    onClick={() =>
-                      void service
-                        .linkIssue(workspaceSlug, projectId, pageId, r.id)
-                        .then((list) => {
-                          setIssues(list);
-                          setQuery("");
-                        })
-                        .catch(fail)
-                    }
-                  >
-                    {r.project__identifier}-{r.sequence_id} {r.name}
-                  </button>
-                ))}
-            </div>
+            <LinkPicker
+              items={picker.items}
+              linkedIds={new Set((issues ?? []).map((i) => i.id))}
+              query={picker.query}
+              onQuery={picker.setQuery}
+              placeholder="搜索工作项标题或编号"
+              emptyText="没有找到工作项"
+              onToggle={(it, linked) =>
+                void (linked
+                  ? service.unlinkIssue(workspaceSlug, projectId, pageId, it.id)
+                  : service.linkIssue(workspaceSlug, projectId, pageId, it.id)
+                )
+                  .then(setIssues)
+                  .catch(fail)
+              }
+            />
           </DialogBody>
         </DialogMain>
         <DialogActions>
-          <Button variant="secondary" size="sm" stretch="auto" label="关闭" onClick={onClose} />
+          <Button variant="primary" size="sm" stretch="auto" label="完成" onClick={onClose} />
         </DialogActions>
       </DialogContent>
     </Dialog>

@@ -5,7 +5,7 @@
 from django.urls import path
 
 from plane.app.views.page.team_share import TeamPageShareEndpoint
-from plane.app.views.page.team_page_issue import TeamIssuePagesEndpoint, TeamPageIssuesEndpoint
+from plane.app.views.page.team_page_issue import TeamIssuePagesEndpoint, TeamLinkCandidatesEndpoint, TeamPageIssuesEndpoint
 
 
 from plane.app.views import (
@@ -99,5 +99,10 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:page_id>/team-issues/",
         TeamPageIssuesEndpoint.as_view(),
         name="team-page-issues",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/team-link-candidates/",
+        TeamLinkCandidatesEndpoint.as_view(),
+        name="team-link-candidates",
     ),
 ]

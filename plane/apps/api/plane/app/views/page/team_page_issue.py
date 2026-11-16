@@ -89,3 +89,53 @@ class TeamPageIssuesEndpoint(_Base):
         if not ok:
             return Response({"error": err}, status=status.HTTP_403_FORBIDDEN)
         return Response(issues_of_page(page_id, project_id))
+
+
+class TeamLinkCandidatesEndpoint(_Base):
+    """关联弹窗的候选列表：不输入时按最近更新排序（推荐），输入后按标题模糊搜索，工作项还能按编号搜。"""
+
+    def get(self, request, slug, project_id):
+        import re
+
+        from django.db.models import Q
+
+        if (r := self._deny(request, slug, project_id)) is not None:
+            return r
+        kind = request.query_params.get("kind")
+        q = (request.query_params.get("q") or "").strip()
+        if kind == "pages":
+            qs = visible_pages(request.user, slug, project_id).filter(archived_at__isnull=True).select_related("owned_by")
+            if q:
+                qs = qs.filter(name__icontains=q)
+            return Response(
+                [
+                    {
+                        "id": str(p.id),
+                        "name": p.name,
+                        "meta": p.owned_by.display_name if p.owned_by_id else "",
+                        "updated_at": p.updated_at.isoformat(),
+                    }
+                    for p in qs.order_by("-updated_at")[:50]
+                ]
+            )
+        if kind == "issues":
+            qs = Issue.issue_objects.filter(workspace__slug=slug, project_id=project_id).select_related("state", "project")
+            if q:
+                cond = Q(name__icontains=q)
+                m = re.search(r"(\d+)$", q)
+                if m:
+                    cond |= Q(sequence_id=int(m.group(1)))
+                qs = qs.filter(cond)
+            return Response(
+                [
+                    {
+                        "id": str(i.id),
+                        "name": i.name,
+                        "key": f"{i.project.identifier}-{i.sequence_id}",
+                        "meta": i.state.name if i.state_id else "",
+                        "updated_at": i.updated_at.isoformat(),
+                    }
+                    for i in qs.order_by("-updated_at")[:50]
+                ]
+            )
+        return Response({"error": "kind 只能是 pages 或 issues"}, status=status.HTTP_400_BAD_REQUEST)
