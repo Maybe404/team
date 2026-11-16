@@ -155,11 +155,12 @@ await step("工具、资源、提示词都已注册", async () => {
   return `${tools.length} 个工具`;
 });
 
-await step("不是 git 仓库时只能用 whoami 和规范类工具", async () => {
+await step("不是 git 仓库时：没登记仓库的项目照常可用，规范类工具可用", async () => {
   const who = await call("whoami", {});
-  expect(!who.isError && who.text.includes("未关联") && who.text.includes(secrets.SEED_EMAIL), who.text);
+  expect(!who.isError && who.text.includes("没有关联项目") && who.text.includes("不绑定代码仓库") && who.text.includes(secrets.SEED_EMAIL), who.text);
+  // DEMO 没登记仓库：任何目录里指定 project 就能读
   const list = await call("list_tasks", { project: "DEMO" });
-  expect(list.isError && list.text.includes("不是 git 仓库"), list.text);
+  expect(!list.isError, list.text);
   const guide = await call("get_guide", { topic: "writing" });
   expect(!guide.isError && guide.text.includes("团队写作规范"), guide.text);
   const les = await call("get_guide", { topic: "lessons" });
@@ -181,18 +182,24 @@ print("archive_in", p.archive_in)
   expect(out.includes("archive_in 1"), out);
 });
 
-await step("仓库没登记时读写都被拒绝，并提示去项目设置登记", async () => {
+await step("项目绑定了别的仓库时，在当前仓库里读写都被拒绝，并提示", async () => {
   git("init", "-q");
   git("remote", "add", "origin", `git@${REPO.replace("/", ":").replace("e2e/", "E2E/")}.git`);
+  django(`
+from plane.db.models import Project
+p = Project.objects.get(identifier="${PROJECT}", workspace__slug="${secrets.PLANE_WORKSPACE}")
+p.team_repos = ["github.com/someone/else"]
+p.save()
+`);
   const r = await call("create_task", { project: PROJECT, title: "修复订单分页重复", description: goodTask });
-  expect(r.isError && r.text.includes("没有登记") && r.text.includes("关联代码仓库"), r.text);
+  expect(r.isError && r.text.includes("绑定了别的代码仓库"), r.text);
   const read = await call("list_tasks", { project: PROJECT });
-  expect(read.isError && read.text.includes("没有登记"), read.text);
+  expect(read.isError && read.text.includes("绑定了别的代码仓库"), read.text);
   const lesson = await call("search_lessons", { query: "分页" });
   expect(lesson.isError, lesson.text);
 });
 
-await step("管理员在项目设置里登记仓库后可以读写，其他项目仍然拒绝", async () => {
+await step("管理员在项目设置里登记仓库后可以读写，没登记仓库的项目也可用", async () => {
   const out = django(`
 from plane.db.models import Project
 p = Project.objects.get(identifier="${PROJECT}", workspace__slug="${secrets.PLANE_WORKSPACE}")
@@ -203,8 +210,8 @@ print(p.team_repos)
   expect(out.includes(REPO), out);
   const who = await call("whoami", {});
   expect(who.text.includes(`已关联 ${PROJECT}`), who.text);
-  const other = await call("create_task", { project: "DEMO", title: "不该写进去的任务", description: goodTask });
-  expect(other.isError && other.text.includes(`只能写入 ${PROJECT}`), other.text);
+  const other = await call("list_tasks", { project: "DEMO" });
+  expect(!other.isError, other.text);
   const ls = await call("list_tasks", {});
   expect(!ls.isError, ls.text);
 });

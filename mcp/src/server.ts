@@ -57,7 +57,7 @@ const server = new McpServer(
 规则：
 1. 第一次写入前读一次规范（get_guide topic=writing），同一次对话里读过就不用再读；不合规的写入会被退回并说明原因。
 2. 去 AI 味：页面、任务描述、评论、经验这四类写入，落笔前都要按「去 AI 味」的规则写，写完先用 check_text 预检，按提示改；整篇 500 汉字以上的页面再用 analyze_tone 出整篇报告，按报告改写后再写入。写入时服务端还会再检查一遍，被退回时逐条改完重交，不要换个说法绕过检查。
-3. 只在团队项目的仓库里工作时使用。每次调用工具都要把当前仓库的 git remote 地址（git remote get-url origin 的输出）填进 repo 参数。仓库要由项目管理员在 Loom「项目设置 → 关联代码仓库」登记过，没登记的仓库里除了 whoami 和规范类工具都用不了，这是正常的，不要想办法绕过，也不要填别的仓库地址来蒙混。
+3. 只做团队工作时使用。每次调用工具都要把当前仓库的 git remote 地址（git remote get-url origin 的输出）填进 repo 参数，不在 git 仓库里就省略。项目分两类：登记了代码仓库的项目（项目管理员在 Loom「项目设置 → 关联代码仓库」登记），只能在对应仓库里读写；没登记仓库的项目（文档、运营、设计等不对应代码的项目），在任何目录里都能读写，用 project 参数指定。读写不了时按提示办，不要换项目或填别的仓库地址来蒙混。
 4. 团队任务动手前先 search_lessons 查相关经验，结束后经用户同意用 propose_lesson 提交新经验，团队经验需要人审核才会生效。
 5. 状态“已完成”“已取消”只能由人设置；Agent 做完后用 update_task 改成“待审查”，同时在 comment 里写带证据的结论。
 6. 只写团队工作。个人笔记、密钥和个人信息不要写进来。
@@ -286,7 +286,7 @@ class NotBound extends Error {}
 
 const SHARED = [process.env.TEAM_LESSONS_PROJECT || "LESSON", process.env.TEAM_REVIEW_PROJECT || "REVIEW"].map((x) => x.toUpperCase());
 
-async function repoScope(): Promise<RepoScope & { all: Project[] }> {
+async function repoScope(): Promise<RepoScope & { all: Project[]; open: Project[] }> {
   let dirs: string[] = [];
   let remotes: string[] = [];
   if (local) {
@@ -297,13 +297,18 @@ async function repoScope(): Promise<RepoScope & { all: Project[] }> {
   // 调用方传来的 repo：可以有多个，用空白或逗号分开
   remotes = [...new Set([...remotes, ...(repoArg ?? "").split(/[\s,]+/).filter(Boolean).map(normalizeRepoUrl)])];
   const all = await plane.listProjects();
-  return { dirs, remotes, projects: matchProjects(all, remotes).filter((p) => p.is_member !== false), all };
+  // 没登记代码仓库的项目（文档、运营、设计这类不对应代码仓库的项目）不受仓库限制，在任何目录里用 project 参数指定即可
+  const open = all.filter((p) => p.is_member !== false && !(p.team_repos ?? []).length && !SHARED.includes(p.identifier.toUpperCase()));
+  return { dirs, remotes, projects: matchProjects(all, remotes).filter((p) => p.is_member !== false), all, open };
 }
 
-/** 当前仓库关联的项目；一个都没有时抛 NotBound。 */
-async function boundProjects(): Promise<{ projects: Project[]; shared: Project[] }> {
+/**
+ * 能用的项目 = 当前仓库对上的项目（matched）+ 没登记仓库的项目（open）。
+ * 一个都没有时抛 NotBound。projects 是两者合并，供经验检索、回顾等按“能用的项目”过滤。
+ */
+async function boundProjects(): Promise<{ projects: Project[]; matched: Project[]; open: Project[]; shared: Project[] }> {
   const sc = await repoScope();
-  if (!sc.projects.length) {
+  if (!sc.projects.length && !sc.open.length) {
     const unjoined = matchProjects(sc.all, sc.remotes).filter((p) => p.is_member === false);
     if (unjoined.length) {
       throw new NotBound(`当前仓库关联的是 ${unjoined.map((p) => `${p.identifier}（${p.name}）`).join("、")}，但你还不是成员。请项目管理员在网页上把你加进项目。`);
@@ -311,24 +316,33 @@ async function boundProjects(): Promise<{ projects: Project[]; shared: Project[]
     throw new NotBound(notBoundMessage(sc, CONFIG.webUrl, local));
   }
   const shared = sc.all.filter((p) => SHARED.includes(p.identifier.toUpperCase()) && p.is_member !== false);
-  return { projects: sc.projects, shared };
+  return { projects: [...sc.projects, ...sc.open], matched: sc.projects, open: sc.open, shared };
 }
 
 /**
- * 选项目：不传时用当前仓库关联的唯一项目；传了必须是当前仓库关联的项目。
+ * 选项目：
+ * - 不传：当前仓库关联的唯一项目；没有关联项目时，如果只有一个不绑定仓库的项目就用它，多个则要求用 project 指定。
+ * - 传了：必须是当前仓库关联的项目，或不绑定仓库的项目。绑定了别的仓库的项目在这里不能读写。
  * mode=read 时也允许经验库、每日回顾这两个共享项目。
  */
 async function projectFor(ref: string | undefined, mode: "read" | "write" = "write"): Promise<Project> {
-  const { projects, shared } = await boundProjects();
+  const { projects, matched, open, shared } = await boundProjects();
   const pool = mode === "read" ? [...projects, ...shared] : projects;
-  const list = projects.map((p) => `${p.identifier}（${p.name}）`).join("、");
+  const fmt = (l: Project[]) => l.map((p) => `${p.identifier}（${p.name}）`).join("、");
   if (!ref) {
-    if (projects.length === 1) return projects[0];
-    throw new Error(`当前仓库关联了多个项目：${list}。请用 project 参数指定一个。`);
+    if (matched.length === 1) return matched[0];
+    if (matched.length > 1) throw new Error(`当前仓库关联了多个项目：${fmt(matched)}。请用 project 参数指定一个。`);
+    if (open.length === 1) return open[0];
+    throw new Error(`当前仓库没有关联项目。请用 project 参数指定一个不绑定代码仓库的项目：${fmt(open)}。`);
   }
   const key = ref.trim().toLowerCase();
   const hit = pool.find((p) => p.id === ref || p.identifier.toLowerCase() === key || p.name.toLowerCase() === key);
-  if (!hit) throw new Error(`当前仓库只能${mode === "read" ? "读写" : "写入"} ${list}${mode === "read" && shared.length ? `，以及共享的 ${shared.map((p) => p.identifier).join("、")}` : ""}，没有「${ref}」。`);
+  if (!hit) {
+    const reach = `${fmt(projects)}${mode === "read" && shared.length ? `，以及共享的 ${shared.map((p) => p.identifier).join("、")}` : ""}`;
+    throw new Error(
+      `没有「${ref}」可用。这里能${mode === "read" ? "读写" : "写入"}：${reach}。如果它绑定了别的代码仓库，要到那个仓库里用；如果它不对应代码仓库，请项目管理员在「项目设置 → 关联代码仓库」里把地址清空。`,
+    );
+  }
   return hit;
 }
 
@@ -504,8 +518,12 @@ server.registerTool(
     run(async () => {
       const [me, sc] = await Promise.all([plane.me(), repoScope()]);
       const unjoined = matchProjects(sc.all, sc.remotes).filter((p) => p.is_member === false);
+      const fmt = (l: Project[]) => l.map((p) => `${p.identifier}（${p.name}）`).join("、");
+      const openNote = sc.open.length ? `；不绑定代码仓库的项目（任何目录里用 project 参数指定）：${fmt(sc.open)}` : "";
       const repo = sc.projects.length
-        ? `已关联 ${sc.projects.map((p) => `${p.identifier}（${p.name}）`).join("、")}，可以读写`
+        ? `已关联 ${fmt(sc.projects)}，可以读写${openNote}`
+        : sc.open.length
+          ? `当前仓库没有关联项目${openNote}`
         : unjoined.length
           ? `关联的是 ${unjoined.map((p) => p.identifier).join("、")}，但你还不是成员，请项目管理员在网页上把你加进项目`
           : `未关联。${notBoundMessage(sc, CONFIG.webUrl, local)}`;

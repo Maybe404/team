@@ -129,3 +129,45 @@ test("save_view：把需求翻成筛选条件，list_views 翻回人话", async 
   const up = await call("save_view", { view: "v1.2 进行中", filters: { priorities: ["urgent"] } });
   assert.match(up.text, /优先级是 urgent/);
 });
+
+// ---- 没登记代码仓库的项目：任何目录里都能用 ----
+const openProjects = [
+  { id: "p9", name: "运营文档", identifier: "OPS", is_member: true, team_repos: [] },
+  { id: "p1", name: "Demo", identifier: "DEMO", is_member: true, team_repos: ["github.com/org/demo"] },
+];
+async function connectWith(projects: unknown[]) {
+  const [c, s] = InMemoryTransport.createLinkedPair();
+  const srv = createServer({ config: { token: "t", workspace: "w", webUrl: "http://loom", baseUrl: "http://loom" } as never, plane: { ...plane, listProjects: async () => projects } as never, local: false });
+  await srv.connect(s);
+  const cl = new Client({ name: "t2", version: "0" });
+  await cl.connect(c);
+  return async (name: string, args: Record<string, unknown>) => {
+    const r = (await cl.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+    return { text: r.content[0].text, error: !!r.isError };
+  };
+}
+
+test("没登记仓库的项目：不在 git 仓库里也能读写，要用 project 指定", async () => {
+  const c = await connectWith(openProjects);
+  const who = await c("whoami", {});
+  assert.match(who.text, /不绑定代码仓库的项目.*OPS/);
+  // 没有仓库、没传 project：只有一个开放项目时自动用它
+  const auto = await c("list_modules", {});
+  assert.doesNotMatch(auto.text, /没有关联项目/);
+  const ok = await c("list_modules", { project: "OPS" });
+  assert.ok(!ok.error);
+  // 绑定了别的仓库的项目，在别处读写被拒绝
+  const denied = await c("list_modules", { project: "DEMO", repo: "git@github.com:org/other.git" });
+  assert.ok(denied.error);
+  assert.match(denied.text, /绑定了别的代码仓库/);
+  // 在对的仓库里，登记了仓库的项目照常可用
+  const bound = await c("list_modules", { repo: REPO });
+  assert.ok(!bound.error);
+});
+
+test("有多个不绑定仓库的项目时，不传 project 要求指定", async () => {
+  const c = await connectWith([...openProjects, { id: "p8", name: "设计", identifier: "DES", is_member: true, team_repos: [] }]);
+  const r = await c("list_modules", {});
+  assert.ok(r.error);
+  assert.match(r.text, /OPS.*DES|DES.*OPS/);
+});
