@@ -104,6 +104,8 @@ async function run(fn: () => Promise<ReturnType<typeof text>>) {
       const m = e.body.match(/"(?:detail|error)"\s*:\s*"([^"]+)"/);
       return fail(`${m?.[1] ?? "没有权限"}\n想改别人的内容，可以用 comment_task 评论，提出修改建议。`);
     }
+    if (e instanceof PlaneError && e.status === 403 && /^GET workspaces\/[^/]+\/projects\/$/.test(e.path.replace(/^GET /, "GET ").split("?")[0]))
+      return fail(`这个 Token 对应的账号不是工作区「${CONFIG.workspace}」的有效成员（或工作区名填错了），连项目列表都读不了。请确认：1) PLANE_WORKSPACE 是否正确；2) 管理员在「工作区设置 → 成员」里能看到这个账号且未被停用；3) Token 是不是这个账号自己生成的。可以先调用 whoami 看当前身份。`);
     if (e instanceof PlaneError && e.status === 403) return fail(`没有权限：${e.path}。${/API Token/.test(e.body) ? "Agent 不能做这类操作，请由人在网页上完成。" : "这个操作需要更高的项目角色，请找项目管理员。"}`);
     if (e instanceof TypeError && /fetch failed/.test(e.message)) return fail(`连不上 Loom（${CONFIG.baseUrl}）。确认服务已启动、PLANE_BASE_URL 正确。`);
     if (e instanceof NotBound) return fail(e.message);
