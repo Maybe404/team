@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { navigateApp } from "./navigate-app";
 import type { Editor, Range } from "@tiptap/core";
 // constants
 import { CORE_EXTENSIONS } from "@/constants/extension";
@@ -218,7 +219,11 @@ export const insertSubpage = (editor: Editor, range?: Range) => {
       const page = (await res.json()) as { id: string };
       editor.chain().focus().insertPageLink({ pageId: page.id, projectId, title: "无标题" }).run();
       // 留一点时间让刚插入的卡片同步保存，再跳到新页面
-      window.setTimeout(() => window.location.assign(`/${slug}/projects/${projectId}/pages/${page.id}`), 700);
+      window.setTimeout(() => {
+        navigateApp(`/${slug}/projects/${projectId}/pages/${page.id}`);
+        // 路由跳转不会整页刷新，遮罩要自己撤掉
+        window.setTimeout(() => cover.remove(), 600);
+      }, 700);
     })
     .catch(() => {
       cover.remove();

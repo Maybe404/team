@@ -27,16 +27,16 @@ export function UserGreetingsView(props: IUserGreetingsView) {
     hour: "numeric",
   }).format(currentTime);
 
-  const date = new Intl.DateTimeFormat("en-US", {
-    month: "short",
+  const date = new Intl.DateTimeFormat("zh-CN", {
+    month: "long",
     day: "numeric",
   }).format(currentTime);
 
-  const weekDay = new Intl.DateTimeFormat("en-US", {
+  const weekDay = new Intl.DateTimeFormat("zh-CN", {
     weekday: "long",
   }).format(currentTime);
 
-  const timeString = new Intl.DateTimeFormat("en-US", {
+  const timeString = new Intl.DateTimeFormat("zh-CN", {
     timeZone: user?.user_timezone,
     hour12: false, // Use 24-hour format
     hour: "2-digit",
@@ -48,7 +48,7 @@ export function UserGreetingsView(props: IUserGreetingsView) {
   return (
     <div className="my-6 flex flex-col items-center">
       <h2 className="text-center text-h4-semibold">
-        {t("good")} {t(greeting)}, {user?.first_name} {user?.last_name}
+        {greeting === "morning" ? "上午好" : greeting === "afternoon" ? "下午好" : "晚上好"}，{user?.first_name} {user?.last_name}
       </h2>
       <h5 className="flex items-center gap-2 font-medium text-placeholder">
         <div>{greeting === "morning" ? "🌤️" : greeting === "afternoon" ? "🌥️" : "🌙️"}</div>

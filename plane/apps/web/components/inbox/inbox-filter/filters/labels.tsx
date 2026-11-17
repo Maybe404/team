@@ -34,6 +34,6 @@ export const FilterLabels = observer(function FilterLabels(props: Props) {
     );
 
   return (
-    <FilterSubmenu label="Label" options={options} appliedFilters={filterValue} onToggle={handleToggle} searchable />
+    <FilterSubmenu label="标签" options={options} appliedFilters={filterValue} onToggle={handleToggle} searchable />
   );
 });

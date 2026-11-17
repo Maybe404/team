@@ -93,7 +93,7 @@ export const InboxIssueContentProperties = observer(function InboxIssueContentPr
                 ))}
             </SidebarPropertyListItem>
             {/* Assignee */}
-            <SidebarPropertyListItem icon={MembersOutline} label="Assignees">
+            <SidebarPropertyListItem icon={MembersOutline} label="负责人">
               <MemberSelect
                 value={issue?.assignee_ids ?? []}
                 onChange={(val) => {
@@ -109,7 +109,7 @@ export const InboxIssueContentProperties = observer(function InboxIssueContentPr
               />
             </SidebarPropertyListItem>
             {/* Priority */}
-            <SidebarPropertyListItem icon={PriorityOutline} label="Priority">
+            <SidebarPropertyListItem icon={PriorityOutline} label="优先级">
               <PrioritySelect
                 value={issue?.priority}
                 onChange={(val) => {

@@ -29,15 +29,15 @@ export const InboxIssueFilterSelection = observer(function InboxIssueFilterSelec
       {/* Priority */}
       <FilterPriority />
       {/* assignees */}
-      <FilterMember filterKey="assignees" label="Assignees" memberIds={projectMemberIds ?? []} />
+      <FilterMember filterKey="assignees" label="负责人" memberIds={projectMemberIds ?? []} />
       {/* Created By */}
-      <FilterMember filterKey="created_by" label="Created By" memberIds={projectMemberIds ?? []} />
+      <FilterMember filterKey="created_by" label="创建人" memberIds={projectMemberIds ?? []} />
       {/* Labels */}
       <FilterLabels labels={projectLabels ?? []} />
       {/* Created at */}
-      <FilterDate filterKey="created_at" label="Created date" />
+      <FilterDate filterKey="created_at" label="创建日期" />
       {/* Updated at */}
-      <FilterDate filterKey="updated_at" label="Last updated date" />
+      <FilterDate filterKey="updated_at" label="最近更新日期" />
     </>
   );
 });

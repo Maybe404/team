@@ -47,9 +47,11 @@ type TSwitcherLabelProps = {
 export function SwitcherLabel(props: TSwitcherLabelProps) {
   const { logo_props, name, LabelIcon, logo_url, type = "lucide" } = props;
   return (
-    <div className="flex items-center gap-1 text-secondary">
+    <div className="flex min-w-0 items-center gap-1 text-secondary">
       <SwitcherIcon logo_props={logo_props} logo_url={logo_url} LabelIcon={LabelIcon} type={type} />
-      {truncateText(name ?? "", 40)}
+      <span className="min-w-0 truncate" title={name ?? ""}>
+        {truncateText(name ?? "", 40)}
+      </span>
     </div>
   );
 }

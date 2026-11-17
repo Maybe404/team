@@ -174,6 +174,11 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.token = uuid.uuid4().hex + uuid.uuid4().hex
             self.token_updated_at = timezone.now()
 
+        # [team 二开] 显示名还是默认的邮箱前缀、而用户已经填了姓名时，改用姓名，通知、动态、@ 里才不会显示成一串邮箱前缀
+        _full = f"{self.first_name or ''} {self.last_name or ''}".strip()
+        if _full and self.email and self.display_name in ("", self.email.split("@")[0]):
+            self.display_name = _full[:255]
+
         if not self.display_name:
             self.display_name = (
                 self.email.split("@")[0]

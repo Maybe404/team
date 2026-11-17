@@ -36,6 +36,6 @@ export const FilterState = observer(function FilterState(props: Props) {
     );
 
   return (
-    <FilterSubmenu label="State" options={options} appliedFilters={filterValue} onToggle={handleToggle} searchable />
+    <FilterSubmenu label="状态" options={options} appliedFilters={filterValue} onToggle={handleToggle} searchable />
   );
 });

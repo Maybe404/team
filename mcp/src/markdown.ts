@@ -1,6 +1,7 @@
 // Agent 读写都用 Markdown；Loom 存的是 HTML。在这里来回转换。
 import { randomUUID } from "node:crypto";
 import { marked } from "marked";
+import { autoImageWidth, sizeTables } from "./layout.ts";
 import TurndownService from "turndown";
 // @ts-expect-error 该插件没有类型声明
 import { gfm } from "@joplin/turndown-plugin-gfm";
@@ -41,6 +42,26 @@ export function mentionPeople(html: string, members: Person[]): { html: string; 
   return { html: out, mentioned: [...found.values()] };
 }
 
+
+// 提示块（callout）：Markdown 里写 GitHub 提示块语法，写入时变成编辑器的提示块（带图标和底色）：
+//   > [!NOTE] 可选标题      > [!TIP]      > [!IMPORTANT]      > [!WARNING]      > [!CAUTION]
+const CALLOUTS: Record<string, { emoji: string; file: string; bg: string }> = {
+  NOTE: { emoji: "1f4dd", file: "1f4dd", bg: "light-blue" },
+  TIP: { emoji: "1f4a1", file: "1f4a1", bg: "green" },
+  IMPORTANT: { emoji: "2757", file: "2757", bg: "purple" },
+  WARNING: { emoji: "26a0", file: "26a0-fe0f", bg: "orange" },
+  CAUTION: { emoji: "26d4", file: "26d4", bg: "pink" },
+};
+
+function calloutsToHtml(html: string): string {
+  return html.replace(/<blockquote>\s*<p>\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*([\s\S]*?)<\/p>([\s\S]*?)<\/blockquote>/g, (_m, kind: string, first: string, rest: string) => {
+    const c = CALLOUTS[kind];
+    const firstP = first.trim() ? `<p>${first.trim()}</p>` : "";
+    const body = `${firstP}${rest}`.trim() || "<p></p>";
+    return `<div data-block-type="callout-component" data-logo-in-use="emoji" data-emoji-unicode="${c.emoji}" data-emoji-url="https://cdn.jsdelivr.net/npm/emoji-datasource-apple/img/apple/64/${c.file}.png" data-background="${c.bg}">${body}</div>`;
+  });
+}
+
 export function mdToHtml(md: string, opts: { projectId?: string; members?: Person[] } = {}): string {
   return mdToHtmlWith(md, opts).html;
 }
@@ -56,7 +77,7 @@ export function mdToHtmlWith(md: string, opts: { projectId?: string; members?: P
     );
     return `\n\nHTMLEMBEDSLOT${embeds.length - 1}END\n\n`;
   });
-  let html = marked.parse(md, { async: false }) as string;
+  let html = calloutsToHtml(sizeTables(marked.parse(md, { async: false }) as string));
   // 页面链接卡片：单独一行的 [📄 标题](page:<页面ID>)，对应编辑器里的子页面/链接块
   html = html.replace(/<p>\s*<a href="page:([0-9a-fA-F-]{32,36})"[^>]*>([\s\S]*?)<\/a>\s*<\/p>/g, (_m, id: string, label: string) => {
     const title = label.replace(/<[^>]*>/g, "").replace(/^📄\s*/, "").trim().replace(/"/g, "&quot;");
@@ -71,9 +92,9 @@ export function mdToHtmlWith(md: string, opts: { projectId?: string; members?: P
   // 文档里的图片：![](asset:<附件ID> "宽度|宽高比|对齐") 还原成编辑器的图片节点
   html = html.replace(/(<p>\s*)?<img src="asset:([^"]+)"([^>]*)>(\s*<\/p>)?/g, (_m, _p, id: string, rest: string) => {
     const title = /title="([^"]*)"/.exec(rest)?.[1] ?? "";
-    const [width = "35%", ratio = "", align = "left"] = title.split("|");
+    const [width = "70%", ratio = "", align = "center"] = title.split("|");
     const r = ratio ? ` aspectRatio="${ratio}"` : "";
-    return `<image-component src="${id}" width="${width || "35%"}" height="auto"${r} alignment="${align || "left"}" status="uploaded"></image-component>`;
+    return `<image-component src="${id}" width="${width || "70%"}" height="auto"${r} alignment="${align || "center"}" status="uploaded"></image-component>`;
   });
   // Loom 编辑器的任务列表：<ul data-type="taskList"><li data-type="taskItem" data-checked="true">
   html = html.replace(/<ul>\s*(<li><input[^>]*type="checkbox"[\s\S]*?)<\/ul>/g, (_m, items: string) => {
@@ -108,6 +129,15 @@ td.addRule("planeHtmlEmbed", {
     const h = el.getAttribute("data-height") ?? "420";
     const w = el.getAttribute("data-width") ?? "100";
     return `\n\n${fence}html-embed name="${name}" height=${h} width=${w}\n${html}\n${fence}\n\n`;
+  },
+});
+td.addRule("planeCallout", {
+  filter: (node) => node.nodeName === "DIV" && (node as HTMLElement).getAttribute("data-block-type") === "callout-component",
+  replacement: (content, node) => {
+    const code = (node as HTMLElement).getAttribute("data-emoji-unicode") ?? "";
+    const kind = Object.entries(CALLOUTS).find(([, v]) => v.emoji === code)?.[0] ?? "NOTE";
+    const body = content.trim().split("\n").map((l) => `> ${l}`.trimEnd()).join("\n");
+    return `\n\n> [!${kind}]\n${body}\n\n`;
   },
 });
 td.addRule("pageLink", {
@@ -169,13 +199,14 @@ export async function importInlineImages(md: string, upload: ImageUploader): Pro
   const jobs: Job[] = [];
   let out = md.replace(SVG_FENCE, (_m, _f, info: string, body: string) => {
     const name = /name="([^"]*)"/.exec(info)?.[1] || `diagram-${jobs.length + 1}.svg`;
-    const width = /width=(\d+%?)/.exec(info)?.[1] ?? "80%";
+    const width = /width=(\d+%?)/.exec(info)?.[1] ?? "auto";
     const caption = /caption="([^"]*)"/.exec(info)?.[1] ?? "";
-    jobs.push({ name, type: "image/svg+xml", b64: Buffer.from(body, "utf8").toString("base64"), width: /%$/.test(width) ? width : `${width}%`, caption });
+    const buf = Buffer.from(body, "utf8");
+    jobs.push({ name, type: "image/svg+xml", b64: buf.toString("base64"), width: width === "auto" ? autoImageWidth("image/svg+xml", buf) : /%$/.test(width) ? width : `${width}%`, caption });
     return `\u0000IMG${jobs.length - 1}\u0000`;
   });
   out = out.replace(DATA_IMG, (_m, alt: string, type: string, b64: string) => {
-    jobs.push({ name: `${alt.trim().replace(/[^\w一-鿿-]+/g, "_") || "image"}.${EXT[type]}`, type, b64: b64.replace(/\s+/g, ""), width: "60%", caption: alt.trim() });
+    jobs.push({ name: `${alt.trim().replace(/[^\w一-鿿-]+/g, "_") || "image"}.${EXT[type]}`, type, b64: b64.replace(/\s+/g, ""), width: autoImageWidth(type, Buffer.from(b64.replace(/\s+/g, ""), "base64")), caption: alt.trim() });
     return `\u0000IMG${jobs.length - 1}\u0000`;
   });
   if (!jobs.length) return { md, count: 0 };

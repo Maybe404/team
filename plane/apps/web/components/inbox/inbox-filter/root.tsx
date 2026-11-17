@@ -4,33 +4,23 @@
  * See the LICENSE file for details.
  */
 
-import { ChevronDownOutline, FilterOutline } from "@makeplane/propel/icons";
-import { Button } from "@makeplane/propel/elements/button";
+import { FilterOutline } from "@makeplane/propel/icons";
 // plane imports
 // components
 import { FiltersDropdown } from "@/components/issues/issue-layouts/filters";
 // hooks
-import useSize from "@/hooks/use-window-size";
 // local imports
 import { InboxIssueFilterSelection } from "./filters/filter-selection";
 import { InboxIssueOrderByDropdown } from "./sorting/order-by";
 
+// 收集列表是窄栏，筛选只显示图标，避免挤压左边的「未处理 / 已处理」
 const smallButton = <FilterOutline className="size-3" />;
 
-const largeButton = (
-  <Button variant="secondary" size="sm" stretch="auto" render={<span />}>
-    <FilterOutline className="size-3" />
-    <span>Filters</span>
-    <ChevronDownOutline className="size-3" />
-  </Button>
-);
 export function FiltersRoot() {
-  const windowSize = useSize();
-
   return (
     <div className="relative flex items-center gap-2">
       <div>
-        <FiltersDropdown menuButton={windowSize[0] > 1280 ? largeButton : smallButton} title="" placement="bottom-end">
+        <FiltersDropdown menuButton={smallButton} title="" placement="bottom-end">
           <InboxIssueFilterSelection />
         </FiltersDropdown>
       </div>

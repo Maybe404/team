@@ -147,7 +147,7 @@ export const ActivityList = observer(function ActivityList(props: Props) {
                               >
                                 <span className="font-medium text-primary">
                                   {currentUser?.id === activityItem.actor_detail.id
-                                    ? "You"
+                                    ? "你"
                                     : activityItem.actor_detail.display_name}
                                 </span>
                               </Link>

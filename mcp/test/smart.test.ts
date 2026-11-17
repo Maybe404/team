@@ -6,6 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer } from "../src/server.ts";
 import { findSimilar, similarity, taskHints } from "../src/hints.ts";
 import { htmlToMd, mdToHtml } from "../src/markdown.ts";
+import { autoImageWidth, sizeTables, wideTables } from "../src/layout.ts";
 
 const people = [
   { id: "u1", name: "小明" },
@@ -93,4 +94,38 @@ test("create_task 返回提示并生成提及标签", async () => {
   assert.match(out, /已新建 DEMO-9/);
   assert.match(out, /没有指派人/);
   assert.match(String(created.at(-1)?.description_html), /mention-component/);
+});
+
+test("给表格单元格补列宽，总宽不超过正文栏", () => {
+  const html = "<table><thead><tr><th>名称</th><th>说明</th></tr></thead><tbody><tr><td>a</td><td>" + "很长的说明".repeat(30) + "</td></tr></tbody></table>";
+  const w = [...sizeTables(html).matchAll(/colwidth="(\d+)"/g)].map((m) => Number(m[1]));
+  assert.equal(w.length, 4);
+  assert.ok(w[0] + w[1] <= 724);
+  assert.ok(w[0] >= 80);
+});
+
+test("图片宽度按原图尺寸算", () => {
+  const png = Buffer.alloc(24);
+  png.writeUInt32BE(1600, 16);
+  png.writeUInt32BE(900, 20);
+  assert.equal(autoImageWidth("image/png", png), "100%");
+  png.writeUInt32BE(400, 16);
+  png.writeUInt32BE(300, 20);
+  assert.equal(autoImageWidth("image/png", png), "55%");
+  assert.equal(autoImageWidth("image/png", Buffer.alloc(3)), "70%");
+});
+
+test("识别过宽的表格", () => {
+  assert.equal(wideTables("|a|b|c|d|e|f|g|h|i|\n|-|-|-|-|-|-|-|-|-|\n"), 1);
+  assert.equal(wideTables("|a|b|\n|-|-|\n"), 0);
+});
+
+test("提示块往返：> [!TIP] 变成 callout，读回来仍是提示块写法", () => {
+  const md = "> [!TIP] 建议\n> 先看一眼\n\n普通段落\n\n> 普通引用\n";
+  const html = mdToHtml(md);
+  assert.match(html, /<div data-block-type="callout-component"[^>]*data-background="green"/);
+  assert.match(html, /<blockquote>/);
+  const back = htmlToMd(html);
+  assert.match(back, /> \[!TIP\]/);
+  assert.match(back, /先看一眼/);
 });

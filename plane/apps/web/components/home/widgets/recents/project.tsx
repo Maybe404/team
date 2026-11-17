@@ -40,7 +40,6 @@ export function RecentProject(props: BlockProps) {
           <div className="grid size-4 flex-shrink-0 place-items-center">
             <Logo logo={projectDetails?.logo_props} size={16} />
           </div>
-          <div className="text-caption-md-regular whitespace-nowrap text-tertiary">{projectDetails?.identifier}</div>
         </div>
       }
       appendTitleElement={

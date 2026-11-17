@@ -2,6 +2,7 @@
  * [team 二开] 子页面块，样式参照 Notion：文件图标 + 带下划线的标题，没有边框，点击跳转。
  * 标题打开时取最新的；页面被删或没权限看就标灰。数据走同源的网页接口（带登录态）。
  */
+import { navigateApp } from "@/helpers/navigate-app";
 import { NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 import { useEffect, useMemo, useState } from "react";
@@ -63,6 +64,11 @@ export function PageLinkBlock(props: NodeViewProps) {
     <NodeViewWrapper className="page-link my-0.5" contentEditable={false}>
       <a
         href={state === "ok" ? href : undefined}
+        onClick={(e) => {
+          if (state !== "ok" || !href || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+          e.preventDefault();
+          navigateApp(href);
+        }}
         title={state === "ok" ? "打开页面" : "页面已删除，或你没有权限查看"}
         className={`flex w-full items-center gap-2 rounded-md px-1 py-1 no-underline hover:bg-layer-transparent-hover ${selected ? "bg-layer-transparent-hover" : ""} ${state === "ok" ? "cursor-pointer" : "cursor-not-allowed"}`}
       >

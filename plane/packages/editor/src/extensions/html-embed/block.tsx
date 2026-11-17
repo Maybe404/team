@@ -27,6 +27,17 @@ const Icon = ({ children }: { children: ReactNode }) => (
   </svg>
 );
 
+// srcDoc 页面里的 <a href="#/xx"> 会按父页面地址解析，点了会让 iframe 跳去加载 Loom 本身而被拒绝（refused to connect）。
+// 注入一段脚本，把页内锚点改成只改自己的 location.hash，单页应用的 tab、路由就能正常切换。
+const HASH_FIX =
+  "<script>document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;var h=a.getAttribute('href');if(h&&h.charAt(0)==='#'&&!e.defaultPrevented){e.preventDefault();if(h.length>1){location.hash=h.slice(1);var t=document.getElementById(decodeURIComponent(h.slice(1)));if(t&&t.scrollIntoView)t.scrollIntoView();}else{location.hash='';}}},true);</script>";
+const withHashFix = (html: string) => {
+  const m = /<head[^>]*>/i.exec(html) ?? /<html[^>]*>/i.exec(html) ?? /<!doctype[^>]*>/i.exec(html);
+  if (!m) return HASH_FIX + html;
+  const i = m.index + m[0].length;
+  return html.slice(0, i) + HASH_FIX + html.slice(i);
+};
+
 const downloadHtml = (html: string, name: string) => {
   const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
   const a = document.createElement("a");
@@ -65,7 +76,7 @@ function Fullscreen(props: { html: string; name: string; onClose: () => void }) 
           </Icon>
         </button>
       </div>
-      <iframe title={name || "html"} sandbox={SANDBOX} srcDoc={html} referrerPolicy="no-referrer" className="w-full flex-1 border-0 bg-white" />
+      <iframe title={name || "html"} sandbox={SANDBOX} srcDoc={withHashFix(html)} referrerPolicy="no-referrer" className="w-full flex-1 border-0 bg-white" />
     </div>,
     main ?? document.body
   );
@@ -79,6 +90,7 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const [full, setFull] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [paste, setPaste] = useState("");
   const [showPaste, setShowPaste] = useState(false);
   const dragging = size !== null;
@@ -201,10 +213,17 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
               </button>
             </>
           )}
-          {editable && !empty && (
-            <button type="button" className={barBtn} title="换一个 HTML 文件" onClick={() => fileRef.current?.click()}>
+          {!empty && (
+            <button type="button" className={barBtn} title="刷新（重新加载页面）" onClick={() => setReloadKey((k) => k + 1)}>
               <Icon>
                 <path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5" />
+              </Icon>
+            </button>
+          )}
+          {editable && !empty && (
+            <button type="button" className={barBtn} title="替换为另一个 HTML 文件" onClick={() => fileRef.current?.click()}>
+              <Icon>
+                <path d="M12 16V4m0 0-4 4m4-4 4 4M5 20h14" />
               </Icon>
             </button>
           )}
@@ -258,7 +277,8 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
             <iframe
               title={attrs.name || "html"}
               sandbox={SANDBOX}
-              srcDoc={attrs.html}
+              srcDoc={withHashFix(attrs.html)}
+              key={reloadKey}
               referrerPolicy="no-referrer"
               loading="lazy"
               className="size-full border-0 bg-white"

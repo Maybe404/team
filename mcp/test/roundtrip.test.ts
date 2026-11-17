@@ -48,7 +48,7 @@ test("SVG 围栏和 data URI 图片上传后变成 asset 图片", async () => {
   assert.match(Buffer.from(calls[0].b64, "base64").toString(), /<svg/);
   assert.equal(calls[1].type, "image/png");
   assert.match(r.md, /!\[\]\(asset:id1 "70%\|\|center"\)\n\n\*图 1：整体架构\*/);
-  assert.match(r.md, /!\[\]\(asset:id2 "60%\|\|center"\)\n\n\*截图\*/);
+  assert.match(r.md, /!\[\]\(asset:id2 "70%\|\|center"\)\n\n\*截图\*/);
   assert.ok(!r.md.includes("```svg"));
   const none = await importInlineImages("普通文字", async () => "x");
   assert.equal(none.count, 0);

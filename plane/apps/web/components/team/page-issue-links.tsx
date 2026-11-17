@@ -7,6 +7,7 @@
 // [team 二开] 文档 ↔ 工作项关联：工作项侧边栏里「关联文档」，文档菜单里「关联工作项」，两边看到的是同一份数据。
 // 谁能建立关联由服务端判断（工作项的创建人、指派人、文档作者或管理员），没有权限时提示原因。
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { Button } from "@makeplane/propel/components/button";
 import {
   Dialog,
@@ -73,10 +74,10 @@ const ago = (iso: string) => {
 function LinkedRow({ href, title, hint, onRemove }: { href: string; title: string; hint?: string; onRemove?: () => void }) {
   return (
     <div className="group/row flex items-center justify-between gap-2 rounded-md border-[0.5px] border-subtle px-2 py-1.5 hover:bg-layer-transparent-hover">
-      <a href={href} className="min-w-0 flex-1 truncate text-body-xs-regular text-primary hover:underline">
+      <Link to={href} className="min-w-0 flex-1 truncate text-body-xs-regular text-primary hover:underline">
         {title}
         {hint && <span className="ml-2 text-caption-sm-regular text-tertiary">{hint}</span>}
-      </a>
+      </Link>
       {onRemove && (
         <button
           type="button"

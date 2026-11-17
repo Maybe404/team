@@ -75,6 +75,41 @@ def unarchive_archive_page_and_descendants(page_id, archived_at):
         cursor.execute(sql, [page_id, archived_at])
 
 
+
+def _save_api_page_versions(page, user, old_state):
+    """接口改写正文时的版本：改写前一份（内容和最近一版不同才存）、改写后一份，最多保留 20 版。"""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from plane.db.models import PageVersion
+
+    page.refresh_from_db()
+    last = PageVersion.objects.filter(page_id=page.id).order_by("-last_saved_at").first()
+    old_html, old_binary, old_json = old_state
+    if old_html and (last is None or last.description_html != old_html):
+        PageVersion.objects.create(
+            workspace_id=page.workspace_id,
+            page_id=page.id,
+            owned_by_id=page.owned_by_id,
+            last_saved_at=timezone.now() - timedelta(seconds=1),
+            description_html=old_html,
+            description_binary=old_binary,
+            description_json=old_json or {},
+        )
+    PageVersion.objects.create(
+        workspace_id=page.workspace_id,
+        page_id=page.id,
+        owned_by_id=user.id,
+        last_saved_at=timezone.now(),
+        description_html=page.description_html,
+        description_binary=page.description_binary,
+        description_json=page.description_json or {},
+    )
+    extra = PageVersion.objects.filter(page_id=page.id).order_by("-last_saved_at").values_list("id", flat=True)[20:]
+    PageVersion.objects.filter(id__in=list(extra)).delete()
+
+
 class PageViewSet(BaseViewSet):
     serializer_class = PageSerializer
     model = Page
@@ -215,7 +250,13 @@ class PageViewSet(BaseViewSet):
             serializer = PageDetailSerializer(page, data=request.data, partial=True)
             page_description = page.description_html
             if serializer.is_valid():
+                _old_page_state = (page.description_html, page.description_binary, page.description_json)
                 serializer.save()
+                # [team 二开] 通过接口（MCP/Agent）整篇改写正文时也要留版本：先把改写前的内容存一份，再存改写后的，
+                # 否则 Agent 覆盖了文档，网页「版本历史」里却找不到原来的内容。
+                _new_html = request.data.get("description_html")
+                if _new_html is not None and _new_html != _old_page_state[0]:
+                    _save_api_page_versions(page, request.user, _old_page_state)
                 # capture the page transaction
                 if request.data.get("description_html"):
                     page_transaction.delay(

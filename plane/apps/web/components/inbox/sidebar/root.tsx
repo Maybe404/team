@@ -87,7 +87,7 @@ export const InboxSidebar = observer(function InboxSidebar(props: IInboxSidebarP
     <div className="h-full w-full flex-shrink-0 border-r border-strong bg-surface-1">
       <div className="relative flex h-full w-full flex-col overflow-hidden">
         <Header variant={EHeaderVariant.SECONDARY}>
-          <div className="flex min-w-0 flex-1">
+          <div className="flex shrink-0">
             <Tabs
               variant="underline"
               value={currentTab}
@@ -118,7 +118,7 @@ export const InboxSidebar = observer(function InboxSidebar(props: IInboxSidebarP
               </div>
             </Tabs>
           </div>
-          <div className="m-auto mr-0">
+          <div className="m-auto mr-0 min-w-0 shrink">
             <FiltersRoot />
           </div>
         </Header>

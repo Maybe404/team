@@ -13,6 +13,7 @@ import type { TActivityEntityData, TPageEntityData } from "@plane/types";
 import { calculateTimeAgo, getFileURL, getPageName } from "@plane/utils";
 import { ListItem } from "@/components/core/list";
 // hooks
+import { useProject } from "@/hooks/store/use-project";
 import { useMember } from "@/hooks/store/use-member";
 
 type BlockProps = {
@@ -27,11 +28,13 @@ export function RecentPage(props: BlockProps) {
   const router = useRouter();
   // store hooks
   const { getUserDetails } = useMember();
+  const { getProjectById } = useProject();
   // derived values
   const pageDetails = activity.entity_data as TPageEntityData;
 
   if (!pageDetails) return <></>;
 
+  const projectName = getProjectById(pageDetails?.project_id)?.name;
   const ownerDetails = getUserDetails(pageDetails?.owned_by);
   const pageLink = pageDetails.project_id
     ? `/${workspaceSlug}/projects/${pageDetails.project_id}/pages/${pageDetails.id}`
@@ -51,10 +54,8 @@ export function RecentPage(props: BlockProps) {
               <PagesOutline className="size-4 text-tertiary" />
             )}
           </div>
-          {pageDetails?.project_identifier && (
-            <div className="text-caption-md-regular whitespace-nowrap text-tertiary">
-              {pageDetails?.project_identifier}
-            </div>
+          {projectName && (
+            <div className="max-w-[160px] truncate text-caption-md-regular whitespace-nowrap text-tertiary">{projectName}</div>
           )}
         </div>
       }

@@ -8,6 +8,7 @@ import { Outlet } from "react-router";
 import { AuthenticationWrapper } from "@/lib/wrappers/authentication-wrapper";
 import { WorkspaceContentWrapper } from "@/components/workspace/content-wrapper";
 import { AppRailVisibilityProvider } from "@/lib/app-rail";
+import { AppNavigationBridge } from "@/components/common/app-navigation-bridge";
 import { GlobalModals } from "@/components/common/modal/global";
 import { WorkspaceAuthWrapper } from "@/layouts/auth-layout/workspace-wrapper";
 import type { Route } from "./+types/layout";
@@ -20,6 +21,7 @@ export default function WorkspaceLayout(props: Route.ComponentProps) {
       <WorkspaceAuthWrapper>
         <AppRailVisibilityProvider>
           <WorkspaceContentWrapper>
+            <AppNavigationBridge />
             <GlobalModals workspaceSlug={workspaceSlug} />
             <Outlet />
           </WorkspaceContentWrapper>

@@ -42,9 +42,9 @@ export function ProfileWorkload({ stateDistribution }: Props) {
                 />
                 <span className="truncate text-body-xs-regular text-placeholder">
                   {group.state_group === "unstarted"
-                    ? "Not started"
+                    ? "未开始"
                     : group.state_group === "started"
-                      ? "Working on"
+                      ? "进行中"
                       : STATE_GROUPS[group.state_group].label}
                 </span>
               </div>

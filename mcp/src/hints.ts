@@ -1,5 +1,6 @@
 // 写入后的「智能提示」：不拦截写入，只在结果里提醒 Agent 有没有漏掉关联、有没有重复或不合理的地方，
 // 让 Agent 拿不准时回头问用户。全部是纯函数，方便测试。
+import { wideTables } from "./layout.ts";
 
 const norm = (s: string) => s.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
 
@@ -62,6 +63,7 @@ export function docHints(i: DocInput): string[] {
   const len = plain(i.markdown).length;
   if (len < 120) out.push(`正文只有 ${len} 个字，信息可能不够：补上背景、结论和依据，或者问用户是否值得单独成文。`);
   if (i.title.length > 40) out.push("标题偏长，标题要一句话讲结论，压到 30 字以内更好找。");
+  if (wideTables(i.markdown)) out.push("有表格超过 7 列：网页上会挤成一团或要左右拖，拆成两张表，或把次要的列改写进正文。");
   return out;
 }
 
