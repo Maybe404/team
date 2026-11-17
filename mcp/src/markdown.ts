@@ -95,9 +95,9 @@ export function htmlToMd(html: string | null | undefined): string {
 
 
 // ---------- 图片导入：SVG 源码围栏和 data URI 图片 ----------
-// ```svg name="流程.svg" width=80%          围栏里直接写 SVG 源码
+// ```svg name="流程.svg" width=80% caption="图 1：下单流程"   围栏里直接写 SVG 源码
 // ![说明](data:image/png;base64,....)       PNG、JPEG、GIF、WebP、SVG 的 data URI
-// 写入前上传成文档附件，改写成 ![](asset:<ID> "宽度")，网页上就是普通图片（点图可放大预览）。
+// 写入前上传成文档附件，改写成居中的 ![](asset:<ID> "宽度||center")，说明文字变成图下面一行斜体图注；网页上就是普通图片，点图可放大预览。
 const SVG_FENCE = /^(`{3,}|~{3,})svg([^\n]*)\n([\s\S]*?)\n\1[ \t]*$/gm;
 const DATA_IMG = /!\[([^\]]*)\]\(data:(image\/(?:png|jpeg|gif|webp|svg\+xml));base64,([A-Za-z0-9+/=\s]+)\)/g;
 const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg" };
@@ -105,20 +105,25 @@ const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "
 export type ImageUploader = (name: string, contentType: string, dataBase64: string) => Promise<string>;
 
 export async function importInlineImages(md: string, upload: ImageUploader): Promise<{ md: string; count: number }> {
-  type Job = { name: string; type: string; b64: string; width: string };
+  type Job = { name: string; type: string; b64: string; width: string; caption: string };
   const jobs: Job[] = [];
   let out = md.replace(SVG_FENCE, (_m, _f, info: string, body: string) => {
     const name = /name="([^"]*)"/.exec(info)?.[1] || `diagram-${jobs.length + 1}.svg`;
     const width = /width=(\d+%?)/.exec(info)?.[1] ?? "80%";
-    jobs.push({ name, type: "image/svg+xml", b64: Buffer.from(body, "utf8").toString("base64"), width: /%$/.test(width) ? width : `${width}%` });
+    const caption = /caption="([^"]*)"/.exec(info)?.[1] ?? "";
+    jobs.push({ name, type: "image/svg+xml", b64: Buffer.from(body, "utf8").toString("base64"), width: /%$/.test(width) ? width : `${width}%`, caption });
     return `\u0000IMG${jobs.length - 1}\u0000`;
   });
   out = out.replace(DATA_IMG, (_m, alt: string, type: string, b64: string) => {
-    jobs.push({ name: `${alt.trim().replace(/[^\w一-鿿-]+/g, "_") || "image"}.${EXT[type]}`, type, b64: b64.replace(/\s+/g, ""), width: "60%" });
+    jobs.push({ name: `${alt.trim().replace(/[^\w一-鿿-]+/g, "_") || "image"}.${EXT[type]}`, type, b64: b64.replace(/\s+/g, ""), width: "60%", caption: alt.trim() });
     return `\u0000IMG${jobs.length - 1}\u0000`;
   });
   if (!jobs.length) return { md, count: 0 };
   const ids = await Promise.all(jobs.map((j) => upload(j.name, j.type, j.b64)));
-  out = out.replace(/\u0000IMG(\d+)\u0000/g, (_m, i: string) => `![](asset:${ids[Number(i)]} "${jobs[Number(i)].width}")`);
+  out = out.replace(/\u0000IMG(\d+)\u0000/g, (_m, i: string) => {
+    const j = jobs[Number(i)];
+    // 居中显示；有说明文字就在图下面加一行斜体图注
+    return `![](asset:${ids[Number(i)]} "${j.width}||center")${j.caption ? `\n\n*${j.caption}*` : ""}`;
+  });
   return { md: out, count: jobs.length };
 }

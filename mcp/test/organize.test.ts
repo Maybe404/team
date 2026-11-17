@@ -171,3 +171,39 @@ test("有多个不绑定仓库的项目时，不传 project 要求指定", async
   assert.ok(r.error);
   assert.match(r.text, /OPS.*DES|DES.*OPS/);
 });
+
+// ---- 项目标识是纯数字或中文时，任务编号照样能用 ----
+import { parseTaskKey } from "../src/taskKey.ts";
+
+test("parseTaskKey：字母、数字、中文标识都能解析，缺序号的不行", () => {
+  assert.deepEqual(parseTaskKey("DEMO-12"), { identifier: "DEMO", seq: "12" });
+  assert.deepEqual(parseTaskKey(" 2025-7 "), { identifier: "2025", seq: "7" });
+  assert.deepEqual(parseTaskKey("明见-3"), { identifier: "明见", seq: "3" });
+  assert.equal(parseTaskKey("DEMO"), undefined);
+  assert.equal(parseTaskKey("12"), undefined);
+  assert.equal(parseTaskKey("-12"), undefined);
+});
+
+test("任务工具能用数字标识的任务编号；格式不对时用真实标识举例", async () => {
+  const numeric = [{ id: "p5", name: "明见", identifier: "2025", is_member: true, team_repos: [] }];
+  const item = { ...mkItem(7, "s2", "核对口径"), project: "p5" };
+  const [c, s] = InMemoryTransport.createLinkedPair();
+  const srv = createServer({
+    config: { token: "t", workspace: "w", webUrl: "http://loom", baseUrl: "http://loom" } as never,
+    plane: { ...plane, listProjects: async () => numeric, listWorkItems: async () => [item], getWorkItemByKey: async (k: string) => (k === "2025-7" ? item : Promise.reject(Object.assign(new Error("x"), { status: 404 }))) } as never,
+    local: false,
+  } as never);
+  await srv.connect(s);
+  const cl = new Client({ name: "t3", version: "0" });
+  await cl.connect(c);
+  const call2 = async (name: string, args: Record<string, unknown>) => {
+    const r = (await cl.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+    return { text: r.content[0].text, error: !!r.isError };
+  };
+  const ok = await call2("get_task", { task: "2025-7" });
+  assert.ok(!ok.error, ok.text);
+  assert.match(ok.text, /2025-7 核对口径/);
+  const bad = await call2("get_task", { task: "核对口径" });
+  assert.ok(bad.error);
+  assert.match(bad.text, /例如 2025-12/);
+});

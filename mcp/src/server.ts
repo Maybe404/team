@@ -9,6 +9,7 @@ import type { Config } from "./config.ts";
 import { matchProjects, normalizeRepoUrl, notBoundMessage, repoRemotes, workDirs, type RepoScope } from "./binding.ts";
 import { z } from "zod";
 import { formatLessons, GENERAL, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
+import { parseTaskKey } from "./taskKey.ts";
 import { htmlToMd, importInlineImages, mdToHtml } from "./markdown.ts";
 import { COMMENT_KINDS, formatGate, gate, gatePlain, LESSON_GUIDE, SELF_CHECK, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
 import { Loom, PlaneError, type Member, type Module, type Project, type View, type WorkItem } from "./plane.ts";
@@ -161,11 +162,20 @@ function checkOrReject(md: string, type: DocType, opts: Parameters<typeof gate>[
 }
 
 async function resolveTask(ref: string, mode: "read" | "write" = "read"): Promise<{ project: Project; item: WorkItem; key: string }> {
-  const m = ref.trim().match(/^([A-Za-z][A-Za-z0-9]*)-(\d+)$/);
-  if (!m) throw new Error(`任务编号格式是「项目标识-序号」，例如 DEMO-12，收到「${ref}」`);
-  const project = await projectFor(m[1], mode);
-  const item = await plane.getWorkItemByKey(`${project.identifier}-${m[2]}`).catch((e) => {
-    if (e instanceof PlaneError && e.status === 404) throw new Error(`找不到任务 ${project.identifier}-${m[2]}。可以用 list_tasks 查编号。`);
+  const m = parseTaskKey(ref);
+  if (!m) {
+    let eg = "DEMO-12";
+    try {
+      const first = (await plane.listProjects()).find((p) => p.is_member !== false);
+      if (first) eg = `${first.identifier}-12`;
+    } catch {
+      /* 取不到项目就用默认示例 */
+    }
+    throw new Error(`任务编号格式是「项目标识-序号」，例如 ${eg}，收到「${ref}」。编号可以用 list_tasks 查到。`);
+  }
+  const project = await projectFor(m.identifier, mode);
+  const item = await plane.getWorkItemByKey(`${project.identifier}-${m.seq}`).catch((e) => {
+    if (e instanceof PlaneError && e.status === 404) throw new Error(`找不到任务 ${project.identifier}-${m.seq}。可以用 list_tasks 查编号。`);
     throw e;
   });
   return { project, item, key: `${project.identifier}-${item.sequence_id}` };

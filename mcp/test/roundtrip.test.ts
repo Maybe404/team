@@ -32,7 +32,7 @@ test("SVG 围栏和 data URI 图片上传后变成 asset 图片", async () => {
   const md = [
     "## 图",
     "",
-    '```svg name="架构.svg" width=70%',
+    '```svg name="架构.svg" width=70% caption="图 1：整体架构"',
     '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>',
     "```",
     "",
@@ -47,8 +47,8 @@ test("SVG 围栏和 data URI 图片上传后变成 asset 图片", async () => {
   assert.equal(calls[0].name, "架构.svg");
   assert.match(Buffer.from(calls[0].b64, "base64").toString(), /<svg/);
   assert.equal(calls[1].type, "image/png");
-  assert.match(r.md, /!\[\]\(asset:id1 "70%"\)/);
-  assert.match(r.md, /!\[\]\(asset:id2 "60%"\)/);
+  assert.match(r.md, /!\[\]\(asset:id1 "70%\|\|center"\)\n\n\*图 1：整体架构\*/);
+  assert.match(r.md, /!\[\]\(asset:id2 "60%\|\|center"\)\n\n\*截图\*/);
   assert.ok(!r.md.includes("```svg"));
   const none = await importInlineImages("普通文字", async () => "x");
   assert.equal(none.count, 0);
