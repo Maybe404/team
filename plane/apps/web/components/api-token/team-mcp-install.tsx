@@ -53,8 +53,8 @@ export const TeamMcpInstall = observer(function TeamMcpInstall({ token }: Props)
       <div>
         <div className="text-body-sm-medium text-primary">添加 Loom MCP</div>
         <div className="text-caption-sm-regular text-tertiary">
-          本机不用装任何东西。在终端执行下面这条命令，重启 Claude Code，在团队项目的仓库里让 Agent 调用
-          whoami 确认。{token ? "命令里已经带上这个 Token，不要发给别人。" : "把命令里的 Token 换成你自己的。"}
+          本机不用装任何东西。在终端执行下面这条命令，重启 Claude Code，让 Agent 调用 whoami 确认。
+          之后对 Agent 说「用 Loom 建个任务」之类的话，它就会调用这个 MCP。{token ? "命令里已经带上这个 Token，不要发给别人。" : "把命令里的 Token 换成你自己的。"}
         </div>
       </div>
       {slugs.length > 1 && (
@@ -74,6 +74,7 @@ export const TeamMcpInstall = observer(function TeamMcpInstall({ token }: Props)
         </label>
       )}
       <CopyBlock label="Claude Code 终端命令" value={command} />
+      <CopyBlock label="之前按旧名字 team 装过的，先执行这条删掉旧的，再执行上面的命令" value="claude mcp remove team" />
       <CopyBlock label="其他客户端（Cursor 等）的 JSON 配置，或在界面里添加 HTTP 类型的 MCP 服务，网址和请求头按这里填" value={json} />
     </div>
   );
