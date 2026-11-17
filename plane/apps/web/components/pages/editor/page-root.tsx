@@ -19,6 +19,7 @@ import type { EPageStoreType } from "@/hooks/store";
 import type { TPageInstance } from "@/store/pages/base-page";
 // ui
 import { Banner } from "@makeplane/propel/components/banner";
+import { AccessRequestBar } from "@/components/team/access";
 // local imports
 import { PageNavigationPaneRoot } from "../navigation-pane";
 import { PageVersionsOverlay } from "../version";
@@ -165,6 +166,9 @@ export const PageRoot = observer(function PageRoot(props: TPageRootProps) {
           restoreEnabled={isContentEditable}
           storeType={storeType}
         />
+        {!page.canCurrentUserEditPage && !page.archived_at && (
+          <AccessRequestBar workspaceSlug={workspaceSlug} type="page" id={page.id} />
+        )}
         {showContentTooLargeBanner && (
           <Banner placement="page" variant="warning" title={t("page_content_limit_banner.message")} />
         )}

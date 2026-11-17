@@ -58,6 +58,7 @@ export type TPageActions =
   | "move"
   | "team-public-link" // [team 二开]
   | "team-link-issues" // [team 二开]
+  | "team-access" // [team 二开]
   | "new-subpage"; // [team 二开]
 
 type Props = {

@@ -53,6 +53,7 @@ from plane.utils.order_queryset import PAGE_ORDER_BY_ALLOWLIST, sanitize_order_b
 from ..base import BaseAPIView, BaseViewSet
 from plane.bgtasks.page_transaction_task import page_transaction
 from plane.bgtasks.page_version_task import track_page_version
+from plane.utils.team_page_version import record_change
 from plane.bgtasks.recent_visited_task import recent_visited_task
 from plane.bgtasks.copy_s3_object import copy_s3_objects_of_description_and_assets
 from plane.app.permissions import ProjectPagePermission
@@ -73,41 +74,6 @@ def unarchive_archive_page_and_descendants(page_id, archived_at):
     # Execute the SQL query
     with connection.cursor() as cursor:
         cursor.execute(sql, [page_id, archived_at])
-
-
-
-def _save_api_page_versions(page, user, old_state):
-    """接口改写正文时的版本：改写前一份（内容和最近一版不同才存）、改写后一份，最多保留 20 版。"""
-    from datetime import timedelta
-
-    from django.utils import timezone
-
-    from plane.db.models import PageVersion
-
-    page.refresh_from_db()
-    last = PageVersion.objects.filter(page_id=page.id).order_by("-last_saved_at").first()
-    old_html, old_binary, old_json = old_state
-    if old_html and (last is None or last.description_html != old_html):
-        PageVersion.objects.create(
-            workspace_id=page.workspace_id,
-            page_id=page.id,
-            owned_by_id=page.owned_by_id,
-            last_saved_at=timezone.now() - timedelta(seconds=1),
-            description_html=old_html,
-            description_binary=old_binary,
-            description_json=old_json or {},
-        )
-    PageVersion.objects.create(
-        workspace_id=page.workspace_id,
-        page_id=page.id,
-        owned_by_id=user.id,
-        last_saved_at=timezone.now(),
-        description_html=page.description_html,
-        description_binary=page.description_binary,
-        description_json=page.description_json or {},
-    )
-    extra = PageVersion.objects.filter(page_id=page.id).order_by("-last_saved_at").values_list("id", flat=True)[20:]
-    PageVersion.objects.filter(id__in=list(extra)).delete()
 
 
 class PageViewSet(BaseViewSet):
@@ -256,7 +222,7 @@ class PageViewSet(BaseViewSet):
                 # 否则 Agent 覆盖了文档，网页「版本历史」里却找不到原来的内容。
                 _new_html = request.data.get("description_html")
                 if _new_html is not None and _new_html != _old_page_state[0]:
-                    _save_api_page_versions(page, request.user, _old_page_state)
+                    record_change(page, request.user, _old_page_state, source="web-api")
                 # capture the page transaction
                 if request.data.get("description_html"):
                     page_transaction.delay(
@@ -286,6 +252,12 @@ class PageViewSet(BaseViewSet):
             )
             data = PageDetailSerializer(page).data
             data["issue_ids"] = issue_ids
+            # [team 二开] 前端据此判断能不能编辑（拥有者、管理员、共同维护人）以及能不能管理编辑权限
+            from plane.utils.team_access import can_manage
+            from plane.utils.team_edit_policy import can_edit_page
+
+            data["team_can_edit"] = can_edit_page(request.user, page)
+            data["team_can_manage"] = can_manage(request.user, "page", page)
             if track_visit:
                 recent_visited_task.delay(
                     slug=slug,

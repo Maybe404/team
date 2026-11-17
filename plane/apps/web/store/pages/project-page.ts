@@ -106,7 +106,7 @@ export class ProjectPage extends BasePage implements TProjectPage {
    */
   get canCurrentUserEditPage() {
     // [team 二开] 只有作者和工作区管理员能改，其他成员只能阅读和评论（服务端 team_edit_policy.py 同样拦截）
-    return this.isCurrentUserOwner || this.isCurrentUserWorkspaceAdmin;
+    return this.isCurrentUserOwner || this.isCurrentUserWorkspaceAdmin || !!this.team_can_edit;
   }
 
   get isCurrentUserWorkspaceAdmin() {

@@ -67,6 +67,7 @@ export interface IProjectStore {
   removeProjectFromFavorites: (workspaceSlug: string, projectId: string) => Promise<any>;
   // project-view action
   updateProjectView: (workspaceSlug: string, projectId: string, viewProps: any) => Promise<any>;
+  togglePinProject: (workspaceSlug: string, projectId: string, isPinned: boolean) => Promise<void>;
   // CRUD actions
   createProject: (workspaceSlug: string, data: Partial<TProject>) => Promise<TProject>;
   updateProject: (workspaceSlug: string, projectId: string, data: Partial<TProject>) => Promise<TProject>;
@@ -127,6 +128,7 @@ export class ProjectStore implements IProjectStore {
       removeProjectFromFavorites: action,
       // project-view action
       updateProjectView: action,
+      togglePinProject: action,
       // CRUD actions
       createProject: action,
       updateProject: action,
@@ -241,7 +243,7 @@ export class ProjectStore implements IProjectStore {
     if (!currentWorkspace) return [];
 
     let projects = Object.values(this.projectMap ?? {});
-    projects = sortBy(projects, "sort_order");
+    projects = sortBy(projects, [(p) => (p.is_pinned ? 0 : 1), "sort_order"]);
 
     const projectIds = projects
       .filter((project) => project.workspace === currentWorkspace.id && !!project.member_role && !project.archived_at)
@@ -509,6 +511,22 @@ export class ProjectStore implements IProjectStore {
    * @param viewProps
    * @returns
    */
+  // [team 二开] 置顶/取消置顶（每人自己的）
+  togglePinProject = async (workspaceSlug: string, projectId: string, isPinned: boolean) => {
+    const previous = this.getProjectById(projectId)?.is_pinned ?? false;
+    try {
+      runInAction(() => {
+        set(this.projectMap, [projectId, "is_pinned"], isPinned);
+      });
+      await this.projectService.updateProjectUserProperties(workspaceSlug, projectId, { is_pinned: isPinned } as never);
+    } catch (error) {
+      runInAction(() => {
+        set(this.projectMap, [projectId, "is_pinned"], previous);
+      });
+      throw error;
+    }
+  };
+
   updateProjectView = async (workspaceSlug: string, projectId: string, viewProps: { sort_order: number }) => {
     const currentProjectSortOrder = this.getProjectById(projectId)?.sort_order;
     try {

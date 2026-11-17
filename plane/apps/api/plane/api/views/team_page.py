@@ -26,9 +26,11 @@ from rest_framework.response import Response
 from plane.app.permissions import ProjectEntityPermission
 from plane.app.serializers import PageSerializer
 from plane.bgtasks.page_transaction_task import page_transaction
-from plane.db.models import FileAsset, Page, Workspace
+from plane.db.models import FileAsset, Page, PageVersion, Workspace
 from plane.settings.storage import S3Storage
 from plane.utils.team_page_tree import check_parent, hidden_page_ids
+from plane.utils.team_edit_policy import can_edit_page
+from plane.utils.team_page_version import record_change, snapshot_current, version_dict
 from plane.utils.url import normalize_url_path
 
 from .base import BaseAPIView
@@ -191,6 +193,7 @@ class TeamPageDetailAPIEndpoint(TeamPageBase):
 
         live_result = None
         old_html = page.description_html
+        old_state = (page.description_html, page.description_binary, page.description_json)
         new_html = request.data.get("description_html")
         if new_html is not None:
             try:
@@ -202,9 +205,14 @@ class TeamPageDetailAPIEndpoint(TeamPageBase):
             page.description_json = live_result["description_json"]
         page.save()
 
+        version = None
         if new_html is not None:
             page_transaction.delay(new_description_html=new_html, old_description_html=old_html, page_id=str(page.id))
+            if page.description_html != old_html:
+                version = record_change(page, request.user, old_state, source="mcp")
         data = serialize_page(page, project_id, include_body=True)
+        if version is not None:
+            data["version"] = {"id": str(version.id), "saved_before": True}
         data["live_editing"] = bool(live_result and live_result.get("live"))
         return Response(data)
 
@@ -296,3 +304,72 @@ class TeamPageImageAPIEndpoint(BaseAPIView):
             is_uploaded=True,
         )
         return Response({"asset_id": str(asset.id)}, status=status.HTTP_201_CREATED)
+
+
+# 文档版本（Agent 用）：列表、读某一版、手动存快照、命名和锁定、恢复到某一版
+class TeamPageVersionsAPIEndpoint(TeamPageBase):
+    def _page(self, slug, project_id, pk):
+        return self.visible_pages(slug, project_id).filter(pk=pk).first()
+
+    def get(self, request, slug, project_id, pk, version_id=None):
+        page = self._page(slug, project_id, pk)
+        if page is None:
+            return Response({"error": "Page 不存在"}, status=status.HTTP_404_NOT_FOUND)
+        qs = PageVersion.objects.filter(page_id=page.id)
+        if version_id:
+            v = qs.filter(pk=version_id).first()
+            if v is None:
+                return Response({"error": "没有这个版本"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(version_dict(v, with_body=True))
+        latest = qs.order_by("-last_saved_at").first()
+        data = [version_dict(v) for v in qs.order_by("-last_saved_at")]
+        return Response({"versions": data, "current_matches": bool(latest and latest.description_html == page.description_html)})
+
+    def post(self, request, slug, project_id, pk, version_id=None):
+        """没有 version_id：把当前内容存成一个版本（可带 label、lock）；有 version_id 且 action=restore：恢复到那一版。"""
+        page = self._page(slug, project_id, pk)
+        if page is None:
+            return Response({"error": "Page 不存在"}, status=status.HTTP_404_NOT_FOUND)
+        if not can_edit_page(request.user, page):
+            return Response({"error": "没有编辑权限。可以先申请编辑权限（doc_access）。"}, status=status.HTTP_403_FORBIDDEN)
+        if not version_id:
+            v, created = snapshot_current(page, request.user, label=request.data.get("label") or "", lock=bool(request.data.get("lock")), source="manual")
+            return Response({**version_dict(v), "created": created})
+        if page.is_locked:
+            return Response({"error": "Page 已锁定"}, status=status.HTTP_400_BAD_REQUEST)
+        target = PageVersion.objects.filter(page_id=page.id, pk=version_id).first()
+        if target is None:
+            return Response({"error": "没有这个版本"}, status=status.HTTP_404_NOT_FOUND)
+        saved = None
+        if request.data.get("save_current", True):
+            saved, _ = snapshot_current(page, request.user, label="恢复前自动保存", source="before-restore")
+        old_state = (page.description_html, page.description_binary, page.description_json)
+        try:
+            live_result = apply_html_via_live(page, target.description_html)
+        except LiveUnavailable as e:
+            return Response({"error": f"协同服务不可用，未恢复：{e}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        page.description_binary = base64.b64decode(live_result["description_binary"])
+        page.description_html = live_result["description_html"]
+        page.description_json = live_result["description_json"]
+        page.save()
+        record_change(page, request.user, old_state, source="restore")
+        return Response({"restored": version_dict(target), "saved_current": version_dict(saved) if saved else None})
+
+    def patch(self, request, slug, project_id, pk, version_id=None):
+        page = self._page(slug, project_id, pk)
+        if page is None or not version_id:
+            return Response({"error": "Page 或版本不存在"}, status=status.HTTP_404_NOT_FOUND)
+        if not can_edit_page(request.user, page):
+            return Response({"error": "没有编辑权限"}, status=status.HTTP_403_FORBIDDEN)
+        v = PageVersion.objects.filter(page_id=page.id, pk=version_id).first()
+        if v is None:
+            return Response({"error": "没有这个版本"}, status=status.HTTP_404_NOT_FOUND)
+        fields = ["updated_at"]
+        if "is_locked" in request.data:
+            v.is_locked = bool(request.data["is_locked"])
+            fields.append("is_locked")
+        if "label" in request.data:
+            v.label = str(request.data["label"] or "")[:255]
+            fields.append("label")
+        v.save(update_fields=fields)
+        return Response(version_dict(v))

@@ -220,7 +220,13 @@ export function ProjectDetailsForm(props: IProjectDetailsForm) {
                   handleToggle={(val: boolean) => setIsOpen(val)}
                   className="flex items-center justify-center"
                   buttonClassName="flex size-[52px] shrink-0 items-center justify-center rounded-lg bg-layer-3/50"
-                  label={<Logo logo={value} size={28} />}
+                  label={
+                    value?.in_use ? (
+                      <Logo logo={value} size={28} />
+                    ) : (
+                      <span className="text-body-xs-regular text-on-color">设置图标</span>
+                    )
+                  }
                   // TODO: fix types
                   onChange={(val: any) => {
                     let logoValue = {};
@@ -243,6 +249,15 @@ export function ProjectDetailsForm(props: IProjectDetailsForm) {
                 />
               )}
             />
+            {isAdmin && watch("logo_props")?.in_use && (
+              <button
+                type="button"
+                className="self-end text-caption-sm-regular text-on-color underline"
+                onClick={() => setValue("logo_props", {} as never, { shouldDirty: true })}
+              >
+                移除图标
+              </button>
+            )}
             <div className="flex flex-col gap-1 truncate text-on-color">
               <span className="truncate text-body-md-semibold">{watch("name")}</span>
               <span className="flex items-center gap-2 text-body-xs-regular">

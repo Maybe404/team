@@ -37,6 +37,7 @@ def track_page_version(page_id, existing_instance, user_id):
             # Get the latest page version if it exists and is owned by the user
             if (
                 page_version
+                and not page_version.is_locked
                 and str(page_version.owned_by_id) == str(user_id)
                 and (timezone.now() - page_version.last_saved_at).total_seconds() <= PAGE_VERSION_TASK_TIMEOUT
             ):
@@ -68,10 +69,10 @@ def track_page_version(page_id, existing_instance, user_id):
                     last_saved_at=timezone.now(),
                     sub_pages_data=sub_pages,
                 )
-            # If page versions are greater than 20 delete the oldest one
-            if PageVersion.objects.filter(page_id=page_id).count() > 20:
-                # Delete the old page version
-                PageVersion.objects.filter(page_id=page_id).order_by("last_saved_at").first().delete()
+            # [team 二开] 未锁定的版本最多留 20 个，锁定的不占名额也不删
+            from plane.utils.team_page_version import trim_versions
+
+            trim_versions(page_id)
 
         return
     except Page.DoesNotExist:

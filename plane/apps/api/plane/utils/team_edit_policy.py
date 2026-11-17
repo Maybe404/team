@@ -13,14 +13,14 @@
 # 在视图基类 initial() 里检查（见 team_delete_guard.enforce_delete_policy），网页和 API 都会经过。
 from rest_framework.exceptions import PermissionDenied
 
-from plane.db.models import Cycle, Issue, IssueAssignee, Module, Page, WorkspaceMember
+from plane.db.models import Cycle, Issue, IssueAssignee, Module, Page, TeamEditor, WorkspaceMember
 
 ADMIN_ROLE = 20
 
-ISSUE_MESSAGE = "这是别人的工作项，你只能评论。需要修改请让创建人或指派人来改，或请管理员处理。"
+ISSUE_MESSAGE = "这是别人的工作项，你只能评论。需要修改请让创建人或指派人来改，或请管理员处理。也可以申请编辑权限（MCP：doc_access，类型选 issue）。"
 MODULE_MESSAGE = "这是别人建的模块，你只能查看。需要修改请让创建人或负责人来改，或请管理员处理。把任务放进模块不受限制。"
 CYCLE_MESSAGE = "这是别人建的周期，你只能查看。需要修改请让创建人来改，或请管理员处理。把任务放进周期不受限制。"
-PAGE_MESSAGE = "这是别人的文档，你只能阅读和评论。需要修改请让作者来改，或请管理员处理。"
+PAGE_MESSAGE = "这是别人的文档，你只能阅读和评论。需要修改请让作者来改，或请管理员处理。也可以在页面上申请编辑权限（MCP：doc_access）。"
 
 # 视图类名 -> (URL 里的对象 ID 参数名, 需要检查的 HTTP 方法)
 ISSUE_EDIT_VIEWS = {
@@ -48,8 +48,13 @@ def is_workspace_admin(user, workspace_id) -> bool:
     return WorkspaceMember.objects.filter(workspace_id=workspace_id, member=user, role=ADMIN_ROLE, is_active=True).exists()
 
 
+def is_team_editor(user, entity_type, entity_id) -> bool:
+    """拥有者指定的共同维护人（或批准过的申请人）。"""
+    return TeamEditor.objects.filter(entity_type=entity_type, entity_id=entity_id, user=user).exists()
+
+
 def can_edit_issue(user, issue) -> bool:
-    if issue.created_by_id == user.id:
+    if issue.created_by_id == user.id or is_team_editor(user, "issue", issue.id):
         return True
     if IssueAssignee.objects.filter(issue_id=issue.id, assignee=user).exists():
         return True
@@ -57,7 +62,7 @@ def can_edit_issue(user, issue) -> bool:
 
 
 def can_edit_page(user, page) -> bool:
-    return page.owned_by_id == user.id or is_workspace_admin(user, page.workspace_id)
+    return page.owned_by_id == user.id or is_team_editor(user, "page", page.id) or is_workspace_admin(user, page.workspace_id)
 
 
 def can_edit_module(user, module) -> bool:

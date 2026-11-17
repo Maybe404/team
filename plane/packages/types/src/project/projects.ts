@@ -21,6 +21,7 @@ export interface IPartialProject {
   name: string;
   identifier: string;
   sort_order: number | null;
+  is_pinned?: boolean;
   logo_props: TLogoProps;
   member_role?: TUserPermissions | EUserProjectRoles | null;
   archived_at: string | null;

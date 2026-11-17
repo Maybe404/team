@@ -57,6 +57,11 @@ class ProjectViewSet(BaseViewSet):
             project_id=OuterRef("pk"),
             workspace__slug=self.kwargs.get("slug"),
         ).values("sort_order")
+        is_pinned = ProjectUserProperty.objects.filter(
+            user=self.request.user,
+            project_id=OuterRef("pk"),
+            workspace__slug=self.kwargs.get("slug"),
+        ).values("is_pinned")
         return self.filter_queryset(
             super()
             .get_queryset()
@@ -87,6 +92,7 @@ class ProjectViewSet(BaseViewSet):
                 ).values("anchor")
             )
             .annotate(sort_order=Subquery(sort_order))
+            .annotate(is_pinned=Subquery(is_pinned))
             .prefetch_related(
                 Prefetch(
                     "project_projectmember",
@@ -152,6 +158,11 @@ class ProjectViewSet(BaseViewSet):
             project_id=OuterRef("pk"),
             workspace__slug=self.kwargs.get("slug"),
         ).values("sort_order")
+        is_pinned = ProjectUserProperty.objects.filter(
+            user=self.request.user,
+            project_id=OuterRef("pk"),
+            workspace__slug=self.kwargs.get("slug"),
+        ).values("is_pinned")
 
         projects = (
             Project.objects.filter(workspace__slug=self.kwargs.get("slug"))
@@ -174,12 +185,14 @@ class ProjectViewSet(BaseViewSet):
             )
             .annotate(inbox_view=F("intake_view"))
             .annotate(sort_order=Subquery(sort_order))
+            .annotate(is_pinned=Subquery(is_pinned))
             .distinct()
         ).values(
             "id",
             "name",
             "identifier",
             "sort_order",
+            "is_pinned",
             "logo_props",
             "member_role",
             "intake_count",

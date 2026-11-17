@@ -43,7 +43,7 @@ const REPO_PARAM = z
   .optional()
   .describe("当前仓库 git remote get-url origin 的输出，每次都带");
 const NO_REPO = new Set(["get_guide", "check_text"]);
-const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson", "save_module", "save_view"]);
+const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson", "save_module", "save_view", "doc_versions", "doc_access"]);
 
 const lastRemind = new Map<string, number>();
 
@@ -1138,6 +1138,126 @@ server.registerTool(
       });
       await plane.linkPage(t.project.id, t.item.id, d.id);
       return text(`已把文档「${d.name}」关联到 ${t.key}：${webUrl(`browse/${t.key}`)}`);
+    }),
+);
+
+
+// ---------- 文档版本与编辑权限 ----------
+
+const SRC_LABEL: Record<string, string> = { mcp: "Agent 改写", "before-mcp": "Agent 改写前", restore: "恢复", "before-restore": "恢复前", manual: "手动保存", "web-api": "接口改写", "before-web-api": "接口改写前" };
+
+server.registerTool(
+  "doc_versions",
+  {
+    title: "文档版本管理",
+    description:
+      "管理文档的版本历史。action：list 列出版本（含锁定、来源、说明）；read 读某一版正文；save 把当前内容存成一个版本（可加 label、lock）；lock / unlock 锁定或解锁某一版（锁定的版本不会被自动清理）；label 给某一版改说明；restore 回退到某一版。write_doc 每次改写前后都会自动留版本。回退前默认先把当前内容存成一个版本（save_current，默认 true），不想存才传 false，并告诉用户。需要编辑权限，没有时用 doc_access 申请。",
+    inputSchema: {
+      project: z.string().optional().describe("默认当前仓库关联的项目"),
+      doc_id: z.string(),
+      action: z.enum(["list", "read", "save", "lock", "unlock", "label", "restore"]),
+      version_id: z.string().optional().describe("read / lock / unlock / label / restore 需要，list 里能查到"),
+      label: z.string().optional().describe("save 或 label 时的版本说明"),
+      lock: z.boolean().optional().describe("save 时同时锁定"),
+      save_current: z.boolean().optional().describe("restore 时先保存当前内容，默认 true"),
+    },
+  },
+  async ({ project, doc_id, action, version_id, label, lock, save_current }) =>
+    run(async () => {
+      const p = await projectFor(project, action === "list" || action === "read" ? "read" : "write");
+      const need = () => {
+        if (!version_id) throw new Error(`action=${action} 需要 version_id，先用 action=list 查。`);
+        return version_id;
+      };
+      const wrap = <T,>(f: () => Promise<T>) =>
+        f().catch((e) => {
+          if (e instanceof PlaneError && e.status === 403) throw new Error("没有这篇文档的编辑权限。用 doc_access（action=request）向拥有者申请，或在评论里提建议。");
+          throw e;
+        });
+      const line = (v: { id: string; last_saved_at: string; is_locked?: boolean; label?: string; source?: string }) =>
+        `- ${v.id} ${v.last_saved_at.slice(0, 16).replace("T", " ")}${v.is_locked ? " 🔒" : ""}${v.label ? ` 「${v.label}」` : ""}${v.source ? `（${SRC_LABEL[v.source] ?? v.source}）` : ""}`;
+      if (action === "list") {
+        const r = await plane.listVersions(p.id, doc_id);
+        return text(`共 ${r.versions.length} 个版本，当前内容${r.current_matches ? "和最新版本一致" : "比最新版本新（有未存为版本的改动）"}：\n\n${r.versions.map(line).join("\n") || "无"}`);
+      }
+      if (action === "read") {
+        const v = await plane.getVersion(p.id, doc_id, need());
+        return text(`${line(v)}\n\n${htmlToMd(v.description_html, await peopleOf(p.id))}`);
+      }
+      if (action === "save") {
+        const v = await wrap(() => plane.saveVersion(p.id, doc_id, { label, lock }));
+        return text(v.created ? `已把当前内容存为版本：\n${line(v)}` : `当前内容和最新版本一致，没有新建；已更新那一版：\n${line(v)}`);
+      }
+      if (action === "lock" || action === "unlock") {
+        const v = await wrap(() => plane.patchVersion(p.id, doc_id, need(), { is_locked: action === "lock" }));
+        return text(`${action === "lock" ? "已锁定" : "已解锁"}：\n${line(v)}`);
+      }
+      if (action === "label") {
+        const v = await wrap(() => plane.patchVersion(p.id, doc_id, need(), { label: label ?? "" }));
+        return text(`已更新说明：\n${line(v)}`);
+      }
+      const keep = save_current !== false;
+      const r = await wrap(() => plane.restoreVersion(p.id, doc_id, need(), keep));
+      return text(`已回退到：\n${line(r.restored)}\n${r.saved_current ? `回退前的内容已存为版本，随时可以回来：\n${line(r.saved_current)}` : "回退前的内容没有保存（save_current=false）。"}`);
+    }),
+);
+
+server.registerTool(
+  "doc_access",
+  {
+    title: "编辑权限",
+    description:
+      "查看、申请、审批文档或工作项的编辑权限。action：status 看谁能改、我的申请进度、待处理申请；request 申请编辑权限（可带 message 说明理由）；decide 拥有者批准或拒绝申请（request_id + approve）；add_editor / remove_editor 拥有者指定或移除共同维护人（member 填姓名或邮箱）；pending 汇总等你审批的申请。拥有者是文档作者或工作项的创建人和指派人，工作区管理员也能管理。",
+    inputSchema: {
+      action: z.enum(["status", "request", "decide", "add_editor", "remove_editor", "pending"]),
+      type: z.enum(["page", "issue"]).optional().describe("文档填 page，工作项填 issue；pending 不需要"),
+      id: z.string().optional().describe("文档 ID，或工作项编号（如 ABC-12）"),
+      project: z.string().optional().describe("默认当前仓库关联的项目"),
+      message: z.string().optional().describe("request 时的理由"),
+      request_id: z.string().optional(),
+      approve: z.boolean().optional(),
+      member: z.string().optional().describe("add_editor / remove_editor 的成员姓名或邮箱"),
+    },
+  },
+  async ({ action, type, id, project, message, request_id, approve, member }) =>
+    run(async () => {
+      const pn = (x?: { name?: string }) => x?.name ?? "未知成员";
+      if (action === "pending") {
+        const rows = await plane.pendingAccess();
+        return text(rows.length ? `等你审批的编辑申请（${rows.length}）：\n${rows.map((r) => `- ${r.id} ${pn(r.requester)} 申请编辑${r.entity_type === "page" ? "文档" : "工作项"}「${r.title}」（${r.entity_id}）${r.message ? `：${r.message}` : ""}`).join("\n")}\n\n用 action=decide、request_id、approve 处理。` : "没有等你审批的编辑申请。");
+      }
+      if (!type || !id) throw new Error("需要 type 和 id");
+      let entityId = id;
+      let pid = "";
+      if (type === "issue") {
+        const t = await resolveTask(id, "read");
+        entityId = t.item.id;
+        pid = t.project.id;
+      }
+      const body: Record<string, unknown> = { action };
+      if (action === "request") body.message = message ?? "";
+      if (action === "decide") {
+        if (!request_id || approve === undefined) throw new Error("decide 需要 request_id 和 approve");
+        body.request_id = request_id;
+        body.approve = approve;
+      }
+      if (action === "add_editor" || action === "remove_editor") {
+        if (!member) throw new Error("需要 member");
+        const projectId = pid || (await projectFor(project, "read")).id;
+        body.user_id = (await resolveMembers(projectId, [member]))[0].id;
+      }
+      const r = action === "status" ? await plane.getAccess(type, entityId) : await plane.accessAction(type, entityId, body);
+      const a = r as unknown as { title: string; can_edit: boolean; can_manage: boolean; owners: { name?: string }[]; editors: { name?: string }[]; my_request?: { status: string; message?: string } | null; requests?: { id: string; requester: { name?: string }; message?: string }[] };
+      return text(
+        [
+          `「${a.title}」${a.can_edit ? "你可以编辑" : "你没有编辑权限"}${a.can_manage ? "（你能管理权限）" : ""}`,
+          `拥有者：${a.owners.map(pn).join("、") || "无"}；共同维护：${a.editors.map(pn).join("、") || "无"}`,
+          a.my_request ? `我的申请：${a.my_request.status === "pending" ? "等待审批" : a.my_request.status === "approved" ? "已批准" : "已被拒绝"}` : "",
+          a.requests?.length ? `待处理申请：\n${a.requests.map((q) => `- ${q.id} ${pn(q.requester)}${q.message ? `：${q.message}` : ""}`).join("\n")}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
     }),
 );
 

@@ -25,6 +25,7 @@ import { PageActions } from "../../dropdowns";
 import { ExportPageModal } from "../../modals/export-page-modal";
 import { TeamPageShareModal } from "../../modals/team-share-modal";
 import { TeamPageIssuesModal } from "@/components/team/page-issue-links";
+import { TeamAccessModal } from "@/components/team/access";
 import { PAGE_NAVIGATION_PANE_TABS_QUERY_PARAM } from "../../navigation-pane";
 
 type Props = {
@@ -38,6 +39,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isLinkIssuesOpen, setIsLinkIssuesOpen] = useState(false);
+  const [isAccessOpen, setIsAccessOpen] = useState(false);
   const { workspaceSlug, projectId } = useParams();
   // navigation
   const router = useAppRouter();
@@ -124,6 +126,14 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
           shouldRender: !page.archived_at,
         },
         {
+          // [team 二开] 编辑权限：申请、批准、共同维护人
+          key: "team-access",
+          action: () => setIsAccessOpen(true),
+          title: "编辑权限",
+          icon: GlobeOutline,
+          shouldRender: !page.archived_at,
+        },
+        {
           key: "export",
           action: () => setIsExportModalOpen(true),
           title: "导出",
@@ -162,6 +172,13 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
         projectId={String(projectId ?? "")}
         pageId={page.id ?? ""}
       />
+      <TeamAccessModal
+        isOpen={isAccessOpen}
+        onClose={() => setIsAccessOpen(false)}
+        workspaceSlug={String(workspaceSlug ?? "")}
+        type="page"
+        id={page.id ?? ""}
+      />
       <TeamPageShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
@@ -181,6 +198,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
           "toggle-access",
           "export",
           "team-link-issues",
+          "team-access",
           "team-public-link",
         ]}
         page={page}

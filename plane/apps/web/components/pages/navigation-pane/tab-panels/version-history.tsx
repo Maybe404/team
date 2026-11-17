@@ -4,10 +4,10 @@
  * See the LICENSE file for details.
  */
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { observer } from "mobx-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 // plane imports
 import { Avatar } from "@makeplane/propel/components/avatar";
@@ -23,6 +23,8 @@ import type { TPageRootHandlers } from "@/components/pages/editor/page-root";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
 import { useQueryParams } from "@/hooks/use-query-params";
+import { ProjectPageVersionService } from "@/services/page/project-page-version.service";
+import { setToast } from "@plane/blocks/toast";
 // store
 import type { TPageInstance } from "@/store/pages/base-page";
 // local imports
@@ -44,6 +46,18 @@ type VersionRowProps = {
   href: string;
   isActive: boolean;
   version?: TPageVersion;
+  canEdit?: boolean;
+  onToggleLock?: (version: TPageVersion) => void;
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  mcp: "Agent 改写",
+  "before-mcp": "Agent 改写前",
+  restore: "恢复",
+  "before-restore": "恢复前",
+  manual: "手动保存",
+  "web-api": "接口改写",
+  "before-web-api": "接口改写前",
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -55,7 +69,7 @@ const getStartOfDay = (value: Date | string) => {
 };
 
 const VersionRow = observer(function VersionRow(props: VersionRowProps) {
-  const { href, isActive, version } = props;
+  const { href, isActive, version, canEdit, onToggleLock } = props;
   // store hooks
   const { getUserDetails } = useMember();
   // translation
@@ -72,11 +86,19 @@ const VersionRow = observer(function VersionRow(props: VersionRowProps) {
           "hover:bg-layer-transparent-hover": !isActive,
         })}
       >
-        <p className="text-body-sm-medium text-primary">
-          {version
-            ? `${renderFormattedDate(version.last_saved_at)}, ${renderFormattedTime(version.last_saved_at)}`
-            : t("page_navigation_pane.tabs.info.version_history.current_version")}
+        <p className="flex items-center gap-1 text-body-sm-medium text-primary">
+          <span className="truncate">
+            {version
+              ? `${renderFormattedDate(version.last_saved_at)}, ${renderFormattedTime(version.last_saved_at)}`
+              : t("page_navigation_pane.tabs.info.version_history.current_version")}
+          </span>
+          {version?.is_locked && <span title="已锁定，不会被自动清理">🔒</span>}
         </p>
+        {version && (version.label || (version.source && SOURCE_LABELS[version.source])) && (
+          <p className="truncate text-caption-sm-regular text-secondary">
+            {version.label || SOURCE_LABELS[version.source ?? ""]}
+          </p>
+        )}
         {version && (
           <span className="flex items-center gap-1">
             <Avatar
@@ -91,6 +113,15 @@ const VersionRow = observer(function VersionRow(props: VersionRowProps) {
           </span>
         )}
       </Link>
+      {version && canEdit && onToggleLock && (
+        <button
+          type="button"
+          className="mt-0.5 ml-1.5 text-caption-sm-regular text-tertiary hover:text-primary"
+          onClick={() => onToggleLock(version)}
+        >
+          {version.is_locked ? "解除锁定" : "锁定此版本"}
+        </button>
+      )}
     </li>
   );
 });
@@ -104,6 +135,9 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
   const activeVersion = searchParams.get(PAGE_NAVIGATION_PANE_VERSION_QUERY_PARAM);
   // derived values
   const { id } = page;
+  const { workspaceSlug, projectId } = useParams();
+  const canEdit = page.canCurrentUserEditPage;
+  const [saving, setSaving] = useState(false);
   // translation
   const { currentLocale, t } = useTranslation();
   // query params
@@ -115,6 +149,33 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
     isValidating: isValidatingVersions,
     mutate: mutateVersionsList,
   } = useSWR(id ? `PAGE_VERSIONS_LIST_${id}` : null, id ? () => versionHistory.fetchAllVersions(id) : null);
+
+  // [team 二开] 锁定、解锁版本，手动保存当前内容为一个版本
+  const versionService = useMemo(() => new ProjectPageVersionService(), []);
+  const handleToggleLock = useCallback(
+    (version: TPageVersion) => {
+      if (!id || !workspaceSlug || !projectId) return;
+      void versionService
+        .updateVersion(workspaceSlug.toString(), projectId.toString(), id, version.id, { is_locked: !version.is_locked })
+        .then(() => mutateVersionsList())
+        .catch(() => setToast({ type: "error", title: "操作没成功，请稍后再试" }));
+    },
+    [id, mutateVersionsList, projectId, versionService, workspaceSlug]
+  );
+  const handleSaveSnapshot = useCallback(() => {
+    if (!id || !workspaceSlug || !projectId) return;
+    const label = window.prompt("给这个版本起个名字（可以留空）：", "") ?? null;
+    if (label === null) return;
+    setSaving(true);
+    void versionService
+      .saveSnapshot(workspaceSlug.toString(), projectId.toString(), id, { label: label.trim() })
+      .then(() => {
+        setToast({ type: "success", title: "已把当前内容保存为一个版本" });
+        return mutateVersionsList();
+      })
+      .catch(() => setToast({ type: "error", title: "保存没成功，请稍后再试" }))
+      .finally(() => setSaving(false));
+  }, [id, mutateVersionsList, projectId, versionService, workspaceSlug]);
 
   const getVersionLink = useCallback(
     (versionID?: string) =>
@@ -167,6 +228,11 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
           aria-label={t("page_navigation_pane.close_button")}
         />
       </div>
+      {canEdit && (
+        <div className="mt-3">
+          <Button variant="secondary" size="sm" stretch="auto" loading={saving} onClick={handleSaveSnapshot} label="把当前内容保存为一个版本" />
+        </div>
+      )}
       <div className="vertical-scrollbar mt-4 scrollbar-sm flex-1 space-y-4 overflow-y-auto pb-4">
         {versionsListError ? (
           <div className="flex flex-col items-center gap-2 px-2 py-6 text-center">
@@ -194,6 +260,8 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
                     href={getVersionLink(version.id)}
                     isActive={activeVersion === version.id}
                     version={version}
+                    canEdit={canEdit}
+                    onToggleLock={handleToggleLock}
                   />
                 ))}
               </ul>

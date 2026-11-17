@@ -34,7 +34,9 @@ export function Logo({ logo, size = 16, type = "material" }: LogoProps) {
   const loadingSkeleton = <span style={{ height: size, width: size }} className="rounded-sm bg-layer-1" />;
 
   // Early returns for loading/empty states
-  if (!logo || !logo.in_use) return loadingSkeleton;
+  // [team 二开] logo 为空对象 = 没设置图标，什么都不画；undefined 才是还在加载
+  if (logo && !logo.in_use) return null;
+  if (!logo) return loadingSkeleton;
 
   const { in_use, emoji, icon } = logo;
   const value = in_use === "emoji" ? emoji?.value : icon?.name;

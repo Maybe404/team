@@ -11,12 +11,14 @@ import { pointerOutsideOfPreview } from "@atlaskit/pragmatic-drag-and-drop/eleme
 import { setCustomNativeDragPreview } from "@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview";
 import { attachInstruction, extractInstruction } from "@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item";
 import { observer } from "mobx-react";
+import { setToast } from "@plane/blocks/toast";
 import { useParams, useRouter } from "next/navigation";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import scrollIntoView from "smooth-scroll-into-view-if-needed";
 import {
   ArchiveOutline,
+  PinOutline,
   ChevronRightOutline,
   DragDropOutline,
   LinkOutline,
@@ -83,7 +85,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   } = props;
   // store hooks
   const { t } = useTranslation();
-  const { getPartialProjectById } = useProject();
+  const { getPartialProjectById, togglePinProject } = useProject();
   const { isMobile } = usePlatformOS();
   const { allowPermissions } = useUserPermissions();
   const { getIsProjectListOpen, toggleProjectListOpen } = useCommandPalette();
@@ -401,6 +403,16 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
                           onClick={() => setPublishModal(true)}
                         />
                       )}
+                      {/* [team 二开] 置顶 / 取消置顶 */}
+                      <MenuItem
+                        icon={<Icon icon={PinOutline} />}
+                        label={project?.is_pinned ? "取消置顶" : "置顶项目"}
+                        onClick={() => {
+                          void togglePinProject(workspaceSlug.toString(), projectId, !project?.is_pinned).catch(() =>
+                            setToast({ type: "error", title: "操作没成功，请稍后再试" })
+                          );
+                        }}
+                      />
                       <MenuItem icon={<Icon icon={LinkOutline} />} label={t("copy_link")} onClick={handleCopyText} />
                       {isAuthorized && (
                         <MenuItem

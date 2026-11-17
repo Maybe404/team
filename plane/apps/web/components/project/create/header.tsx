@@ -83,7 +83,7 @@ function ProjectCreateHeader(props: Props) {
               buttonClassName="flex items-center justify-center"
               label={
                 <span className="grid h-11 w-11 place-items-center rounded-md border border-subtle bg-layer-2">
-                  <Logo logo={value} size={20} />
+                  {value?.in_use ? <Logo logo={value} size={20} /> : <span className="text-caption-sm-regular text-tertiary">图标</span>}
                 </span>
               }
               onChange={(val: any) => {
@@ -111,6 +111,18 @@ function ProjectCreateHeader(props: Props) {
             />
           )}
         />
+        {watch("logo_props")?.in_use && (
+          <button
+            type="button"
+            className="ml-2 text-caption-sm-regular text-tertiary hover:text-primary"
+            onClick={() => {
+              setValue("logo_props", {} as never, { shouldDirty: true });
+              handleFormOnChange?.();
+            }}
+          >
+            移除图标
+          </button>
+        )}
       </div>
     </div>
   );

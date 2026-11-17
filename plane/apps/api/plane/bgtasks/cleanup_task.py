@@ -107,7 +107,7 @@ def get_email_logs_queryset():
 def get_page_versions_queryset():
     """Get page versions beyond the maximum allowed (20 per page)."""
     subq = (
-        PageVersion.all_objects.annotate(
+        PageVersion.all_objects.filter(is_locked=False).annotate(
             row_num=Window(
                 expression=RowNumber(),
                 partition_by=[F("page_id")],
@@ -119,7 +119,7 @@ def get_page_versions_queryset():
     )
 
     return (
-        PageVersion.all_objects.filter(id__in=Subquery(subq))
+        PageVersion.all_objects.filter(is_locked=False, id__in=Subquery(subq))
         .values_list("id", flat=True)
         .iterator(chunk_size=BATCH_SIZE)
     )

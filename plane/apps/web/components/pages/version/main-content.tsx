@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
+import { useParams } from "next/navigation";
 import useSWR from "swr";
 import { ShowOutline } from "@makeplane/propel/icons";
 // plane imports
@@ -19,6 +20,7 @@ import type { TPageVersion } from "@plane/types";
 import { renderFormattedDate, renderFormattedTime } from "@plane/utils";
 // helpers
 import type { EPageStoreType } from "@/hooks/store";
+import { ProjectPageVersionService } from "@/services/page/project-page-version.service";
 // local imports
 import type { TVersionEditorProps } from "./editor";
 
@@ -59,9 +61,29 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
     pageId && activeVersion ? () => fetchVersionDetails(pageId, activeVersion) : null
   );
 
-  const handleRestoreVersion = async () => {
+  // [team 二开] 恢复前先问：当前内容要不要先保存成一个版本，避免回退后找不回刚才的改动
+  const [confirming, setConfirming] = useState(false);
+  const { workspaceSlug, projectId } = useParams();
+  const saveCurrentSnapshot = async () => {
+    if (!pageId || !workspaceSlug || !projectId) return;
+    await new ProjectPageVersionService().saveSnapshot(workspaceSlug.toString(), projectId.toString(), pageId, {
+      label: "恢复前自动保存",
+    });
+  };
+
+  const handleRestoreVersion = async (saveFirst: boolean) => {
     if (!restoreEnabled) return;
     setIsRestoring(true);
+    setConfirming(false);
+    if (saveFirst) {
+      try {
+        await saveCurrentSnapshot();
+      } catch {
+        setToast({ type: "error", title: "没能先保存当前内容，已取消恢复" });
+        setIsRestoring(false);
+        return;
+      }
+    }
     await handleRestore(versionDetails?.description_html ?? "<p></p>")
       .then(() => {
         setToast({
@@ -128,11 +150,19 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
                 label={
                   isRestoring ? t("page_navigation_pane.tabs.version_history.restoring") : t("common.actions.restore")
                 }
-                onClick={() => void handleRestoreVersion()}
+                onClick={() => setConfirming(true)}
                 loading={isRestoring}
               />
             )}
           </div>
+          {confirming && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-subtle bg-layer-2 px-5 py-3 text-body-sm-regular text-primary">
+              <span className="flex-1">恢复到这个版本前，要不要先把当前内容保存成一个版本？不保存的话，当前未存为版本的改动可能找不回。</span>
+              <Button variant="primary" size="sm" stretch="auto" label="保存当前并恢复" onClick={() => void handleRestoreVersion(true)} />
+              <Button variant="secondary" size="sm" stretch="auto" label="不保存，直接恢复" onClick={() => void handleRestoreVersion(false)} />
+              <Button variant="ghost" size="sm" stretch="auto" label="取消" onClick={() => setConfirming(false)} />
+            </div>
+          )}
           <div className="vertical-scrollbar scrollbar-sm h-full overflow-y-scroll pt-8">
             <VersionEditor activeVersion={activeVersion} storeType={storeType} versionDetails={versionDetails} />
           </div>

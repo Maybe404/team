@@ -79,6 +79,9 @@ export type Page = {
   parent_id: string | null;
   live_editing?: boolean;
 };
+export type Version = { id: string; last_saved_at: string; is_locked?: boolean; label?: string; source?: string; owned_by?: string };
+export type Access = Record<string, unknown> & { can_edit?: boolean; can_manage?: boolean };
+export type PendingAccess = { id: string; entity_type: string; entity_id: string; project_id: string; title: string; requester: { id?: string; name?: string }; message?: string };
 export type Me = { id: string; email: string; display_name: string };
 
 type Paginated<T> = { results: T[]; next_cursor?: string; next_page_results?: boolean };
@@ -215,6 +218,34 @@ export class Loom {
   }
   listPageIssues(projectId: string, pageId: string) {
     return this.req<LinkedIssue[]>("GET", this.ws(`projects/${projectId}/pages/${pageId}/work-items/`));
+  }
+
+  // 文档版本（二开接口）
+  listVersions(projectId: string, pageId: string) {
+    return this.req<{ versions: Version[]; current_matches: boolean }>("GET", this.ws(`projects/${projectId}/pages/${pageId}/versions/`));
+  }
+  getVersion(projectId: string, pageId: string, versionId: string) {
+    return this.req<Version & { description_html: string }>("GET", this.ws(`projects/${projectId}/pages/${pageId}/versions/${versionId}/`));
+  }
+  saveVersion(projectId: string, pageId: string, body: { label?: string; lock?: boolean }) {
+    return this.req<Version & { created: boolean }>("POST", this.ws(`projects/${projectId}/pages/${pageId}/versions/`), body);
+  }
+  patchVersion(projectId: string, pageId: string, versionId: string, body: { is_locked?: boolean; label?: string }) {
+    return this.req<Version>("PATCH", this.ws(`projects/${projectId}/pages/${pageId}/versions/${versionId}/`), body);
+  }
+  restoreVersion(projectId: string, pageId: string, versionId: string, saveCurrent: boolean) {
+    return this.req<{ restored: Version; saved_current: Version | null }>("POST", this.ws(`projects/${projectId}/pages/${pageId}/versions/${versionId}/`), { save_current: saveCurrent });
+  }
+
+  // 编辑权限（二开接口）
+  getAccess(type: "page" | "issue", id: string) {
+    return this.req<Access>("GET", this.ws(`team-access/${type}/${id}/`));
+  }
+  accessAction(type: "page" | "issue", id: string, body: Record<string, unknown>) {
+    return this.req<Access>("POST", this.ws(`team-access/${type}/${id}/`), body);
+  }
+  pendingAccess() {
+    return this.req<PendingAccess[]>("GET", this.ws("team-access/pending/"));
   }
 
   // 页面图片（二开接口）：返回附件 ID，在 Markdown 里写 ![](asset:<ID>)

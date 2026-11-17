@@ -432,6 +432,8 @@ class ProjectUserProperty(ProjectBaseModel):
     rich_filters = models.JSONField(default=dict)
     preferences = models.JSONField(default=get_default_preferences)
     sort_order = models.FloatField(default=65535)
+    # [team 二开] 每人自己的项目置顶
+    is_pinned = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Project User Property"

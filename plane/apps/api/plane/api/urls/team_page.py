@@ -13,9 +13,31 @@ from plane.api.views.team_page import (
     TeamPageImageAPIEndpoint,
     TeamPageIssuesAPIEndpoint,
     TeamPageListCreateAPIEndpoint,
+    TeamPageVersionsAPIEndpoint,
 )
+from plane.api.views.team_access import TeamAccessAPIEndpoint, TeamAccessPendingAPIEndpoint
 
 urlpatterns = [
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:pk>/versions/",
+        TeamPageVersionsAPIEndpoint.as_view(http_method_names=["get", "post"]),
+        name="team-page-versions",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:pk>/versions/<uuid:version_id>/",
+        TeamPageVersionsAPIEndpoint.as_view(http_method_names=["get", "patch", "post"]),
+        name="team-page-version-detail",
+    ),
+    path(
+        "workspaces/<str:slug>/team-access/pending/",
+        TeamAccessPendingAPIEndpoint.as_view(http_method_names=["get"]),
+        name="team-access-pending",
+    ),
+    path(
+        "workspaces/<str:slug>/team-access/<str:entity_type>/<uuid:entity_id>/",
+        TeamAccessAPIEndpoint.as_view(http_method_names=["get", "post"]),
+        name="team-access",
+    ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/",
         TeamPageListCreateAPIEndpoint.as_view(http_method_names=["get", "post"]),

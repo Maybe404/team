@@ -146,6 +146,9 @@ class PageVersionSerializer(BaseSerializer):
             "updated_at",
             "created_by",
             "updated_by",
+            "is_locked",
+            "label",
+            "source",
         ]
         read_only_fields = ["workspace", "page"]
 
@@ -166,6 +169,9 @@ class PageVersionDetailSerializer(BaseSerializer):
             "updated_at",
             "created_by",
             "updated_by",
+            "is_locked",
+            "label",
+            "source",
         ]
         read_only_fields = ["workspace", "page"]
 

@@ -94,3 +94,4 @@ from .description import Description, DescriptionVersion
 # [team 二开]
 from .team_page_share import TeamPageShare
 from .team_page_issue import TeamPageIssue
+from .team_access import TeamEditor, TeamEditRequest

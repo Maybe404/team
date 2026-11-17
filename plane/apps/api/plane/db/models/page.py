@@ -165,6 +165,10 @@ class PageVersion(BaseModel):
     description_stripped = models.TextField(blank=True, null=True)
     description_json = models.JSONField(default=dict, blank=True)
     sub_pages_data = models.JSONField(default=dict, blank=True)
+    # [team 二开] 锁定的版本不会被自动清理；label 是人或 Agent 给版本起的名字；source 记录这版从哪来
+    is_locked = models.BooleanField(default=False)
+    label = models.CharField(max_length=255, blank=True, default="")
+    source = models.CharField(max_length=20, blank=True, default="editor")
 
     class Meta:
         verbose_name = "Page Version"

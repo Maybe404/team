@@ -23,6 +23,8 @@ export type TPage = {
   name: string | undefined;
   owned_by: string | undefined;
   parent?: string | null; // [team 二开] 父页面，用来组成层级
+  team_can_edit?: boolean; // [team 二开] 服务端算好的：拥有者、管理员或共同维护人
+  team_can_manage?: boolean; // [team 二开] 能管理编辑权限（拥有者、管理员）
   project_ids?: string[] | undefined;
   updated_at: Date | undefined;
   updated_by: string | undefined;
@@ -68,6 +70,9 @@ export type TPageVersion = {
   updated_at: string;
   updated_by: string;
   workspace: string;
+  is_locked?: boolean; // [team 二开] 锁定的版本不会被自动清理
+  label?: string;
+  source?: string;
 };
 
 export type TDocumentPayload = {

@@ -6,7 +6,7 @@ type Row = { key: string; name: string; state: string; days: number; url: string
 export type Inbox = {
   md: string;
   total: number;
-  counts: { decide: number; review: number; blocked: number; todo: number; intake: number; lessons: number };
+  counts: { access: number; decide: number; review: number; blocked: number; todo: number; intake: number; lessons: number };
 };
 
 const DAY = 86_400_000;
@@ -64,7 +64,8 @@ export async function buildInbox(plane: Loom, projectIds?: string[]): Promise<In
           .map((x) => `- [${x.key}](${x.url}) ${x.name}（${x.project}，${x.state}，${x.days} 天没动）`)
           .join("\n") + (r.length > limit ? `\n- …还有 ${r.length - limit} 项` : "")
       : "无";
-  const counts = { decide: decide.length, review: review.length, blocked: blocked.length, todo: todo.length, intake: intake.reduce((n, i) => n + i.names.length, 0), lessons };
+  const access = await plane.pendingAccess?.().catch(() => []) ?? [];
+  const counts = { access: access.length, decide: decide.length, review: review.length, blocked: blocked.length, todo: todo.length, intake: intake.reduce((n, i) => n + i.names.length, 0), lessons };
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const md = [
     `待办收件箱：${total ? `有 ${total} 项等你处理` : "现在没有等你处理的事"}。`,
@@ -72,6 +73,7 @@ export async function buildInbox(plane: Loom, projectIds?: string[]): Promise<In
     `## 等你审查（${review.length}）\n\n${rows(review)}`,
     `## 阻塞中（${blocked.length}）\n\n${rows(blocked)}`,
     `## 指派给你的未完成任务（${todo.length}）\n\n${rows(todo)}`,
+    `## 等你审批的编辑申请（${access.length}）\n\n${access.length ? access.slice(0, 8).map((r) => `- ${r.requester?.name ?? "有人"} 申请编辑「${r.title}」（doc_access decide，request_id=${r.id}）`).join("\n") : "无"}`,
     `## 收集里待分诊（${counts.intake}）\n\n${intake.length ? intake.map((i) => `- ${i.project}：${i.names.join("、")}（${i.url}）`).join("\n") : "无"}`,
     `## 待审核的经验（${lessons}）\n\n${lessons ? "在网页「经验库」项目里采纳或驳回。" : "无"}`,
   ].join("\n\n");
@@ -81,6 +83,7 @@ export async function buildInbox(plane: Loom, projectIds?: string[]): Promise<In
 export function reminderLine(i: Inbox): string {
   const c = i.counts;
   const parts = [
+    c.access && `编辑申请待审批 ${c.access}`,
     c.decide && `等你决定 ${c.decide}`,
     c.review && `等你审查 ${c.review}`,
     c.blocked && `阻塞 ${c.blocked}`,
