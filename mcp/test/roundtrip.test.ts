@@ -53,3 +53,14 @@ test("SVG 围栏和 data URI 图片上传后变成 asset 图片", async () => {
   const none = await importInlineImages("普通文字", async () => "x");
   assert.equal(none.count, 0);
 });
+
+
+test("页面链接卡片经 Markdown 往返不丢失", () => {
+  const id = "11111111-2222-3333-4444-555555555555";
+  const html = `<p>前文</p><page-link-component data-page-id="${id}" data-project-id="p1" data-title="部署手册"></page-link-component><p>后文</p>`;
+  const md = htmlToMd(html);
+  assert.match(md, new RegExp(`\\[📄 部署手册\\]\\(page:${id}\\)`));
+  const back = mdToHtml(md, { projectId: "p1" });
+  assert.match(back, new RegExp(`<page-link-component data-page-id="${id}" data-project-id="p1" data-title="部署手册"></page-link-component>`));
+  assert.doesNotMatch(back, /<a href="page:/);
+});

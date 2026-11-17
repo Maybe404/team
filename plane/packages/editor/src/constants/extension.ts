@@ -28,6 +28,7 @@ export enum CORE_EXTENSIONS {
   IMAGE = "image",
   ITALIC = "italic",
   LIST_ITEM = "listItem",
+  PAGE_LINK = "pageLinkComponent",
   MARKDOWN_CLIPBOARD = "markdownClipboard",
   MENTION = "mention",
   ORDERED_LIST = "orderedList",

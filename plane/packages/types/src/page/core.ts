@@ -22,6 +22,7 @@ export type TPage = {
   label_ids: string[] | undefined;
   name: string | undefined;
   owned_by: string | undefined;
+  parent?: string | null; // [team 二开] 父页面，用来组成层级
   project_ids?: string[] | undefined;
   updated_at: Date | undefined;
   updated_by: string | undefined;

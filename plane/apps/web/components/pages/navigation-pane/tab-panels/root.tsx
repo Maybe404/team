@@ -10,6 +10,7 @@ import { TabsPanel } from "@makeplane/propel/components/tabs";
 import type { TPageInstance } from "@/store/pages/base-page";
 // local imports
 import { PageNavigationPaneAssetsTabPanel } from "./assets";
+import { PageNavigationPaneHierarchyTabPanel } from "./hierarchy";
 import { PageNavigationPaneInfoTabPanel } from "./info/root";
 import { PageNavigationPaneOutlineTabPanel } from "./outline";
 import { ORDERED_PAGE_NAVIGATION_TABS_LIST } from ".";
@@ -28,6 +29,7 @@ export function PageNavigationPaneTabPanelsRoot(props: Props) {
       {ORDERED_PAGE_NAVIGATION_TABS_LIST.map((tab) => (
         <TabsPanel key={tab.key} value={tab.key}>
           {tab.key === "outline" && <PageNavigationPaneOutlineTabPanel page={page} />}
+          {tab.key === "hierarchy" && <PageNavigationPaneHierarchyTabPanel page={page} />}
           {tab.key === "info" && <PageNavigationPaneInfoTabPanel page={page} />}
           {tab.key === "assets" && <PageNavigationPaneAssetsTabPanel page={page} />}
         </TabsPanel>

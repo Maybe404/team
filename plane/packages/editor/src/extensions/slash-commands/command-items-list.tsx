@@ -17,6 +17,7 @@ import {
   ListOutline,
   MinusSquareOutline,
   NumberedListOutline,
+  PagesOutline,
   QuoteOutline,
   ReactionOutline,
   TableEditorOutline,
@@ -38,6 +39,7 @@ import {
   insertImage,
   insertCallout,
   insertHtmlEmbed,
+  insertPageLink,
   setText,
   openEmojiPicker,
 } from "@/helpers/editor-commands";
@@ -188,6 +190,15 @@ export const getSlashCommandFilteredSections =
             description: "Insert callout",
             searchTerms: ["callout", "comment", "message", "info", "alert"],
             command: ({ editor, range }: CommandProps) => insertCallout(editor, range),
+          },
+          {
+            commandKey: "page-link",
+            key: "page-link",
+            title: "子页面 / 链接页面",
+            icon: <PagesOutline className="size-3.5" />,
+            description: "在当前页面下新建子页面，或链接到已有的页面，点击跳转",
+            searchTerms: ["page", "subpage", "link", "子页面", "页面", "链接", "引用", "嵌套"],
+            command: ({ editor, range }: CommandProps) => insertPageLink(editor, range),
           },
           {
             commandKey: "html-embed",

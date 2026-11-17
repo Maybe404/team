@@ -56,6 +56,7 @@ from plane.bgtasks.page_version_task import track_page_version
 from plane.bgtasks.recent_visited_task import recent_visited_task
 from plane.bgtasks.copy_s3_object import copy_s3_objects_of_description_and_assets
 from plane.app.permissions import ProjectPagePermission
+from plane.utils.team_page_tree import check_parent, hidden_page_ids
 
 
 def unarchive_archive_page_and_descendants(page_id, archived_at):
@@ -96,8 +97,9 @@ class PageViewSet(BaseViewSet):
                 projects__project_projectmember__is_active=True,
                 projects__archived_at__isnull=True,
             )
-            .filter(parent__isnull=True)
             .filter(Q(owned_by=self.request.user) | Q(access=0))
+            # [team 二开] 子页面也要能看到和打开；别人的私有页面下面的整棵子树隐藏
+            .exclude(id__in=hidden_page_ids(self.request.user, self.kwargs.get("project_id")))
             .prefetch_related("projects")
             .select_related("workspace")
             .select_related("owned_by")
@@ -143,8 +145,20 @@ class PageViewSet(BaseViewSet):
         )
 
     def create(self, request, slug, project_id):
+        payload = request.data.copy()
+        parent = request.data.get("parent")
+        if parent:
+            err = check_parent(None, parent, project_id)
+            if err:
+                return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+            parent_page = Page.objects.filter(pk=parent).first()
+            if parent_page and parent_page.access == 1 and parent_page.owned_by_id != request.user.id:
+                return Response({"error": "父页面是别人的私有页面"}, status=status.HTTP_403_FORBIDDEN)
+            # 子页面默认和父页面一致
+            if "access" not in payload and parent_page:
+                payload["access"] = parent_page.access
         serializer = PageSerializer(
-            data=request.data,
+            data=payload,
             context={
                 "project_id": project_id,
                 "owned_by_id": request.user.id,
@@ -181,6 +195,9 @@ class PageViewSet(BaseViewSet):
 
             parent = request.data.get("parent", None)
             if parent:
+                err = check_parent(page.id, parent, project_id)
+                if err:
+                    return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
                 _ = Page.objects.get(
                     pk=parent,
                     workspace__slug=slug,
@@ -421,7 +438,6 @@ class PageViewSet(BaseViewSet):
                 projects__project_projectmember__is_active=True,
                 projects__archived_at__isnull=True,
             )
-            .filter(parent__isnull=True)
             .filter(Q(owned_by=request.user) | Q(access=0))
             .annotate(
                 project=Exists(

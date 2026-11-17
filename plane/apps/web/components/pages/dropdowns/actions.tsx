@@ -18,6 +18,7 @@ import {
   LockedOutline,
   MoreHorizontalOutline,
   NewTabOutline,
+  PlusCircleOutline,
   RestoreOutline,
   UnlockedOutline,
 } from "@makeplane/propel/icons";
@@ -33,6 +34,7 @@ import { ContextMenu, getRenderableItems, resolveItemVariant } from "@plane/bloc
 // components
 import { DeletePageModal } from "@/components/pages/modals/delete-page-modal";
 // hooks
+import { useCreateSubpage } from "@/hooks/use-create-subpage";
 import { usePageOperations } from "@/hooks/use-page-operations";
 // plane web hooks
 import type { EPageStoreType } from "@/hooks/store";
@@ -55,7 +57,8 @@ export type TPageActions =
   | "export"
   | "move"
   | "team-public-link" // [team 二开]
-  | "team-link-issues"; // [team 二开]
+  | "team-link-issues" // [team 二开]
+  | "new-subpage"; // [team 二开]
 
 type Props = {
   extraOptions?: (TContextMenuItem & { key: TPageActions })[];
@@ -82,6 +85,7 @@ export const PageActions = observer(function PageActions(props: Props) {
   const { pageOperations } = usePageOperations({
     page,
   });
+  const createSubpage = useCreateSubpage(storeType);
   // derived values
   const {
     access,
@@ -115,6 +119,15 @@ export const PageActions = observer(function PageActions(props: Props) {
           title: access === EPageAccess.PUBLIC ? "Make private" : "Make public",
           icon: access === EPageAccess.PUBLIC ? LockOutline : GlobeOutline,
           shouldRender: canCurrentUserChangeAccess && !archived_at,
+        },
+        {
+          key: "new-subpage",
+          action: () => {
+            void createSubpage(page);
+          },
+          title: "新建子页面",
+          icon: PlusCircleOutline,
+          shouldRender: !archived_at,
         },
         {
           key: "open-in-new-tab",
@@ -183,6 +196,8 @@ export const PageActions = observer(function PageActions(props: Props) {
       canCurrentUserMovePage,
       isMovePageEnabled,
       pageOperations,
+      createSubpage,
+      page,
     ]
   );
   // arrange options

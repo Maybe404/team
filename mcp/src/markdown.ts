@@ -12,7 +12,7 @@ const escAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 // 围栏内是完整 HTML。往返时靠它保住嵌入块，全文改写不会把它删掉。
 const EMBED_FENCE = /^(`{3,}|~{3,})html-embed([^\n]*)\n([\s\S]*?)\n\1[ \t]*$/gm;
 
-export function mdToHtml(md: string): string {
+export function mdToHtml(md: string, opts: { projectId?: string } = {}): string {
   const embeds: string[] = [];
   md = md.replace(EMBED_FENCE, (_m, _f, info: string, body: string) => {
     const name = /name="([^"]*)"/.exec(info)?.[1] ?? "";
@@ -24,6 +24,11 @@ export function mdToHtml(md: string): string {
     return `\n\nHTMLEMBEDSLOT${embeds.length - 1}END\n\n`;
   });
   let html = marked.parse(md, { async: false }) as string;
+  // 页面链接卡片：单独一行的 [📄 标题](page:<页面ID>)，对应编辑器里的子页面/链接块
+  html = html.replace(/<p>\s*<a href="page:([0-9a-fA-F-]{32,36})"[^>]*>([\s\S]*?)<\/a>\s*<\/p>/g, (_m, id: string, label: string) => {
+    const title = label.replace(/<[^>]*>/g, "").replace(/^📄\s*/, "").trim().replace(/"/g, "&quot;");
+    return `<page-link-component data-page-id="${id}" data-project-id="${opts.projectId ?? ""}" data-title="${title}"></page-link-component>`;
+  });
   html = html.replace(/<p>HTMLEMBEDSLOT(\d+)END<\/p>/g, (_m, i: string) => embeds[Number(i)] ?? "");
   // 文档里的图片：![](asset:<附件ID> "宽度|宽高比|对齐") 还原成编辑器的图片节点
   html = html.replace(/(<p>\s*)?<img src="asset:([^"]+)"([^>]*)>(\s*<\/p>)?/g, (_m, _p, id: string, rest: string) => {
@@ -65,6 +70,14 @@ td.addRule("planeHtmlEmbed", {
     return `\n\n${fence}html-embed name="${name}" height=${h} width=${w}\n${html}\n${fence}\n\n`;
   },
 });
+td.addRule("pageLink", {
+  filter: (node) => node.nodeName === "PAGE-LINK-COMPONENT",
+  replacement: (_c, node) => {
+    const el = node as HTMLElement;
+    const title = (el.getAttribute("data-title") ?? "").replace(/[[\]]/g, "") || "页面";
+    return `\n\n[📄 ${title}](page:${el.getAttribute("data-page-id") ?? ""})\n\n`;
+  },
+});
 td.addRule("planeImage", {
   filter: (node) => node.nodeName === "IMAGE-COMPONENT",
   replacement: (_c, node) => {
@@ -83,8 +96,8 @@ td.addRule("planeMention", {
 export function htmlToMd(html: string | null | undefined): string {
   if (!html) return "";
   // turndown 会把没有文字内容的元素当空白丢掉，给自定义块补一个占位字符，规则里不会用到它
-  html = html.replace(/<(html-embed-component|image-component)\b((?:[^>"]|"[^"]*")*)>\s*<\/\1>/gi, "<$1$2>.</$1>");
-  html = html.replace(/\s+(<(?:html-embed|image)-component\b)/gi, "$1").replace(/(<\/(?:html-embed|image)-component>)\s+/gi, "$1");
+  html = html.replace(/<(html-embed-component|image-component|page-link-component)\b((?:[^>"]|"[^"]*")*)>\s*<\/\1>/gi, "<$1$2>.</$1>");
+  html = html.replace(/\s+(<(?:html-embed|image|page-link)-component\b)/gi, "$1").replace(/(<\/(?:html-embed|image|page-link)-component>)\s+/gi, "$1");
   return td
     .turndown(html)
     .replace(/\n[ \t]+\n/g, "\n\n")

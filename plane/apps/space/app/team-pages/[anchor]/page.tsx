@@ -11,7 +11,7 @@ import { API_BASE_URL } from "@plane/constants";
 import { LogoSpinner } from "@/components/common/logo-spinner";
 import { PageNotFound } from "@/components/ui/not-found";
 
-type PublicPage = { name: string; html: string; updated_at: string; project_name: string; workspace_name: string };
+type PublicPage = { children?: { name: string; anchor: string }[]; name: string; html: string; updated_at: string; project_name: string; workspace_name: string };
 
 export const headers = () => ({ "X-Robots-Tag": "noindex" });
 
@@ -80,6 +80,20 @@ export default function TeamPublicPage() {
         {/* 服务端已按白名单清洗 */}
         {/* eslint-disable-next-line react/no-danger */}
         <div className="team-doc" dangerouslySetInnerHTML={{ __html: html }} />
+        {page.children && page.children.length > 0 && (
+          <div className="mt-10 border-t border-subtle pt-4">
+            <div className="mb-2 text-caption-md-medium text-tertiary">子页面</div>
+            <ul className="flex flex-col gap-1">
+              {page.children.map((c) => (
+                <li key={c.anchor}>
+                  <a className="text-body-sm-regular text-accent-primary hover:underline" href={`/spaces/team-pages/${c.anchor}`}>
+                    📄 {c.name || "无标题"}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </article>
     </div>
   );

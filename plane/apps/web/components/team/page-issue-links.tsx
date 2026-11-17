@@ -46,11 +46,11 @@ class TeamPageIssueService extends APIService {
   issuesOfPage(ws: string, project: string, page: string): Promise<LinkedIssue[]> {
     return this.get(`${this.base(ws, project)}/pages/${page}/team-issues/`).then((r) => r.data);
   }
-  linkIssue(ws: string, project: string, page: string, issue: string): Promise<LinkedIssue[]> {
-    return this.post(`${this.base(ws, project)}/pages/${page}/team-issues/`, { issue_id: issue }).then((r) => r.data);
+  linkIssue(ws: string, project: string, page: string, issue: string, children = false): Promise<LinkedIssue[]> {
+    return this.post(`${this.base(ws, project)}/pages/${page}/team-issues/`, { issue_id: issue, include_children: children }).then((r) => r.data);
   }
-  unlinkIssue(ws: string, project: string, page: string, issue: string): Promise<LinkedIssue[]> {
-    return this.delete(`${this.base(ws, project)}/pages/${page}/team-issues/?issue_id=${issue}`).then((r) => r.data);
+  unlinkIssue(ws: string, project: string, page: string, issue: string, children = false): Promise<LinkedIssue[]> {
+    return this.delete(`${this.base(ws, project)}/pages/${page}/team-issues/?issue_id=${issue}${children ? "&include_children=1" : ""}`).then((r) => r.data);
   }
   candidates(ws: string, project: string, kind: "pages" | "issues", q: string): Promise<Candidate[]> {
     return this.get(`${this.base(ws, project)}/team-link-candidates/`, { params: { kind, q } }).then((r) => r.data);
@@ -264,6 +264,8 @@ export function TeamPageIssuesModal(props: {
 }) {
   const { isOpen, onClose, workspaceSlug, projectId, pageId } = props;
   const [issues, setIssues] = useState<LinkedIssue[] | null>(null);
+  // [team 二开] 关联、取消关联时要不要连子页面一起处理
+  const [withChildren, setWithChildren] = useState(false);
   const picker = useCandidates(isOpen, workspaceSlug, projectId, "issues");
   const { reset } = picker;
 
@@ -288,6 +290,10 @@ export function TeamPageIssuesModal(props: {
             </DialogHeading>
           </DialogHeader>
           <DialogBody>
+            <label className="mb-2 flex items-center gap-2 text-caption-sm-regular text-secondary">
+              <input type="checkbox" checked={withChildren} onChange={(e) => setWithChildren(e.target.checked)} />
+              同时对子页面生效（关联、取消关联都会带上它的所有子页面）
+            </label>
             <LinkPicker
               items={picker.items}
               linkedIds={new Set((issues ?? []).map((i) => i.id))}
@@ -297,8 +303,8 @@ export function TeamPageIssuesModal(props: {
               emptyText="没有找到工作项"
               onToggle={(it, linked) =>
                 void (linked
-                  ? service.unlinkIssue(workspaceSlug, projectId, pageId, it.id)
-                  : service.linkIssue(workspaceSlug, projectId, pageId, it.id)
+                  ? service.unlinkIssue(workspaceSlug, projectId, pageId, it.id, withChildren)
+                  : service.linkIssue(workspaceSlug, projectId, pageId, it.id, withChildren)
                 )
                   .then(setIssues)
                   .catch(fail)

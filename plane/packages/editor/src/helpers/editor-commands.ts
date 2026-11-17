@@ -192,6 +192,11 @@ export const insertHtmlEmbed = (editor: Editor, range?: Range) => {
   else editor.chain().focus().insertHtmlEmbed().run();
 };
 
+export const insertPageLink = (editor: Editor, range?: Range) => {
+  if (range) editor.chain().focus().deleteRange(range).insertPageLink().run();
+  else editor.chain().focus().insertPageLink().run();
+};
+
 export const insertCallout = (editor: Editor, range?: Range) => {
   if (range) editor.chain().focus().deleteRange(range).insertCallout().run();
   else editor.chain().focus().insertCallout().run();

@@ -8,6 +8,9 @@
           "description": "讓我們在這個頁面添加一些標題來在這裡查看它們。"
         }
       },
+      "hierarchy": {
+        "label": "層級"
+      },
       "info": {
         "label": "資訊",
         "document_info": {

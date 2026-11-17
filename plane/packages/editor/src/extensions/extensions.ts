@@ -39,6 +39,7 @@ import type { IEditorProps } from "@/types";
 // local imports
 import { CustomImageExtension } from "./custom-image/extension";
 import { HtmlEmbedExtension } from "./html-embed/extension";
+import { PageLinkExtension } from "./page-link/extension";
 import { EmojiExtension } from "./emoji/extension";
 import { CustomPlaceholderExtension } from "./placeholder";
 import { CustomStarterKitExtension } from "./starter-kit";
@@ -123,6 +124,7 @@ export const CoreEditorExtensions = (args: TArguments): Extensions => {
     CustomTextAlignExtension,
     CustomCalloutExtension,
     HtmlEmbedExtension,
+    PageLinkExtension,
     UtilityExtension({
       disabledExtensions,
       flaggedExtensions,

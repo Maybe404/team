@@ -8,6 +8,9 @@
           "description": "Let's put some headings in this page to see them here."
         }
       },
+      "hierarchy": {
+        "label": "Hierarchy"
+      },
       "info": {
         "label": "Info",
         "document_info": {

@@ -26,7 +26,7 @@ import { API_BASE_URL, SITES_URL } from "@plane/constants";
 import { copyTextToClipboard } from "@plane/utils";
 import { APIService } from "@/services/api.service";
 
-type Share = { anchor: string | null; can_manage: boolean };
+type Share = { anchor: string | null; can_manage: boolean; children_total?: number; children_shared?: number };
 
 class TeamPageShareService extends APIService {
   constructor() {
@@ -38,11 +38,11 @@ class TeamPageShareService extends APIService {
   async fetch(ws: string, project: string, page: string): Promise<Share> {
     return this.get(this.path(ws, project, page)).then((r) => r.data as Share);
   }
-  async enable(ws: string, project: string, page: string): Promise<Share> {
-    return this.post(this.path(ws, project, page), {}).then((r) => r.data as Share);
+  async enable(ws: string, project: string, page: string, includeChildren = false): Promise<Share> {
+    return this.post(this.path(ws, project, page), { include_children: includeChildren }).then((r) => r.data as Share);
   }
-  async disable(ws: string, project: string, page: string): Promise<Share> {
-    return this.delete(this.path(ws, project, page)).then((r) => r.data as Share);
+  async disable(ws: string, project: string, page: string, includeChildren = false): Promise<Share> {
+    return this.delete(`${this.path(ws, project, page)}${includeChildren ? "?include_children=1" : ""}`).then((r) => r.data as Share);
   }
 }
 const service = new TeamPageShareService();
@@ -58,6 +58,8 @@ export function TeamPageShareModal({ isOpen, onClose, pageId, isPrivate }: Props
   const { workspaceSlug = "", projectId = "" } = useParams();
   const [share, setShare] = useState<Share | null>(null);
   const [busy, setBusy] = useState(false);
+  // [team 二开] 开关公开链接时，要不要连子页面一起处理
+  const [withChildren, setWithChildren] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !projectId) return;
@@ -67,13 +69,13 @@ export function TeamPageShareModal({ isOpen, onClose, pageId, isPrivate }: Props
       .catch(() => setShare({ anchor: null, can_manage: false }));
   }, [isOpen, workspaceSlug, projectId, pageId]);
 
-  const toggle = async () => {
+  const toggle = async (children = withChildren) => {
     if (!share) return;
     setBusy(true);
     try {
       const next = share.anchor
-        ? await service.disable(workspaceSlug, projectId, pageId)
-        : await service.enable(workspaceSlug, projectId, pageId);
+        ? await service.disable(workspaceSlug, projectId, pageId, children)
+        : await service.enable(workspaceSlug, projectId, pageId, children);
       setShare(next);
       setToast({
         type: "success",
@@ -117,6 +119,37 @@ export function TeamPageShareModal({ isOpen, onClose, pageId, isPrivate }: Props
                 </div>
                 {isPrivate && !share.anchor && (
                   <div className="text-caption-sm-regular text-tertiary">私有文档不能公开，先把它改成项目内公开。</div>
+                )}
+                {share.can_manage && (share.children_total ?? 0) > 0 && (
+                  <div className="flex flex-col gap-1.5 rounded-md border-[0.5px] border-subtle px-3 py-2">
+                    <label className="flex items-center gap-2 text-caption-sm-regular text-secondary">
+                      <input type="checkbox" checked={withChildren} onChange={(e) => setWithChildren(e.target.checked)} />
+                      {share.anchor
+                        ? `关闭时同时关闭子页面的公开链接`
+                        : `打开时同时公开子页面（共 ${share.children_total} 个，私有的子页面保持私有）`}
+                    </label>
+                    {share.anchor && (
+                      <div className="flex items-center justify-between text-caption-sm-regular text-tertiary">
+                        <span>
+                          子页面已公开 {share.children_shared ?? 0} / {share.children_total}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={busy || (share.children_shared ?? 0) >= (share.children_total ?? 0)}
+                          className="text-accent-primary hover:underline disabled:opacity-50"
+                          onClick={() => {
+                            setBusy(true);
+                            service
+                              .enable(workspaceSlug, projectId, pageId, true)
+                              .then(setShare)
+                              .finally(() => setBusy(false));
+                          }}
+                        >
+                          公开全部子页面
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
                 {url && (
                   <button

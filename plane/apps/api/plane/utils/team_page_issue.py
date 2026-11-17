@@ -2,6 +2,7 @@
 from django.db.models import Q
 
 from plane.db.models import Issue, Page, ProjectMember, TeamPageIssue
+from plane.utils.team_page_tree import hidden_page_ids
 from plane.utils.team_edit_policy import can_edit_issue, can_edit_page, is_workspace_admin
 
 LINK_FORBIDDEN = "只有工作项的创建人、指派人、文档作者或管理员能建立关联。"
@@ -19,7 +20,7 @@ def visible_pages(user, slug, project_id):
         workspace__slug=slug,
         project_pages__project_id=project_id,
         project_pages__deleted_at__isnull=True,
-    )
+    ).exclude(id__in=hidden_page_ids(user, project_id))
 
 
 def pages_of_issue(user, slug, project_id, issue_id):

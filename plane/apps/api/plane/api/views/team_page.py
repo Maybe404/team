@@ -28,6 +28,7 @@ from plane.app.serializers import PageSerializer
 from plane.bgtasks.page_transaction_task import page_transaction
 from plane.db.models import FileAsset, Page, Workspace
 from plane.settings.storage import S3Storage
+from plane.utils.team_page_tree import check_parent, hidden_page_ids
 from plane.utils.url import normalize_url_path
 
 from .base import BaseAPIView
@@ -105,6 +106,7 @@ class TeamPageBase(BaseAPIView):
                 projects__project_projectmember__is_active=True,
             )
             .filter(Q(access=Page.PUBLIC_ACCESS) | Q(owned_by=self.request.user))
+            .exclude(id__in=hidden_page_ids(self.request.user, project_id))
             .distinct()
         )
 
@@ -176,6 +178,16 @@ class TeamPageDetailAPIEndpoint(TeamPageBase):
             if not name:
                 return Response({"error": "name 不能为空"}, status=status.HTTP_400_BAD_REQUEST)
             page.name = name
+
+        if "parent_id" in request.data:
+            new_parent = request.data.get("parent_id") or None
+            if new_parent:
+                if not self.visible_pages(slug, project_id).filter(pk=new_parent).exists():
+                    return Response({"error": "parent_id 不存在"}, status=status.HTTP_400_BAD_REQUEST)
+                err = check_parent(page.id, new_parent, project_id)
+                if err:
+                    return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+            page.parent_id = new_parent
 
         live_result = None
         old_html = page.description_html

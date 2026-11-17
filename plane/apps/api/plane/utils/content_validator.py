@@ -76,6 +76,7 @@ CUSTOM_TAGS = {
     "input",
     "image-component",
     "html-embed-component",
+    "page-link-component",
 }
 ALLOWED_TAGS = nh3.ALLOWED_TAGS | CUSTOM_TAGS
 
@@ -136,6 +137,8 @@ ATTRIBUTES = {
     },
     # [team 二开] HTML 嵌入块：内容放在属性里，属性值是纯文本，不会被当成标签执行
     "html-embed-component": {"data-html", "data-name", "data-height", "data-width"},
+    # [team 二开] 页面链接卡片（子页面、引用）
+    "page-link-component": {"data-page-id", "data-project-id", "data-title"},
     "mention-component": {"id", "entity_identifier", "entity_name"},
     "th": {
         "colspan",

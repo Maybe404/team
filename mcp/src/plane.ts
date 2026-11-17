@@ -236,7 +236,7 @@ export class Loom {
   createPage(projectId: string, name: string, html: string, parent?: string) {
     return this.req<Page>("POST", this.ws(`projects/${projectId}/pages/`), { name, description_html: html, parent });
   }
-  updatePage(projectId: string, pageId: string, body: { name?: string; description_html?: string }) {
+  updatePage(projectId: string, pageId: string, body: { name?: string; description_html?: string; parent_id?: string }) {
     return this.req<Page>("PATCH", this.ws(`projects/${projectId}/pages/${pageId}/`), body);
   }
 

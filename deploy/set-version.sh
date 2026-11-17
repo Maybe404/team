@@ -13,4 +13,6 @@ for f in plane/package.json plane/apps/web/package.json plane/apps/admin/package
     if (j.version !== v) { fs.writeFileSync(f, raw.replace(/("version"\s*:\s*)"[^"]*"/, `$1"${v}"`)); console.log(f + " → " + v); }
   ' "$ROOT/$f" "$V"
 done
+# 网页的更新日志读 public/changelog.md，随版本一起提交，服务器构建时不用再复制
+cp "$ROOT/CHANGELOG.md" "$ROOT/plane/apps/web/public/changelog.md"
 echo "$V"

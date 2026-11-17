@@ -4,6 +4,7 @@ from rest_framework.response import Response
 
 from plane.app.views.base import BaseAPIView
 from plane.db.models import Issue, Page
+from plane.utils.team_page_tree import descendant_ids
 from plane.utils.team_page_issue import can_view_project, issues_of_page, link, pages_of_issue, unlink, visible_pages
 
 
@@ -56,6 +57,14 @@ class TeamIssuePagesEndpoint(_Base):
         return Response(pages_of_issue(request.user, slug, project_id, issue_id))
 
 
+def _children(request, slug, project_id, page_id, flag):
+    """「同时处理子页面」：返回当前用户看得到的所有后代页面。"""
+    if str(flag).lower() not in ("1", "true", "yes"):
+        return []
+    ids = descendant_ids(page_id, project_id)
+    return list(visible_pages(request.user, slug, project_id).filter(pk__in=ids))
+
+
 class TeamPageIssuesEndpoint(_Base):
     """文档这一侧：列出关联的工作项、关联、取消关联。"""
 
@@ -76,6 +85,8 @@ class TeamPageIssuesEndpoint(_Base):
         ok, err = link(request.user, project_id, issue, page)
         if not ok:
             return Response({"error": err}, status=status.HTTP_403_FORBIDDEN)
+        for child in _children(request, slug, project_id, page_id, request.data.get("include_children")):
+            link(request.user, project_id, issue, child)
         return Response(issues_of_page(page_id, project_id), status=status.HTTP_201_CREATED)
 
     def delete(self, request, slug, project_id, page_id):
@@ -88,6 +99,8 @@ class TeamPageIssuesEndpoint(_Base):
         ok, err = unlink(request.user, project_id, issue, page)
         if not ok:
             return Response({"error": err}, status=status.HTTP_403_FORBIDDEN)
+        for child in _children(request, slug, project_id, page_id, request.query_params.get("include_children")):
+            unlink(request.user, project_id, issue, child)
         return Response(issues_of_page(page_id, project_id))
 
 

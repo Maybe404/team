@@ -64,6 +64,7 @@ export type TEditorCommands =
   | "text-align"
   | "callout"
   | "html-embed"
+  | "page-link"
   | "attachment"
   | "emoji"
   | "external-embed"

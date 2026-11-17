@@ -10,6 +10,7 @@ import { matchProjects, normalizeRepoUrl, notBoundMessage, repoRemotes, workDirs
 import { z } from "zod";
 import { formatLessons, GENERAL, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
 import { parseTaskKey } from "./taskKey.ts";
+import { formatDocTree } from "./doctree.ts";
 import { htmlToMd, importInlineImages, mdToHtml } from "./markdown.ts";
 import { COMMENT_KINDS, formatGate, gate, gatePlain, LESSON_GUIDE, SELF_CHECK, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
 import { Loom, PlaneError, type Member, type Module, type Project, type View, type WorkItem } from "./plane.ts";
@@ -980,7 +981,7 @@ server.registerTool(
   "list_docs",
   {
     title: "列出文档",
-    description: "列出项目里的文档（Loom Page），可按关键词搜索标题和正文",
+    description: "列出项目里的文档（Loom Page），按层级缩进显示，子页面在父页面下面；可按关键词搜索标题和正文",
     inputSchema: { project: z.string().optional().describe("默认当前仓库关联的项目"), search: z.string().optional() },
     annotations: { readOnlyHint: true },
   },
@@ -988,7 +989,7 @@ server.registerTool(
     run(async () => {
       const p = await projectFor(project, "read");
       const pages = await plane.listPages(p.id, search);
-      return text(pages.map((d) => `- ${d.id}　${d.name}（更新于 ${d.updated_at.slice(0, 10)}）`).join("\n") || "没有文档");
+      return text(formatDocTree(pages) || "没有文档");
     }),
 );
 
@@ -1025,7 +1026,7 @@ server.registerTool(
       title: z.string(),
       markdown: z.string().describe("正文，从二级标题开始，不要写一级标题"),
       doc_id: z.string().optional(),
-      parent_id: z.string().optional().describe("新建时挂在哪篇文档下面"),
+      parent_id: z.string().optional().describe("挂在哪篇文档下面：新建时作为父页面；更新时表示把这篇文档移到它下面。相关文档挂在同一个主题页下，不要平铺"),
       task: z.string().optional().describe("关联的任务编号，写完自动把文档关联到这个任务（任务页和文档页都能看到）"),
     },
   },
@@ -1036,9 +1037,9 @@ server.registerTool(
       const p = await projectFor(project, "write");
       const t = task ? await resolveTask(task, "write") : undefined;
       const imported = await importInlineImages(markdown, (name, type, b64) => plane.uploadPageImage(p.id, name, type, b64));
-      const html = mdToHtml(imported.md);
+      const html = mdToHtml(imported.md, { projectId: p.id });
       const d = doc_id
-        ? await plane.updatePage(p.id, doc_id, { name: title, description_html: html })
+        ? await plane.updatePage(p.id, doc_id, { name: title, description_html: html, ...(parent_id ? { parent_id } : {}) })
         : await plane.createPage(p.id, title, html, parent_id);
       const url = webUrl(`projects/${p.id}/pages/${d.id}`);
       let linked = "";

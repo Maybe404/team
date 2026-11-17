@@ -207,3 +207,19 @@ test("任务工具能用数字标识的任务编号；格式不对时用真实�
   assert.ok(bad.error);
   assert.match(bad.text, /例如 2025-12/);
 });
+
+
+// ---- 文档层级 ----
+import { formatDocTree } from "../src/doctree.ts";
+
+test("list_docs 按层级缩进，父文档不在结果里的当顶层", () => {
+  const d = (id: string, parent: string | null) => ({ id, name: `文档${id}`, updated_at: "2026-11-16T00:00:00Z", parent_id: parent });
+  const out = formatDocTree([d("a", null), d("b", "a"), d("c", "b"), d("x", "gone")]);
+  const lines = out.split("\n");
+  assert.match(lines[0], /^- a　文档a.*1 个子页面/);
+  assert.match(lines[1], /^  - b　/);
+  assert.match(lines[2], /^    - c　/);
+  assert.match(lines[3], /^- x　/);
+  // 成环不死循环
+  assert.ok(formatDocTree([d("p", "q"), d("q", "p")]).length >= 0);
+});

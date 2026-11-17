@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 
 from plane.db.models import FileAsset, Page, TeamPageShare, User
 from plane.settings.storage import S3Storage
+from plane.utils.team_page_tree import descendant_ids
 
 
 def _live_share(share):
@@ -22,6 +23,7 @@ def _live_share(share):
 _IMG = re.compile(r"<image-component\b([^>]*)>(?:\s*</image-component>)?", re.I)
 _MENTION = re.compile(r"<mention-component\b([^>]*)>(?:\s*</mention-component>)?", re.I)
 _EMBED = re.compile(r"<html-embed-component\b((?:[^>\"]|\"[^\"]*\")*)>(?:\s*</html-embed-component>)?", re.I)
+_PAGELINK = re.compile(r"<page-link-component\b((?:[^>\"]|\"[^\"]*\")*)>(?:\s*</page-link-component>)?", re.I)
 _ATTR = re.compile(r'([\w-]+)="([^"]*)"')
 
 _TAGS = {
@@ -73,7 +75,14 @@ def render_public_html(html, share):
         embeds.append(a)
         return f"@@HTMLEMBED{len(embeds) - 1}@@"
 
-    out = _EMBED.sub(embed, html or "")
+    # [team 二开] 页面链接卡片：公开页里只显示标题（站内页面不一定公开，不给跳转）
+    def pagelink(m):
+        a = dict(_ATTR.findall(m.group(1)))
+        title = a.get("data-title", "") or "页面"
+        return f"<p>📄 {title}</p>"
+
+    out = _PAGELINK.sub(pagelink, html or "")
+    out = _EMBED.sub(embed, out)
     out = _IMG.sub(img, out)
     out = _MENTION.sub(mention, out)
     out = nh3.clean(out, tags=_TAGS, attributes=_ATTRS, url_schemes={"http", "https", "mailto"}, link_rel="noopener noreferrer nofollow")
@@ -102,8 +111,16 @@ class TeamPublicPageEndpoint(APIView):
         if not s:
             return Response({"error": "链接不存在或已关闭"}, status=status.HTTP_404_NOT_FOUND)
         p = s.page
+        # 同时公开了的子页面，列在文档下面，点开是它们各自的公开链接
+        child_ids = descendant_ids(p.id, s.project_id)
+        children = [
+            {"name": c.page.name, "anchor": c.anchor}
+            for c in TeamPageShare.objects.filter(page_id__in=child_ids, project_id=s.project_id).select_related("page")
+            if c.page.access == Page.PUBLIC_ACCESS and not c.page.archived_at
+        ]
         return Response(
             {
+                "children": children,
                 "name": p.name,
                 "html": render_public_html(p.description_html, share),
                 "logo_props": p.logo_props,
@@ -134,6 +151,16 @@ class TeamPublicPageAssetEndpoint(APIView):
             entity_identifier=str(s.page_id),
             is_uploaded=True,
         ).first()
+        if not asset and str(asset_id) in (s.page.description_html or ""):
+            # Agent 通过 MCP 上传的图片还没挂在某篇文档上，正文里引用了它就能显示
+            asset = FileAsset.objects.filter(
+                pk=asset_id,
+                workspace_id=s.workspace_id,
+                project_id=s.project_id,
+                entity_type=FileAsset.EntityTypeContext.PAGE_DESCRIPTION,
+                page__isnull=True,
+                is_uploaded=True,
+            ).first()
         if not asset:
             return Response({"error": "图片不存在"}, status=status.HTTP_404_NOT_FOUND)
         url = S3Storage(request=request).generate_presigned_url(

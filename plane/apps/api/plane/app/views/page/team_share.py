@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.response import Response
 
 from plane.app.views.base import BaseAPIView
+from plane.utils.team_page_tree import descendant_ids
 from plane.db.models import Page, Project, ProjectMember, TeamPageShare, WorkspaceMember
 
 
@@ -34,8 +35,11 @@ class TeamPageShareEndpoint(BaseAPIView):
         return Project.objects.filter(pk=project_id, project_lead=user).exists()
 
     def _payload(self, request, slug, project_id, page_id, share):
+        ids = descendant_ids(page_id, project_id)
         return {
             "anchor": share.anchor if share else None,
+            "children_total": len(ids),
+            "children_shared": TeamPageShare.objects.filter(page_id__in=ids, project_id=project_id).count() if ids else 0,
             "can_manage": self._can_manage(request, slug, project_id, page_id),
         }
 
@@ -58,6 +62,13 @@ class TeamPageShareEndpoint(BaseAPIView):
         if page.archived_at:
             return Response({"error": "已归档的文档不能公开"}, status=status.HTTP_400_BAD_REQUEST)
         share, _ = TeamPageShare.objects.get_or_create(page=page, project_id=project_id)
+        # 「同时公开子页面」：只公开项目内公开、未归档、且当前用户有权限管理的子页面；私有的子页面保持私有
+        if str(request.data.get("include_children")).lower() in ("1", "true", "yes"):
+            for child in Page.objects.filter(
+                pk__in=descendant_ids(page.id, project_id), access=Page.PUBLIC_ACCESS, archived_at__isnull=True
+            ):
+                if self._can_manage(request, slug, project_id, child.id):
+                    TeamPageShare.objects.get_or_create(page=child, project_id=project_id)
         return Response(self._payload(request, slug, project_id, page_id, share), status=status.HTTP_200_OK)
 
     def delete(self, request, slug, project_id, page_id):
@@ -65,4 +76,8 @@ class TeamPageShareEndpoint(BaseAPIView):
             return Response({"error": "只有文档作者、项目管理员、项目负责人或工作区管理员能关闭公开链接"}, status=status.HTTP_403_FORBIDDEN)
         # 真删：关掉后旧链接立即失效，重新打开会生成新链接
         TeamPageShare.all_objects.filter(page_id=page_id, project_id=project_id).delete()
+        if str(request.query_params.get("include_children")).lower() in ("1", "true", "yes"):
+            for cid in descendant_ids(page_id, project_id):
+                if self._can_manage(request, slug, project_id, cid):
+                    TeamPageShare.all_objects.filter(page_id=cid, project_id=project_id).delete()
         return Response(self._payload(request, slug, project_id, page_id, None))

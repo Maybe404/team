@@ -88,7 +88,7 @@ Plane 自带的“访客”角色用不上，邀请时不要选。Agent 用的 A
 
 版本号只在仓库根目录 `VERSION` 里改（`x.y.z`）。`deploy/team.sh build` 会自动把它写进各个 `package.json`，镜像按版本打标签（`team/plane-web:0.11.1`），网页左下角帮助菜单、实例设置页、MCP 的 `whoami` 和使用指南都显示它。`deploy/team.sh version` 看当前版本和提交号。
 
-发版步骤：改 `VERSION` → 在 `CHANGELOG.md` 顶部加这一版 → 提交 → `git tag v<版本> && git push origin main --tags` → 服务器上 `git pull`，`deploy/team.sh build`、`up`。
+发版步骤：改 `VERSION` → 在 `CHANGELOG.md` 顶部加这一版（写清新功能、交互规则、权限变化）→ 运行 `deploy/set-version.sh`（会把 CHANGELOG.md 复制到网页的 `public/changelog.md`）→ 提交 → `git tag v<版本> && git push origin main --tags` → 服务器上 `git pull`，`deploy/team.sh build`、`up`。
 
 ### 管理员
 
@@ -182,6 +182,8 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 - 文档里的流程图：语言为 `mermaid` 的代码块，下方实时渲染（`packages/editor/src/extensions/code/code-block-node-view.tsx`，mermaid 按需加载）
 - 文档里的 HTML 页面块：`packages/editor/src/extensions/html-embed/`（斜杠命令「HTML 页面」）。内容存在节点属性里，沙箱 iframe（无 same-origin）渲染，可拖拽缩放、整页放大、下载，上限 2MB；API 白名单 `utils/content_validator.py`，公开分享页 `space/views/team_page.py`，MCP 里写成 ```html-embed 围栏；SVG 写成 ```svg 围栏、位图写成 data URI 图片，写入时由 `POST /api/v1/.../page-images/`（`api/views/team_page.py`）上传成文档图片（`mcp/src/markdown.ts`，图片也用 `![](asset:…)` 往返，全文改写不会丢）
 - 视图的 Agent 接口：`plane/apps/api/plane/api/views/team_view.py`（列表、新建、修改，改别人的视图被拒绝，不提供删除）；MCP 里 `list_modules` / `save_module` / `list_views` / `save_view` 和任务的 `modules` 参数见 `mcp/src/server.ts`
+- 更新日志：根目录 `CHANGELOG.md`，`deploy/set-version.sh` 复制到 `plane/apps/web/public/changelog.md`；网页入口是帮助菜单（`components/global/changelog-modal.tsx`），升级后第一次打开自动弹一次（localStorage 记版本）
+- 文档嵌套（子页面）：沿用 Plane 的 `Page.parent`；可见性和防成环在 `plane/apps/api/plane/utils/team_page_tree.py`，创建、移动、列表过滤在 `app/views/page/base.py`；关联和公开链接的「含子页面」选项在 `team_page_issue.py`、`team_share.py`；网页树形列表 `components/pages/list/`，右侧「层级」标签 `navigation-pane/tab-panels/hierarchy.tsx`；编辑器块 `packages/editor/src/extensions/page-link/`（斜杠命令「子页面 / 链接页面」，Markdown 里写成 `[📄 标题](page:ID)`）；MCP 见 `mcp/src/doctree.ts`
 - 关联弹窗的候选列表接口：`plane/apps/api/plane/app/views/page/team_page_issue.py` 里的 `TeamLinkCandidatesEndpoint`
 - 文档 ↔ 工作项关联：`TeamPageIssue`（迁移 `0128`），业务 `utils/team_page_issue.py`，网页接口 `app/views/page/team_page_issue.py`，Agent 接口 `api/views/team_page.py`，界面 `apps/web/components/team/page-issue-links.tsx`（工作项侧栏「关联文档」、文档菜单「关联工作项」）
 - 全员共享项目：经验库（审核状态）和每日回顾自动收录工作区管理员和成员，`plane/apps/api/plane/utils/team_shared.py`
