@@ -43,14 +43,14 @@ const MENU_ITEMS: {
   {
     key: AI_EDITOR_TASKS.ASK_ANYTHING,
     icon: AiStar1Outline,
-    label: "Ask Pi",
+    label: "问 AI",
   },
 ];
 
 const TONES_LIST = [
   {
     key: "default",
-    label: "Default",
+    label: "默认",
     casual_score: 5,
     formal_score: 5,
   },
@@ -238,7 +238,7 @@ export function EditorAIMenu(props: Props) {
                       >
                         Replace selection
                       </button>
-                      <Tooltip label="Add to next line">
+                      <Tooltip label="添加到下一行">
                         <button
                           type="button"
                           className="grid size-6 flex-shrink-0 place-items-center rounded-sm outline-none hover:bg-layer-1"
@@ -247,7 +247,7 @@ export function EditorAIMenu(props: Props) {
                           <CornerRightDownOutline className="size-4 text-tertiary" />
                         </button>
                       </Tooltip>
-                      <Tooltip label="Re-generate response">
+                      <Tooltip label="重新生成">
                         <button
                           type="button"
                           className="grid size-6 flex-shrink-0 place-items-center rounded-sm outline-none hover:bg-layer-1"

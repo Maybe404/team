@@ -81,14 +81,14 @@ export const PageLockControl = observer(function PageLockControl({ page }: Props
   return (
     <>
       {displayState === "neutral" && (
-        <Tooltip label="Lock" side="bottom">
+        <Tooltip label="锁定" side="bottom">
           <IconButton
             type="button"
             onClick={toggleLock}
             variant="ghost"
             size="md"
             showTooltip={false}
-            aria-label="Lock"
+            aria-label="锁定"
             icon={<Icon icon={LockedOutline} />}
           />
         </Tooltip>
@@ -96,14 +96,14 @@ export const PageLockControl = observer(function PageLockControl({ page }: Props
 
       {displayState === "locked" && (
         // a click unlocks here, so the tooltip names the action
-        <Tooltip label="Unlock" side="bottom">
+        <Tooltip label="解锁" side="bottom">
           <Button
             variant="secondary"
             size="md"
             stretch="auto"
             onClick={toggleLock}
             icon={<Icon icon={LockedOutline} />}
-            label="Locked"
+            label="已锁定"
           />
         </Tooltip>
       )}
@@ -115,7 +115,7 @@ export const PageLockControl = observer(function PageLockControl({ page }: Props
           stretch="auto"
           disabled
           icon={<Icon icon={UnlockedOutline} />}
-          label="Unlocked"
+          label="未锁定"
         />
       )}
     </>

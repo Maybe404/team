@@ -97,11 +97,11 @@ const CONTENT_VARIETY: {
 }[] = [
   {
     key: "everything",
-    label: "Everything",
+    label: "全部",
   },
   {
     key: "no-assets",
-    label: "No images",
+    label: "不含图片",
   },
 ];
 
@@ -199,16 +199,16 @@ export function ExportPageModal(props: Props) {
       }
       setToast({
         type: "success",
-        title: "Success!",
-        message: "Page exported successfully.",
+        title: "成功",
+        message: "页面已导出。",
       });
       handleClose();
     } catch (error) {
       console.error("Error in exporting page:", error);
       setToast({
         type: "error",
-        title: "Error!",
-        message: "Page could not be exported. Please try again later.",
+        title: "出错了",
+        message: "没能导出页面，请稍后再试。",
       });
     } finally {
       setIsExporting(false);
@@ -226,19 +226,19 @@ export function ExportPageModal(props: Props) {
         <DialogMain>
           <DialogHeader>
             <DialogHeading>
-              <DialogTitle>Export page</DialogTitle>
+              <DialogTitle>导出页面</DialogTitle>
             </DialogHeading>
           </DialogHeader>
           <DialogBody>
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="shrink-0 text-body-sm-medium text-primary">Export format</span>
+                <span className="shrink-0 text-body-sm-medium text-primary">导出格式</span>
                 <Controller
                   control={control}
                   name="export_format"
                   render={({ field: { onChange, value } }) => (
                     <ExportOptionSelect
-                      label="Export format"
+                      label="导出格式"
                       options={EXPORT_FORMATS}
                       value={value}
                       onChange={(val) => onChange(val as TExportFormats)}
@@ -247,13 +247,13 @@ export function ExportPageModal(props: Props) {
                 />
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="shrink-0 text-body-sm-medium text-primary">Include content</span>
+                <span className="shrink-0 text-body-sm-medium text-primary">包含内容</span>
                 <Controller
                   control={control}
                   name="content_variety"
                   render={({ field: { onChange, value } }) => (
                     <ExportOptionSelect
-                      label="Include content"
+                      label="包含内容"
                       options={CONTENT_VARIETY}
                       value={value}
                       onChange={(val) => onChange(val as TContentVariety)}
@@ -263,13 +263,13 @@ export function ExportPageModal(props: Props) {
               </div>
               {isPDFSelected && (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="shrink-0 text-body-sm-medium text-primary">Page format</span>
+                  <span className="shrink-0 text-body-sm-medium text-primary">页面尺寸</span>
                   <Controller
                     control={control}
                     name="page_format"
                     render={({ field: { onChange, value } }) => (
                       <ExportOptionSelect
-                        label="Page format"
+                        label="页面尺寸"
                         options={PAGE_FORMATS}
                         value={value}
                         onChange={(val) => onChange(val as TPageFormats)}
@@ -282,7 +282,7 @@ export function ExportPageModal(props: Props) {
           </DialogBody>
         </DialogMain>
         <DialogActions>
-          <Button variant="secondary" size="md" stretch="auto" label="Cancel" onClick={handleClose} />
+          <Button variant="secondary" size="md" stretch="auto" label="取消" onClick={handleClose} />
           <Button
             variant="primary"
             size="md"

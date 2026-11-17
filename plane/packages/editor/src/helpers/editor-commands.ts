@@ -192,9 +192,29 @@ export const insertHtmlEmbed = (editor: Editor, range?: Range) => {
   else editor.chain().focus().insertHtmlEmbed().run();
 };
 
-export const insertPageLink = (editor: Editor, range?: Range) => {
-  if (range) editor.chain().focus().deleteRange(range).insertPageLink().run();
-  else editor.chain().focus().insertPageLink().run();
+// [team 二开] 斜杠「子页面」：直接在当前页面下新建一个子页面，放一张卡片，然后跳转过去编辑。
+export const insertSubpage = (editor: Editor, range?: Range) => {
+  const m = window.location.pathname.match(/^\/([^/]+)\/projects\/([^/]+)\/pages\/([^/?#]+)/);
+  if (range) editor.chain().focus().deleteRange(range).run();
+  if (!m) {
+    alert("只能在项目的页面里新建子页面。");
+    return;
+  }
+  const [, slug, projectId, pageId] = m;
+  void fetch(`/api/workspaces/${slug}/projects/${projectId}/pages/`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ name: "", parent: pageId }),
+  })
+    .then(async (res) => {
+      if (!res.ok) throw new Error(String(res.status));
+      const page = (await res.json()) as { id: string };
+      editor.chain().focus().insertPageLink({ pageId: page.id, projectId, title: "无标题" }).run();
+      // 留一点时间让刚插入的卡片同步保存，再跳到新页面
+      window.setTimeout(() => window.location.assign(`/${slug}/projects/${projectId}/pages/${page.id}`), 900);
+    })
+    .catch(() => alert("没能新建子页面，请稍后再试。"));
 };
 
 export const insertCallout = (editor: Editor, range?: Range) => {

@@ -42,6 +42,8 @@ from plane.db.models import (
     WorkspaceMember,
 )
 
+from plane.utils.team_page_tree import hidden_page_ids  # [team 二开] 别人私有页面的子树不出现在 @ 里
+
 
 class GlobalSearchEndpoint(BaseAPIView):
     """Endpoint to search across multiple fields in the workspace and
@@ -558,6 +560,7 @@ class SearchEndpoint(BaseAPIView):
                             workspace__slug=slug,
                             access=0,
                         )
+                        .exclude(id__in=hidden_page_ids(request.user, project_id))
                         .order_by("-created_at")
                         .distinct()
                         .values(

@@ -33,15 +33,15 @@ export const ColorDropdown = memo(function ColorDropdown(props: Props) {
   return (
     <Popover>
       {/* Propel's ToolbarMenuTrigger only wraps a Menu; this is its Popover twin until Propel ships one */}
-      <PopoverTrigger render={<ToolbarMenuTriggerButton aria-label="Color" />}>
-        <ToolbarMenuTriggerLabel>Color</ToolbarMenuTriggerLabel>
+      <PopoverTrigger render={<ToolbarMenuTriggerButton aria-label="颜色" />}>
+        <ToolbarMenuTriggerLabel>颜色</ToolbarMenuTriggerLabel>
         <span className="inline-flex transition-transform duration-200 group-data-popup-open:rotate-180">
           <Icon icon={ChevronDownOutline} tint="secondary" />
         </span>
       </PopoverTrigger>
       <PopoverContent variant="rich" side="bottom" align="start">
         <div className="space-y-1.5">
-          <p className="text-caption-sm-semibold text-tertiary">Text colors</p>
+          <p className="text-caption-sm-semibold text-tertiary">文字颜色</p>
           <div className="flex items-center gap-2">
             {COLORS_LIST.map((color) => (
               <button
@@ -62,14 +62,14 @@ export const ColorDropdown = memo(function ColorDropdown(props: Props) {
             <IconButton
               variant="secondary"
               size="sm"
-              aria-label="Remove text color"
+              aria-label="清除文字颜色"
               icon={<Icon icon={DeactivatedOutline} />}
               onClick={() => handleColorSelect("text-color", undefined)}
             />
           </div>
         </div>
         <div className="space-y-1.5">
-          <p className="text-caption-sm-semibold text-tertiary">Background colors</p>
+          <p className="text-caption-sm-semibold text-tertiary">背景颜色</p>
           <div className="flex items-center gap-2">
             {COLORS_LIST.map((color) => (
               <button
@@ -90,7 +90,7 @@ export const ColorDropdown = memo(function ColorDropdown(props: Props) {
             <IconButton
               variant="secondary"
               size="sm"
-              aria-label="Remove background color"
+              aria-label="清除背景颜色"
               icon={<Icon icon={DeactivatedOutline} />}
               onClick={() => handleColorSelect("background-color", undefined)}
             />

@@ -46,7 +46,7 @@ export const PageFiltersSelection = observer(function PageFiltersSelection(props
   return (
     <>
       <MenuCheckboxItem
-        label="Favorites"
+        label="收藏"
         checked={!!filters.filters?.favorites}
         onCheckedChange={(checked) =>
           handleFiltersUpdate("filters", {

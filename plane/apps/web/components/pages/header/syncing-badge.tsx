@@ -16,11 +16,11 @@ type Props = {
 
 const BADGE_CONTENT = {
   syncing: {
-    label: "Syncing...",
+    label: "同步中…",
     tooltipLabel: "Syncing... Your changes are being synced with the server. You can continue making changes.",
   },
   error: {
-    label: "Connection lost",
+    label: "连接已断开",
     tooltipLabel:
       "Connection lost. We're having trouble connecting to the websocket server. Your changes will be synced and saved every 10 seconds.",
   },

@@ -64,7 +64,7 @@ export function AskPiMenu(props: Props) {
               >
                 Replace selection
               </button>
-              <Tooltip label="Add to next line">
+              <Tooltip label="添加到下一行">
                 <button
                   type="button"
                   className="grid size-6 flex-shrink-0 place-items-center rounded-sm outline-none hover:bg-layer-1"
@@ -73,7 +73,7 @@ export function AskPiMenu(props: Props) {
                   <CornerRightDownOutline className="size-4 text-tertiary" />
                 </button>
               </Tooltip>
-              <Tooltip label="Re-generate response">
+              <Tooltip label="重新生成">
                 <button
                   type="button"
                   className="grid size-6 flex-shrink-0 place-items-center rounded-sm outline-none hover:bg-layer-1"
@@ -107,7 +107,7 @@ export function AskPiMenu(props: Props) {
             className="w-full border-none bg-transparent text-body-xs-regular outline-none placeholder:text-placeholder"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Tell AI what to do..."
+            placeholder="告诉 AI 要做什么…"
           />
           <span className="grid size-4 flex-shrink-0 place-items-center">
             <UpgradeOutline className="size-4 text-secondary" />

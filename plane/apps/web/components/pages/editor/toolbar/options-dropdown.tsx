@@ -58,7 +58,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
         {
           key: "full-screen",
           action: () => handleFullWidth(!isFullWidth),
-          title: "Full width",
+          title: "全宽",
           // The row itself does the toggling; the switch is the state readout at the row's end.
           customContent: (
             <span className="pointer-events-none">
@@ -69,7 +69,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
         {
           key: "sticky-toolbar",
           action: () => handleStickyToolbar(!isStickyToolbarEnabled),
-          title: "Sticky toolbar",
+          title: "固定工具栏",
           customContent: (
             <span className="pointer-events-none">
               <Switch size="sm" checked={isStickyToolbarEnabled} aria-hidden tabIndex={-1} />
@@ -84,11 +84,11 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
             editorRef.copyMarkdownToClipboard();
             setToast({
               type: "success",
-              title: "Success!",
-              message: "Markdown copied to clipboard.",
+              title: "成功",
+              message: "Markdown 已复制。",
             });
           },
-          title: "Copy markdown",
+          title: "复制 Markdown",
           icon: ClipboardOutline,
           shouldRender: true,
         },
@@ -103,7 +103,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
             });
             router.push(updatedRoute);
           },
-          title: "Version history",
+          title: "版本历史",
           icon: HistoryOutline,
           shouldRender: true,
         },
@@ -126,7 +126,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
         {
           key: "export",
           action: () => setIsExportModalOpen(true),
-          title: "Export",
+          title: "导出",
           icon: ExportOutline,
           shouldRender: true,
         },

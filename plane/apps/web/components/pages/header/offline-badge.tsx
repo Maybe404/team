@@ -27,10 +27,10 @@ export const PageOfflineBadge = observer(function PageOfflineBadge({ page }: Pro
 
   return (
     <Tooltip
-      label="You are offline. You can continue making changes. They will be synced when you are back online."
+      label="你已离线，可以继续编辑，联网后会自动同步。"
       layout="stacked"
     >
-      <Badge variant="neutral" size="sm" startIcon={<Icon icon={WebDisabledOutline} />} label="Offline" />
+      <Badge variant="neutral" size="sm" startIcon={<Icon icon={WebDisabledOutline} />} label="离线" />
     </Tooltip>
   );
 });

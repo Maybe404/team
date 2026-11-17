@@ -1,4 +1,5 @@
 // Agent 读写都用 Markdown；Loom 存的是 HTML。在这里来回转换。
+import { randomUUID } from "node:crypto";
 import { marked } from "marked";
 import TurndownService from "turndown";
 // @ts-expect-error 该插件没有类型声明
@@ -29,6 +30,11 @@ export function mdToHtml(md: string, opts: { projectId?: string } = {}): string 
     const title = label.replace(/<[^>]*>/g, "").replace(/^📄\s*/, "").trim().replace(/"/g, "&quot;");
     return `<page-link-component data-page-id="${id}" data-project-id="${opts.projectId ?? ""}" data-title="${title}"></page-link-component>`;
   });
+  // 行内的 [📄 标题](page:ID)：还原成 @ 页面标签（需要知道项目）
+  if (opts.projectId) {
+    html = html.replace(/<a href="page:([0-9a-fA-F-]{32,36})"[^>]*>[\s\S]*?<\/a>/g, (_m, id: string) =>
+      `<mention-component id="${randomUUID()}" entity_identifier="${opts.projectId}/${id}" entity_name="page"></mention-component>`);
+  }
   html = html.replace(/<p>HTMLEMBEDSLOT(\d+)END<\/p>/g, (_m, i: string) => embeds[Number(i)] ?? "");
   // 文档里的图片：![](asset:<附件ID> "宽度|宽高比|对齐") 还原成编辑器的图片节点
   html = html.replace(/(<p>\s*)?<img src="asset:([^"]+)"([^>]*)>(\s*<\/p>)?/g, (_m, _p, id: string, rest: string) => {
@@ -90,7 +96,13 @@ td.addRule("planeImage", {
 });
 td.addRule("planeMention", {
   filter: (node) => node.nodeName === "MENTION-COMPONENT",
-  replacement: (_c, node) => `@${(node as HTMLElement).getAttribute("entity_identifier") ?? ""}`,
+  replacement: (_c, node) => {
+    const el = node as HTMLElement;
+    const ident = el.getAttribute("entity_identifier") ?? "";
+    // @ 出来的页面写成 [📄 页面](page:ID)，往返时还原成 @ 标签；其他沿用 @标识
+    if (el.getAttribute("entity_name") === "page") return `[📄 页面](page:${ident.split("/").pop()})`;
+    return `@${ident}`;
+  },
 });
 
 export function htmlToMd(html: string | null | undefined): string {

@@ -44,7 +44,7 @@ export const BlockItemAction = observer(function BlockItemAction(props: Props) {
     <>
       {/* page access */}
       <div className="grid size-(--control-height-sm) cursor-default place-items-center text-icon-secondary [--node-size:var(--control-glyph-sm)]">
-        <Tooltip label={access === 0 ? "Public" : "Private"}>
+        <Tooltip label={access === 0 ? "公开" : "私有"}>
           <Icon icon={access === 0 ? GlobeOutline : LockOutline} />
         </Tooltip>
       </div>

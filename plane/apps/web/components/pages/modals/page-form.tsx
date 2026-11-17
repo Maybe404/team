@@ -80,7 +80,7 @@ export function PageForm(props: Props) {
       <DialogMain>
         <DialogHeader>
           <DialogHeading>
-            <DialogTitle>Create page</DialogTitle>
+            <DialogTitle>新建页面</DialogTitle>
           </DialogHeading>
         </DialogHeader>
         <DialogBody tabIndex={0}>
@@ -132,7 +132,7 @@ export function PageForm(props: Props) {
                 orientation="vertical"
                 value={formData.name}
                 onChange={(e) => handleFormData("name", e.target.value)}
-                placeholder="Title"
+                placeholder="标题"
                 error={
                   isTitleLengthMoreThan255Character
                     ? "Max length of the name should be less than 255 characters"
@@ -164,7 +164,7 @@ export function PageForm(props: Props) {
           variant="secondary"
           size="md"
           stretch="auto"
-          label="Cancel"
+          label="取消"
           onClick={handleModalClose}
           tabIndex={getIndex("cancel")}
         />
@@ -173,7 +173,7 @@ export function PageForm(props: Props) {
           size="md"
           stretch="auto"
           type="submit"
-          label={isSubmitting ? "Creating" : "Create Page"}
+          label={isSubmitting ? "创建中" : "新建页面"}
           loading={isSubmitting}
           disabled={isTitleLengthMoreThan255Character}
           tabIndex={getIndex("submit")}
