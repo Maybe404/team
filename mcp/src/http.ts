@@ -68,7 +68,7 @@ const http = createHttpServer(async (req, res) => {
   try {
     const body = await readBody(req);
     const config = { baseUrl, webUrl, workspace, token };
-    const server = createServer({ config, plane: new Loom(config), local: false, clientName: clientOf(req) });
+    const server = createServer({ config, plane: new Loom(config), local: false, clientName: clientOf(req), remindEveryHours: Number(process.env.TEAM_REMIND_HOURS ?? 4) });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => {
       void transport.close();

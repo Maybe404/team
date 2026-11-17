@@ -187,6 +187,7 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 - 关联弹窗的候选列表接口：`plane/apps/api/plane/app/views/page/team_page_issue.py` 里的 `TeamLinkCandidatesEndpoint`
 - 文档 ↔ 工作项关联：`TeamPageIssue`（迁移 `0128`），业务 `utils/team_page_issue.py`，网页接口 `app/views/page/team_page_issue.py`，Agent 接口 `api/views/team_page.py`，界面 `apps/web/components/team/page-issue-links.tsx`（工作项侧栏「关联文档」、文档菜单「关联工作项」）
 - 全员共享项目：经验库（审核状态）和每日回顾自动收录工作区管理员和成员，`plane/apps/api/plane/utils/team_shared.py`
+- MCP 智能提示和待办提醒：`mcp/src/hints.ts`（重复、遗漏、不合理的提示，纯函数）、`mcp/src/inbox.ts`（`my_inbox` 和定期提醒，`TEAM_REMIND_HOURS` 控制间隔）、`mcp/src/markdown.ts` 里的 `mentionPeople`（@姓名转提及标签）
 - 使用指南 `mcp/src/usage.ts`（工具 get_guide topic=usage、资源 team://guide/usage）：改了工具能力要同步它
 - 团队 MCP 是服务器上的 HTTP 服务（`mcp/src/http.ts`，compose 里的 `team-mcp`），Caddy 把 `/mcp/*` 转给它（`Caddyfile.ce`）；API Tokens 页显示添加命令（`apps/web/components/api-token/team-mcp-install.tsx`）
 - 文档公开链接：`TeamPageShare`（迁移 `0127`），管理接口 `app/views/page/team_share.py`，公开接口 `space/views/team_page.py`（服务端白名单清洗 HTML），公开页 `apps/space/app/team-pages/`。没有复用 Plane 的 DeployBoard，因为公开接口按 anchor 查它时不分类型，会连带暴露整个项目

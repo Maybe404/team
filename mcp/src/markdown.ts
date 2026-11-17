@@ -13,7 +13,39 @@ const escAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 // 围栏内是完整 HTML。往返时靠它保住嵌入块，全文改写不会把它删掉。
 const EMBED_FENCE = /^(`{3,}|~{3,})html-embed([^\n]*)\n([\s\S]*?)\n\1[ \t]*$/gm;
 
-export function mdToHtml(md: string, opts: { projectId?: string } = {}): string {
+export type Person = { id: string; name: string };
+
+/** 把正文里的 @姓名 换成提及标签；代码、链接里的不动。返回新 HTML 和提到的人。 */
+export function mentionPeople(html: string, members: Person[]): { html: string; mentioned: Person[] } {
+  const named = members.filter((m) => m.name).sort((a, b) => b.name.length - a.name.length);
+  if (!named.length) return { html, mentioned: [] };
+  const re = new RegExp(`@(${named.map((m) => m.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
+  const found = new Map<string, Person>();
+  let skip = 0;
+  const out = html
+    .split(/(<[^>]+>)/)
+    .map((part) => {
+      if (part.startsWith("<")) {
+        if (/^<(code|pre|a)[\s>]/i.test(part)) skip++;
+        else if (/^<\/(code|pre|a)>/i.test(part)) skip = Math.max(0, skip - 1);
+        return part;
+      }
+      if (skip) return part;
+      return part.replace(re, (_m, name: string) => {
+        const m = named.find((x) => x.name === name)!;
+        found.set(m.id, m);
+        return `<mention-component id="${randomUUID()}" entity_identifier="${m.id}" entity_name="user_mention"></mention-component>`;
+      });
+    })
+    .join("");
+  return { html: out, mentioned: [...found.values()] };
+}
+
+export function mdToHtml(md: string, opts: { projectId?: string; members?: Person[] } = {}): string {
+  return mdToHtmlWith(md, opts).html;
+}
+
+export function mdToHtmlWith(md: string, opts: { projectId?: string; members?: Person[] } = {}): { html: string; mentioned: Person[] } {
   const embeds: string[] = [];
   md = md.replace(EMBED_FENCE, (_m, _f, info: string, body: string) => {
     const name = /name="([^"]*)"/.exec(info)?.[1] ?? "";
@@ -52,9 +84,11 @@ export function mdToHtml(md: string, opts: { projectId?: string } = {}): string 
     );
     return `<ul data-type="taskList">${lis}</ul>`;
   });
-  return html.trim() || "<p></p>";
+  const r = mentionPeople(html, opts.members ?? []);
+  return { html: r.html.trim() || "<p></p>", mentioned: r.mentioned };
 }
 
+let mentionNames = new Map<string, string>();
 const td = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced", bulletListMarker: "-", emDelimiter: "*" });
 td.use(gfm);
 td.addRule("planeTaskItem", {
@@ -101,14 +135,15 @@ td.addRule("planeMention", {
     const ident = el.getAttribute("entity_identifier") ?? "";
     // @ 出来的页面写成 [📄 页面](page:ID)，往返时还原成 @ 标签；其他沿用 @标识
     if (el.getAttribute("entity_name") === "page") return `[📄 页面](page:${ident.split("/").pop()})`;
-    return `@${ident}`;
+    return `@${mentionNames.get(ident) ?? ident}`;
   },
 });
 
-export function htmlToMd(html: string | null | undefined): string {
+export function htmlToMd(html: string | null | undefined, members: Person[] = []): string {
   if (!html) return "";
+  mentionNames = new Map(members.map((m) => [m.id, m.name]));
   // turndown 会把没有文字内容的元素当空白丢掉，给自定义块补一个占位字符，规则里不会用到它
-  html = html.replace(/<(html-embed-component|image-component|page-link-component)\b((?:[^>"]|"[^"]*")*)>\s*<\/\1>/gi, "<$1$2>.</$1>");
+  html = html.replace(/<(html-embed-component|image-component|page-link-component|mention-component)\b((?:[^>"]|"[^"]*")*)>\s*<\/\1>/gi, "<$1$2>.</$1>");
   html = html.replace(/\s+(<(?:html-embed|image|page-link)-component\b)/gi, "$1").replace(/(<\/(?:html-embed|image|page-link)-component>)\s+/gi, "$1");
   return td
     .turndown(html)

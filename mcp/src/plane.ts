@@ -34,6 +34,7 @@ export type WorkItem = {
   updated_at: string;
   completed_at?: string | null;
   parent?: string | null;
+  created_by?: string;
 };
 export type Module = {
   id: string;
@@ -224,6 +225,12 @@ export class Loom {
       data_base64: dataBase64,
     });
     return r.asset_id;
+  }
+
+  /** 收集里待分诊（状态为待处理）的条目名称 */
+  async listIntakePending(projectId: string): Promise<string[]> {
+    const rows = await this.all<{ status?: number; issue_detail?: { name?: string }; name?: string }>(this.ws(`projects/${projectId}/intake-issues/`), 200);
+    return rows.filter((r) => r.status === -2).map((r) => r.issue_detail?.name ?? r.name ?? "（无标题）");
   }
 
   // Page（二开接口）

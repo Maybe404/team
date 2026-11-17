@@ -11,7 +11,9 @@ import { z } from "zod";
 import { formatLessons, GENERAL, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
 import { parseTaskKey } from "./taskKey.ts";
 import { formatDocTree } from "./doctree.ts";
-import { htmlToMd, importInlineImages, mdToHtml } from "./markdown.ts";
+import { buildInbox, reminderLine } from "./inbox.ts";
+import { docHints, findSimilar, formatHints, taskHints } from "./hints.ts";
+import { htmlToMd, importInlineImages, mdToHtml, mdToHtmlWith, type Person } from "./markdown.ts";
 import { COMMENT_KINDS, formatGate, gate, gatePlain, LESSON_GUIDE, SELF_CHECK, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
 import { Loom, PlaneError, type Member, type Module, type Project, type View, type WorkItem } from "./plane.ts";
 import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
@@ -32,6 +34,8 @@ export type Env = {
   local: boolean;
   /** 远程无状态服务拿不到 initialize 里的客户端名，用 User-Agent 的产品名代替（如 claude-code） */
   clientName?: string;
+  /** 每隔几小时在工具结果后面带一句待办提醒（远程 HTTP 服务打开；单位小时，0 或不传为关闭） */
+  remindEveryHours?: number;
 };
 
 const REPO_PARAM = z
@@ -41,7 +45,9 @@ const REPO_PARAM = z
 const NO_REPO = new Set(["get_guide", "check_text"]);
 const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson", "save_module", "save_view"]);
 
-export function createServer({ config: CONFIG, plane, local, clientName }: Env) {
+const lastRemind = new Map<string, number>();
+
+export function createServer({ config: CONFIG, plane, local, clientName, remindEveryHours }: Env) {
 
 // 没配置或 Token 失效时不让进程崩掉，而是在每次调用时告诉使用者怎么配
 function setupGuide(reason: string) {
@@ -71,7 +77,9 @@ const server = new McpServer(
 8. 这里的内容由 Agent 写、人来看：写法以人能一眼看懂、能核验为准，标题讲结论，结构清楚，证据写全。提交经验前先读 get_guide（topic=lessons），只提值得沉淀的，宁缺毋滥。
 9. 别人的工作项和文档只能评论，不能改（创建人、指派人、作者、管理员才能改）；别人建的模块只能查看（创建人、负责人、管理员才能改），但可以把任务放进模块；被拒绝时用 comment_task 提建议，不要换个办法硬改。写交付文档时用 write_doc 的 task 参数或 link_doc 把它关联到任务。
 10. 项目里按版本或需求整理任务用模块：建任务前先 list_modules，有合适的放进去（create_task、update_task 的 modules 参数），没有再 save_module 新建；用户想经常看某种筛选时用 save_view 建视图。
-11. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_guide（topic=usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。`,
+11. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_guide（topic=usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。
+12. 写文档、任务后，结果末尾的「提示」要看：漏了关联工作项、@人、指派、模块，或标题和内容有重复、太短、不合理，都要告诉用户并问他要不要补或优化，不要默默忽略，也不要擅自合并、覆盖已有内容。正文里写 @姓名 会变成提及标签（任务描述、评论、文档都支持）。
+13. 开始一段工作前、做完一件事后调用 my_inbox，把待办（等你决定、等你审查、阻塞、指派给你的、收集待分诊）转告用户；工具结果末尾出现「待办提醒」时同样转告，问用户现在处不处理。`,
   },
 );
 
@@ -93,12 +101,29 @@ const DOC_TYPES = Object.keys(TEMPLATES) as [DocType, ...DocType[]];
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 const fail = (t: string) => ({ content: [{ type: "text" as const, text: t }], isError: true });
 
+/** 距上次提醒超过设定小时数，且收件箱里有事，就在这次结果后面带一句；每个账号单独计时 */
+async function withReminder<T extends ReturnType<typeof text>>(r: T): Promise<T> {
+  if (!remindEveryHours || "isError" in r) return r;
+  const key = `${CONFIG.baseUrl}|${CONFIG.workspace}|${CONFIG.token.slice(-16)}`;
+  const now = Date.now();
+  if (now - (lastRemind.get(key) ?? 0) < remindEveryHours * 3_600_000) return r;
+  lastRemind.set(key, now);
+  try {
+    const inbox = await buildInbox(plane);
+    if (!inbox.total) return r;
+    return { ...r, content: [...r.content, { type: "text" as const, text: `\n\n——\n${reminderLine(inbox)}` }] };
+  } catch {
+    return r;
+  }
+}
+
 async function run(fn: () => Promise<ReturnType<typeof text>>) {
   if (!CONFIG.token || !CONFIG.workspace) {
     return fail(setupGuide(`Loom MCP 还没配置：缺少 ${[!CONFIG.token && "PLANE_API_TOKEN", !CONFIG.workspace && "PLANE_WORKSPACE"].filter(Boolean).join("、")}。`));
   }
   try {
-    return await fn();
+    const r = await fn();
+    return await withReminder(r);
   } catch (e) {
     if (e instanceof PlaneError && (e.status === 401 || /token is not valid|credentials were not provided/i.test(e.body)))
       return fail(setupGuide("Loom 拒绝了这个 API Token（401），可能已被删除或填错。"));
@@ -133,6 +158,10 @@ const STATE_COMMENT_KIND: Record<string, (typeof COMMENT_KINDS)[number]> = { 待
 const personName = (m: Pick<Member, "display_name" | "first_name" | "last_name">) =>
   `${m.first_name ?? ""}${m.last_name ?? ""}`.trim() ? `${m.first_name ?? ""} ${m.last_name ?? ""}`.trim() : m.display_name;
 const nameMap = (members: Member[]) => new Map(members.map((m) => [m.id, personName(m)]));
+/** 正文里 @姓名 / @显示名 能认出的人；同一个人的两种叫法都收 */
+const peopleFrom = (members: Member[]): Person[] =>
+  members.flatMap((m) => [{ id: m.id, name: personName(m) }, ...(m.display_name && m.display_name !== personName(m) ? [{ id: m.id, name: m.display_name }] : [])]);
+const peopleOf = async (projectId: string): Promise<Person[]> => peopleFrom(await plane.listProjectMembers(projectId).catch(() => []));
 const memberName = (m: Member) => personName(m);
 
 /** 把 "me"、邮箱、显示名、姓名解析成项目成员 ID。 */
@@ -642,6 +671,7 @@ server.registerTool(
       const state = st.find((s) => s.id === item.state)?.name ?? "?";
       const stateName = new Map(st.map((s) => [s.id, s.name]));
       const names = nameMap(members);
+      const people = peopleFrom(members);
       const parent = item.parent ? all.find((i) => i.id === item.parent) : undefined;
       const children = all.filter((i) => i.parent === item.id).sort((a, b) => a.sequence_id - b.sequence_id);
       const meta = [
@@ -661,10 +691,10 @@ server.registerTool(
       const timeline = cs
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .slice(-(comments ?? 20))
-        .map((c) => `### ${names.get(c.actor) ?? "未知成员"} · ${c.created_at.slice(0, 16).replace("T", " ")}\n\n${htmlToMd(c.comment_html)}`)
+        .map((c) => `### ${names.get(c.actor) ?? "未知成员"} · ${c.created_at.slice(0, 16).replace("T", " ")}\n\n${htmlToMd(c.comment_html, people)}`)
         .join("\n\n");
       return text(
-        `# ${key} ${item.name}\n\n状态：${state}　优先级：${item.priority}　${meta}\n链接：${webUrl(`browse/${key}`)}\n\n${htmlToMd(item.description_html) || "（无描述）"}\n\n${extra ? `${extra}\n\n` : ""}## 评论（${cs.length}）\n\n${timeline || "无"}`,
+        `# ${key} ${item.name}\n\n状态：${state}　优先级：${item.priority}　${meta}\n链接：${webUrl(`browse/${key}`)}\n\n${htmlToMd(item.description_html, people) || "（无描述）"}\n\n${extra ? `${extra}\n\n` : ""}## 评论（${cs.length}）\n\n${timeline || "无"}`,
       );
     }),
 );
@@ -699,9 +729,25 @@ server.registerTool(
       const allModules = modules?.length ? await plane.listModules(p.id) : [];
       const wantModules = (modules ?? []).map((n) => pickByName(allModules, n, "模块", NO_MODULE_HINT));
       if (parentTask && parentTask.project.id !== p.id) return fail(`父任务 ${parentTask.key} 不在项目 ${p.identifier} 里，子任务要和父任务在同一个项目。`);
+      const people0 = await peopleOf(p.id);
+      const created = mdToHtmlWith(description, { members: people0 });
+      const open = (await plane.listWorkItems(p.id).catch(() => [])).filter((i) => {
+        const g = st.find((x) => x.id === i.state)?.group;
+        return g !== "completed" && g !== "cancelled";
+      });
+      const hints = taskHints({
+        title,
+        description,
+        assignees: people.length,
+        hasParent: Boolean(parentTask),
+        hasModule: wantModules.length > 0,
+        mentioned: created.mentioned.length,
+        otherMembers: Math.max(0, new Set(people0.map((x) => x.id)).size - 1),
+        similar: findSimilar(title, open.map((i) => ({ key: `${p.identifier}-${i.sequence_id}`, name: i.name }))),
+      });
       const item = await plane.createWorkItem(p.id, {
         name: title,
-        description_html: mdToHtml(description),
+        description_html: created.html,
         priority: priority ?? "none",
         state: findState(st, target).id,
         assignees: people.map((m) => m.id),
@@ -714,7 +760,7 @@ server.registerTool(
         parentTask ? `挂在 ${parentTask.key} 下` : "",
         wantModules.length ? `放进模块 ${wantModules.map((m) => m.name).join("、")}` : "",
       ].filter(Boolean).join("，");
-      return text(`已新建 ${key}${extras ? `（${extras}）` : ""}：${webUrl(`browse/${key}`)}${g.report ? `\n\n${g.report}` : ""}`);
+      return text(`已新建 ${key}${extras ? `（${extras}）` : ""}：${webUrl(`browse/${key}`)}${g.report ? `\n\n${g.report}` : ""}${formatHints(hints)}`);
     }),
 );
 
@@ -758,7 +804,7 @@ server.registerTool(
         const g = checkOrReject(description, "task", { title: title ?? item.name });
         if (!g.ok) return fail(g.report);
         if (g.report) notes.push(g.report);
-        body.description_html = mdToHtml(description);
+        body.description_html = mdToHtml(description, { members: await peopleOf(project.id) });
       }
       if (state) {
         if (!agentCanSet(state)) return fail(HUMAN_ONLY_HINT);
@@ -791,7 +837,7 @@ server.registerTool(
       await Promise.all(toAdd.map((m) => plane.addModuleIssues(project.id, m.id, [item.id])));
       await Promise.all(toRemove.map((m) => plane.removeModuleIssue(project.id, m.id, item.id).catch(() => undefined)));
       if (comment) {
-        await plane.createComment(project.id, item.id, mdToHtml(`**${commentKind}** · ${await signature(role)}\n\n${comment.trim()}`));
+        await plane.createComment(project.id, item.id, mdToHtml(`**${commentKind}** · ${await signature(role)}\n\n${comment.trim()}`, { members: await peopleOf(project.id) }));
       }
       return text(`已更新 ${key}${state ? `，状态改为「${state}」` : ""}${moduleChanges.length ? `，${moduleChanges.join("，")}` : ""}${comment ? `，并写入「${commentKind}」评论` : ""}。${notes.length ? `\n\n${notes.join("\n")}` : ""}`);
     }),
@@ -815,7 +861,7 @@ server.registerTool(
       if (!g.ok) return fail(g.report);
       const { project, item, key } = await resolveTask(task, "write");
       const signed = `**${kind}** · ${await signature(role)}\n\n${markdown.trim()}`;
-      await plane.createComment(project.id, item.id, mdToHtml(signed));
+      await plane.createComment(project.id, item.id, mdToHtml(signed, { members: await peopleOf(project.id) }));
       return text(`已在 ${key} 写入「${kind}」评论。${g.report ? `\n\n${g.report}` : ""}`);
     }),
 );
@@ -1008,9 +1054,10 @@ server.registerTool(
         if (e instanceof PlaneError && e.status === 404) throw new Error(`项目 ${p.identifier} 里没有文档 ${doc_id}，或者它是别人的私有文档。用 list_docs 查。`);
         throw e;
       });
+      const people = await peopleOf(p.id);
       const issues = await plane.listPageIssues(p.id, d.id).catch(() => []);
       const rel = issues.length ? `\n\n## 关联工作项（${issues.length}）\n\n${issues.map((i) => `- ${i.key} [${i.state}] ${i.name}`).join("\n")}` : "";
-      return text(`# ${d.name}\n\n链接：${webUrl(`projects/${p.id}/pages/${d.id}`)}\n\n${htmlToMd(d.description_html)}${rel}`);
+      return text(`# ${d.name}\n\n链接：${webUrl(`projects/${p.id}/pages/${d.id}`)}\n\n${htmlToMd(d.description_html, people)}${rel}`);
     }),
 );
 
@@ -1037,7 +1084,10 @@ server.registerTool(
       const p = await projectFor(project, "write");
       const t = task ? await resolveTask(task, "write") : undefined;
       const imported = await importInlineImages(markdown, (name, type, b64) => plane.uploadPageImage(p.id, name, type, b64));
-      const html = mdToHtml(imported.md, { projectId: p.id });
+      const people = await peopleOf(p.id);
+      const conv = mdToHtmlWith(imported.md, { projectId: p.id, members: people });
+      const html = conv.html;
+      const others = (await plane.listPages(p.id).catch(() => [])).filter((x) => x.id !== doc_id);
       const d = doc_id
         ? await plane.updatePage(p.id, doc_id, { name: title, description_html: html, ...(parent_id ? { parent_id } : {}) })
         : await plane.createPage(p.id, title, html, parent_id);
@@ -1049,8 +1099,20 @@ server.registerTool(
           .then(() => `\n已关联到任务 ${t.key}，任务页和文档页里都能看到。`)
           .catch((e) => `\n文档已写入，但没能关联到 ${t.key}：${e instanceof PlaneError ? (e.body.match(/"(?:detail|error)"\s*:\s*"([^"]+)"/)?.[1] ?? e.body) : e}`);
       }
+      const hasLink = Boolean(t) || (await plane.listPageIssues(p.id, d.id).catch(() => [])).length > 0;
+      const hints = docHints({
+        title,
+        markdown: imported.md,
+        isUpdate: Boolean(doc_id),
+        hasTask: hasLink,
+        hasParent: Boolean(parent_id) || Boolean((d as { parent_id?: string | null }).parent_id),
+        otherDocs: others.length,
+        mentioned: conv.mentioned.length,
+        otherMembers: Math.max(0, new Set(people.map((x) => x.id)).size - 1),
+        similar: findSimilar(title, others.map((x) => ({ key: x.id, name: x.name }))),
+      });
       return text(
-        `${doc_id ? "已更新" : "已新建"}文档「${title}」（${d.id}）：${url}${d.live_editing ? "\n有人正在网页上编辑这篇文档，改动已实时合并。" : ""}${imported.count ? `\n已把 ${imported.count} 张图片（SVG/PNG 等）导入文档。` : ""}${linked}${g.report ? `\n\n${g.report}` : ""}`,
+        `${doc_id ? "已更新" : "已新建"}文档「${title}」（${d.id}）：${url}${d.live_editing ? "\n有人正在网页上编辑这篇文档，改动已实时合并。" : ""}${imported.count ? `\n已把 ${imported.count} 张图片（SVG/PNG 等）导入文档。` : ""}${linked}${g.report ? `\n\n${g.report}` : ""}${formatHints(hints)}`,
       );
     }),
 );
@@ -1152,6 +1214,24 @@ server.registerTool(
 );
 
 // ---------- 回顾 ----------
+
+server.registerTool(
+  "my_inbox",
+  {
+    title: "我的待办收件箱",
+    description:
+      "汇总需要这个账号处理的事：等你决定、等你审查、阻塞、指派给你的未完成任务、收集里待分诊的条目、待审核的经验。开始一段工作前、做完一件事后调用，把结果转告用户并问他要处理哪项。远程服务也会每隔几小时在其他工具的结果后面自动带一句提醒。",
+    inputSchema: { all_projects: z.boolean().optional().describe("默认只看当前仓库关联的项目；true 看你加入的所有项目") },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ all_projects }) =>
+    run(async () => {
+      const ids = all_projects ? undefined : (await boundProjects().catch(() => ({ projects: [] as Project[] }))).projects.map((p) => p.id);
+      const inbox = await buildInbox(plane, ids?.length ? ids : undefined);
+      lastRemind.set(`${CONFIG.baseUrl}|${CONFIG.workspace}|${CONFIG.token.slice(-16)}`, Date.now());
+      return text(inbox.md);
+    }),
+);
 
 server.registerTool(
   "review_digest",
