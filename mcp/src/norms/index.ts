@@ -39,7 +39,7 @@ export function formatGate(result: GateResult): string {
 
 export const WRITING_GUIDE = `# 团队写作规范
 
-所有通过 team-mcp 写入的任务、评论、文档和经验都要符合这份规范。服务端会逐条检查，不符合的会被退回。
+所有通过 Loom MCP 写入的任务、评论、文档和经验都要符合这份规范。服务端会逐条检查，不符合的会被退回。
 
 ## 总原则：Agent 来写，人来看
 

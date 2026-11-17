@@ -54,7 +54,7 @@ const webUrl = (path: string) => plane.webUrl(path);
 const server = new McpServer(
   { name: "loom", version: VERSION },
   {
-    instructions: `团队协作 MCP。任务、文档、经验都通过这里读写，不要绕过它直接改。
+    instructions: `Loom MCP：Loom 团队协作平台的入口。用户提到 Loom，或要查、建、改任务（工作项）、文档（页面）、模块、视图、经验时，都用这个 MCP，不要绕过它直接改。
 规则：
 1. 第一次写入前读一次规范（get_guide topic=writing），同一次对话里读过就不用再读；不合规的写入会被退回并说明原因。
 2. 去 AI 味：页面、任务描述、评论、经验这四类写入，落笔前都要按「去 AI 味」的规则写，写完先用 check_text 预检，按提示改；整篇 500 汉字以上的页面再用 analyze_tone 出整篇报告，按报告改写后再写入。写入时服务端还会再检查一遍，被退回时逐条改完重交，不要换个说法绕过检查。
