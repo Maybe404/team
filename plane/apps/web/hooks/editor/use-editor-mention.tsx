@@ -31,7 +31,7 @@ export const useEditorMention = (args: TArgs) => {
     async (query: string): Promise<TMentionSection[]> => {
       try {
         const res = await searchEntity({
-          count: 5,
+          count: 8,
           query_type: editorMentionTypes,
           query,
         });
@@ -59,7 +59,7 @@ export const useEditorMention = (args: TArgs) => {
             }));
             suggestionSections.push({
               key: "users",
-              title: "Users",
+              title: "成员",
               items,
             });
           }

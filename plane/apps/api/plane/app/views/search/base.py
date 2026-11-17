@@ -42,7 +42,21 @@ from plane.db.models import (
     WorkspaceMember,
 )
 
+import re as _re
+
 from plane.utils.team_page_tree import hidden_page_ids  # [team 二开] 别人私有页面的子树不出现在 @ 里
+
+
+def fuzzy_q(fields, query):
+    """[team 二开] @ 搜索的模糊匹配：包含关键词，或关键词的字按顺序出现（中间可隔别的字）。"""
+    q = Q()
+    query = (query or "").strip()[:20]
+    if not query:
+        return q
+    pattern = ".*".join(_re.escape(c) for c in query if not c.isspace())
+    for f in fields:
+        q |= Q(**{f"{f}__icontains": query}) | Q(**{f"{f}__iregex": pattern})
+    return q
 
 
 class GlobalSearchEndpoint(BaseAPIView):
@@ -360,11 +374,7 @@ class SearchEndpoint(BaseAPIView):
                         "member__last_name",
                         "member__display_name",
                     ]
-                    q = Q()
-
-                    if query:
-                        for field in fields:
-                            q |= Q(**{f"{field}__icontains": query})
+                    q = fuzzy_q(fields, query)
 
                     users = (
                         ProjectMember.objects.filter(
@@ -433,7 +443,7 @@ class SearchEndpoint(BaseAPIView):
                                 for sequence_id in sequences:
                                     q |= Q(**{"sequence_id": sequence_id})
                             else:
-                                q |= Q(**{f"{field}__icontains": query})
+                                q |= fuzzy_q([field], query)
 
                     issues = (
                         Issue.issue_objects.filter(
@@ -447,7 +457,7 @@ class SearchEndpoint(BaseAPIView):
                             workspace__slug=slug,
                             project_id=project_id,
                         )
-                        .order_by("-created_at")
+                        .order_by("-updated_at")
                         .distinct()
                         .values(
                             "name",
@@ -541,11 +551,7 @@ class SearchEndpoint(BaseAPIView):
 
                 elif query_type == "page":
                     fields = ["name"]
-                    q = Q()
-
-                    if query:
-                        for field in fields:
-                            q |= Q(**{f"{field}__icontains": query})
+                    q = fuzzy_q(fields, query)
 
                     pages = (
                         Page.objects.filter(
@@ -561,7 +567,7 @@ class SearchEndpoint(BaseAPIView):
                             access=0,
                         )
                         .exclude(id__in=hidden_page_ids(request.user, project_id))
-                        .order_by("-created_at")
+                        .order_by("-updated_at")
                         .distinct()
                         .values(
                             "name",

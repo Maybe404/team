@@ -201,6 +201,12 @@ export const insertSubpage = (editor: Editor, range?: Range) => {
     return;
   }
   const [, slug, projectId, pageId] = m;
+  // 盖一层「正在创建」遮罩，避免用户看到父页面里先冒出一个块再跳转，以为卡住了
+  const cover = document.createElement("div");
+  cover.style.cssText =
+    "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.85);font-size:14px;color:#555";
+  cover.textContent = "正在创建子页面…";
+  document.body.appendChild(cover);
   void fetch(`/api/workspaces/${slug}/projects/${projectId}/pages/`, {
     method: "POST",
     credentials: "same-origin",
@@ -212,9 +218,12 @@ export const insertSubpage = (editor: Editor, range?: Range) => {
       const page = (await res.json()) as { id: string };
       editor.chain().focus().insertPageLink({ pageId: page.id, projectId, title: "无标题" }).run();
       // 留一点时间让刚插入的卡片同步保存，再跳到新页面
-      window.setTimeout(() => window.location.assign(`/${slug}/projects/${projectId}/pages/${page.id}`), 900);
+      window.setTimeout(() => window.location.assign(`/${slug}/projects/${projectId}/pages/${page.id}`), 700);
     })
-    .catch(() => alert("没能新建子页面，请稍后再试。"));
+    .catch(() => {
+      cover.remove();
+      alert("没能新建子页面，请稍后再试。");
+    });
 };
 
 export const insertCallout = (editor: Editor, range?: Range) => {
