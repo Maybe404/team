@@ -23,7 +23,13 @@ case "${1:-}" in
     "$HERE/set-version.sh" >/dev/null
     (cd ../../mcp && npm run build >/dev/null)
     "${DC[@]}" --profile review build "${@:2}" ;;
-  up) "${DC[@]}" "${profiles[@]}" up -d "${@:2}" ;;
+  up)
+    "${DC[@]}" "${profiles[@]}" up -d "${@:2}"
+    # 本机开发不想让容器随 Docker/OrbStack 启动而自启：在 .env 里写 TEAM_NO_AUTOSTART=1（服务器不要写）
+    if grep -qE '^TEAM_NO_AUTOSTART=1' .env 2>/dev/null; then
+      docker update --restart=no $(docker ps -aq --filter label=com.docker.compose.project=team) >/dev/null
+    fi
+    ;;
   down) "${DC[@]}" --profile review down "${@:2}" ;;
   logs) "${DC[@]}" --profile review logs -f --tail=100 "${@:2}" ;;
   ps) "${DC[@]}" --profile review ps ;;
