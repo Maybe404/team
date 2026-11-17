@@ -10,8 +10,12 @@
 # 不会像"整篇替换"那样出现内容重复。live 返回新的 binary/html/json，这里统一落库。
 
 import base64
-import os
+import binascii
+import io
 import json
+import os
+import re
+import uuid
 
 import requests
 from django.conf import settings
@@ -22,7 +26,8 @@ from rest_framework.response import Response
 from plane.app.permissions import ProjectEntityPermission
 from plane.app.serializers import PageSerializer
 from plane.bgtasks.page_transaction_task import page_transaction
-from plane.db.models import Page
+from plane.db.models import FileAsset, Page, Workspace
+from plane.settings.storage import S3Storage
 from plane.utils.url import normalize_url_path
 
 from .base import BaseAPIView
@@ -224,3 +229,58 @@ class TeamPageIssuesAPIEndpoint(BaseAPIView):
         if not visible_pages(request.user, slug, project_id).filter(pk=pk).exists():
             return Response({"error": "Page 不存在"}, status=status.HTTP_404_NOT_FOUND)
         return Response(issues_of_page(pk, project_id))
+
+
+# 给 Agent 用的图片上传：PNG、JPEG、GIF、WebP、SVG，上传后得到附件 ID，在 Markdown 里写 ![](asset:<ID>) 就是文档里的图片。
+IMAGE_MAGIC = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+    "image/webp": (b"RIFF",),
+}
+UNSAFE_SVG = re.compile(r"<\s*script|<\s*foreignObject|<\s*iframe|\son[a-z]+\s*=|javascript:|data:text/html", re.I)
+
+
+class TeamPageImageAPIEndpoint(BaseAPIView):
+    permission_classes = [ProjectEntityPermission]
+
+    def post(self, request, slug, project_id):
+        content_type = request.data.get("content_type") or ""
+        name = re.sub(r"[^\w.\-\u4e00-\u9fff]", "_", (request.data.get("name") or "image").strip())[:80] or "image"
+        try:
+            raw = base64.b64decode(request.data.get("data_base64") or "", validate=True)
+        except (binascii.Error, ValueError):
+            return Response({"error": "data_base64 不是合法的 base64"}, status=status.HTTP_400_BAD_REQUEST)
+        if content_type not in (*IMAGE_MAGIC, "image/svg+xml"):
+            return Response({"error": "只支持 PNG、JPEG、GIF、WebP、SVG"}, status=status.HTTP_400_BAD_REQUEST)
+        if not raw or len(raw) > settings.FILE_SIZE_LIMIT:
+            return Response(
+                {"error": f"图片不能为空，且不能超过 {settings.FILE_SIZE_LIMIT // 1024 // 1024}MB"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if content_type == "image/svg+xml":
+            head = raw[:4096].decode("utf-8", errors="ignore")
+            if "<svg" not in head.lower() or UNSAFE_SVG.search(raw.decode("utf-8", errors="ignore")):
+                return Response(
+                    {"error": "SVG 不合法，或含有脚本、事件属性、foreignObject 等不安全内容"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif not any(raw.startswith(m) for m in IMAGE_MAGIC[content_type]):
+            return Response({"error": "文件内容和声明的图片类型对不上"}, status=status.HTTP_400_BAD_REQUEST)
+
+        workspace = Workspace.objects.get(slug=slug)
+        key = f"{workspace.id}/{uuid.uuid4().hex}-{name}"
+        storage = S3Storage()  # 服务端直传，用内网地址；传 request 会指向对外域名，容器里连不上
+        if not storage.upload_file(io.BytesIO(raw), key, content_type):
+            return Response({"error": "图片存储失败"}, status=status.HTTP_502_BAD_GATEWAY)
+        asset = FileAsset.objects.create(
+            attributes={"name": name, "type": content_type, "size": len(raw)},
+            asset=key,
+            size=len(raw),
+            workspace=workspace,
+            project_id=project_id,
+            created_by=request.user,
+            entity_type=FileAsset.EntityTypeContext.PAGE_DESCRIPTION,
+            is_uploaded=True,
+        )
+        return Response({"asset_id": str(asset.id)}, status=status.HTTP_201_CREATED)

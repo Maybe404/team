@@ -37,7 +37,7 @@ export async function buildDigest(plane: Loom, opts: DigestOpts) {
       plane.listProjectMembers(p.id).catch(() => []),
     ]);
     const st = new Map(states.map((s) => [s.id, s]));
-    const names = new Map(members.map((m) => [m.id, m.display_name]));
+    const names = new Map(members.map((m) => [m.id, `${m.first_name ?? ''}${m.last_name ?? ''}`.trim() ? `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim() : m.display_name]));
     for (const it of items as WorkItem[]) {
       const s = st.get(it.state);
       if (!s || s.group === "completed" || s.group === "cancelled") continue;
@@ -50,7 +50,7 @@ export async function buildDigest(plane: Loom, opts: DigestOpts) {
         days: Math.floor((now - new Date(it.updated_at).getTime()) / DAY),
         url: plane.webUrl(`browse/${key}`),
         project: p.name,
-        who: it.assignees.map((a) => names.get(a) ?? "?"),
+        who: it.assignees.map((a) => names.get(a) ?? "未知成员"),
       };
       if (s.name === "待决定") needsYou.push(row);
       else if (s.name === "阻塞") blocked.push(row);

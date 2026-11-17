@@ -216,6 +216,16 @@ export class Loom {
     return this.req<LinkedIssue[]>("GET", this.ws(`projects/${projectId}/pages/${pageId}/work-items/`));
   }
 
+  // 页面图片（二开接口）：返回附件 ID，在 Markdown 里写 ![](asset:<ID>)
+  async uploadPageImage(projectId: string, name: string, contentType: string, dataBase64: string): Promise<string> {
+    const r = await this.req<{ asset_id: string }>("POST", this.ws(`projects/${projectId}/page-images/`), {
+      name,
+      content_type: contentType,
+      data_base64: dataBase64,
+    });
+    return r.asset_id;
+  }
+
   // Page（二开接口）
   listPages(projectId: string, search?: string) {
     return this.all<Page>(this.ws(`projects/${projectId}/pages/${search ? `?search=${encodeURIComponent(search)}` : ""}`), 300);

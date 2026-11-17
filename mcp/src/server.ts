@@ -9,7 +9,7 @@ import type { Config } from "./config.ts";
 import { matchProjects, normalizeRepoUrl, notBoundMessage, repoRemotes, workDirs, type RepoScope } from "./binding.ts";
 import { z } from "zod";
 import { formatLessons, GENERAL, proposeTeamLesson, savePrivateLesson, searchLessons } from "./lessons.ts";
-import { htmlToMd, mdToHtml } from "./markdown.ts";
+import { htmlToMd, importInlineImages, mdToHtml } from "./markdown.ts";
 import { COMMENT_KINDS, formatGate, gate, gatePlain, LESSON_GUIDE, SELF_CHECK, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
 import { Loom, PlaneError, type Member, type Module, type Project, type View, type WorkItem } from "./plane.ts";
 import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
@@ -51,7 +51,7 @@ function setupGuide(reason: string) {
 const webUrl = (path: string) => plane.webUrl(path);
 
 const server = new McpServer(
-  { name: "team-mcp", version: VERSION },
+  { name: "loom", version: VERSION },
   {
     instructions: `团队协作 MCP。任务、文档、经验都通过这里读写，不要绕过它直接改。
 规则：
@@ -89,7 +89,7 @@ const fail = (t: string) => ({ content: [{ type: "text" as const, text: t }], is
 
 async function run(fn: () => Promise<ReturnType<typeof text>>) {
   if (!CONFIG.token || !CONFIG.workspace) {
-    return fail(setupGuide(`team-mcp 还没配置：缺少 ${[!CONFIG.token && "PLANE_API_TOKEN", !CONFIG.workspace && "PLANE_WORKSPACE"].filter(Boolean).join("、")}。`));
+    return fail(setupGuide(`Loom MCP 还没配置：缺少 ${[!CONFIG.token && "PLANE_API_TOKEN", !CONFIG.workspace && "PLANE_WORKSPACE"].filter(Boolean).join("、")}。`));
   }
   try {
     return await fn();
@@ -123,7 +123,11 @@ async function signature(role?: string) {
 
 const STATE_COMMENT_KIND: Record<string, (typeof COMMENT_KINDS)[number]> = { 待审查: "结论", 阻塞: "阻塞", 待决定: "决策" };
 
-const memberName = (m: Member) => `${m.display_name}${m.email ? `（${m.email}）` : ""}`;
+/** 对人展示的名字：优先姓名，其次显示名；不显示编号和邮箱 */
+const personName = (m: Pick<Member, "display_name" | "first_name" | "last_name">) =>
+  `${m.first_name ?? ""}${m.last_name ?? ""}`.trim() ? `${m.first_name ?? ""} ${m.last_name ?? ""}`.trim() : m.display_name;
+const nameMap = (members: Member[]) => new Map(members.map((m) => [m.id, personName(m)]));
+const memberName = (m: Member) => personName(m);
 
 /** 把 "me"、邮箱、显示名、姓名解析成项目成员 ID。 */
 async function resolveMembers(projectId: string, refs: string[]): Promise<Member[]> {
@@ -145,7 +149,7 @@ async function resolveMembers(projectId: string, refs: string[]): Promise<Member
     );
     if (hit.length === 1) return hit[0];
     throw new Error(
-      `${hit.length ? `「${ref}」匹配到多个成员，请用邮箱` : `项目里没有成员「${ref}」`}。项目成员：${members.map(memberName).join("、") || "无"}`,
+      `${hit.length ? `「${ref}」匹配到多个成员，请用邮箱区分` : `项目里没有成员「${ref}」`}。项目成员：${members.map(memberName).join("、") || "无"}`,
     );
   });
 }
@@ -261,7 +265,7 @@ async function describeFilters(p: Project, v: View): Promise<string> {
   const LABEL: Record<string, [string, (id: string) => string]> = {
     state_id: ["状态", (id) => name(st, id)],
     state_group: ["状态组", (id) => id],
-    assignee_id: ["负责人", (id) => members.find((m) => m.id === id)?.display_name ?? id],
+    assignee_id: ["负责人", (id) => nameMap(members).get(id) ?? "未知成员"],
     priority: ["优先级", (id) => id],
     label_id: ["标签", (id) => name(labels, id)],
     module_id: ["模块", (id) => name(modules, id)],
@@ -418,7 +422,7 @@ server.registerPrompt(
         role: "user",
         content: {
           type: "text",
-          text: `${readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8")}\n\n---\n\n按上面的 skill 处理这篇文档：${doc}\n\n脚本检测用 team-mcp 的 analyze_tone 工具代替 \`python3 scripts/detect.py\`；语义层判据读资源 team://skills/less-ai-tone/semantic-criteria。先交付改前报告，等我回复再改。`,
+          text: `${readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8")}\n\n---\n\n按上面的 skill 处理这篇文档：${doc}\n\n脚本检测用 Loom MCP 的 analyze_tone 工具代替 \`python3 scripts/detect.py\`；语义层判据读资源 team://skills/less-ai-tone/semantic-criteria。先交付改前报告，等我回复再改。`,
         },
       },
     ],
@@ -513,7 +517,7 @@ server.registerTool(
   "whoami",
   {
     title: "当前账号和仓库",
-    description: "确认 team-mcp 连的是哪个 Loom、以哪个账号操作，以及当前仓库关联了哪些团队项目。首次使用或报错时先调用它。",
+    description: "确认 Loom MCP 连的是哪个 Loom、以哪个账号操作，以及当前仓库关联了哪些团队项目。首次使用或报错时先调用它。",
     annotations: { readOnlyHint: true },
   },
   async () =>
@@ -530,7 +534,7 @@ server.registerTool(
           ? `关联的是 ${unjoined.map((p) => p.identifier).join("、")}，但你还不是成员，请项目管理员在网页上把你加进项目`
           : `未关联。${notBoundMessage(sc, CONFIG.webUrl, local)}`;
       return text(
-        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nLoom：${CONFIG.webUrl}${local ? `（API ${CONFIG.baseUrl}）` : ""}\nteam-mcp：${VERSION}（${local ? "本机" : "远程"}）\n仓库：${sc.remotes.join("、") || "未提供"}\n团队项目：${repo}\n不熟悉怎么用？调用 get_guide（topic=usage）看任务、页面、周期、模块、视图的用法。`,
+        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nLoom：${CONFIG.webUrl}${local ? `（API ${CONFIG.baseUrl}）` : ""}\nLoom MCP：${VERSION}（${local ? "本机" : "远程"}）\n仓库：${sc.remotes.join("、") || "未提供"}\n团队项目：${repo}\n不熟悉怎么用？调用 get_guide（topic=usage）看任务、页面、周期、模块、视图的用法。`,
       );
     }),
 );
@@ -576,7 +580,7 @@ server.registerTool(
         inCycle = new Set(await plane.listCycleIssueIds(p.id, c.id));
       }
       const byId = new Map(st.map((s) => [s.id, s]));
-      const names = new Map(members.map((m) => [m.id, m.display_name]));
+      const names = nameMap(members);
       const who = assignee ? (await resolveMembers(p.id, [assignee]))[0].id : undefined;
       const rows = items
         .filter((i) => {
@@ -591,7 +595,7 @@ server.registerTool(
         })
         .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
         .map((i) => {
-          const people = i.assignees.map((a) => names.get(a) ?? "?").join("、");
+          const people = i.assignees.map((a) => names.get(a) ?? "未知成员").join("、");
           const mods = mi?.namesOf(i.id) ?? [];
           return `- ${p.identifier}-${i.sequence_id} [${byId.get(i.state)?.name ?? "?"}] ${i.name}（${people ? `${people}，` : ""}${mods.length ? `模块：${mods.join("、")}，` : ""}更新于 ${i.updated_at.slice(0, 10)}）`;
         });
@@ -622,11 +626,11 @@ server.registerTool(
       const itemModules = mi?.namesOf(item.id) ?? [];
       const state = st.find((s) => s.id === item.state)?.name ?? "?";
       const stateName = new Map(st.map((s) => [s.id, s.name]));
-      const names = new Map(members.map((m) => [m.id, m.display_name]));
+      const names = nameMap(members);
       const parent = item.parent ? all.find((i) => i.id === item.parent) : undefined;
       const children = all.filter((i) => i.parent === item.id).sort((a, b) => a.sequence_id - b.sequence_id);
       const meta = [
-        `指派：${item.assignees.map((a) => names.get(a) ?? "?").join("、") || "无"}`,
+        `指派：${item.assignees.map((a) => names.get(a) ?? "未知成员").join("、") || "无"}`,
         parent ? `父任务：${project.identifier}-${parent.sequence_id} ${parent.name}` : "",
         `模块：${itemModules.join("、") || "无"}`,
       ].filter(Boolean).join("　");
@@ -642,7 +646,7 @@ server.registerTool(
       const timeline = cs
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .slice(-(comments ?? 20))
-        .map((c) => `### ${c.created_at.slice(0, 16).replace("T", " ")}\n\n${htmlToMd(c.comment_html)}`)
+        .map((c) => `### ${names.get(c.actor) ?? "未知成员"} · ${c.created_at.slice(0, 16).replace("T", " ")}\n\n${htmlToMd(c.comment_html)}`)
         .join("\n\n");
       return text(
         `# ${key} ${item.name}\n\n状态：${state}　优先级：${item.priority}　${meta}\n链接：${webUrl(`browse/${key}`)}\n\n${htmlToMd(item.description_html) || "（无描述）"}\n\n${extra ? `${extra}\n\n` : ""}## 评论（${cs.length}）\n\n${timeline || "无"}`,
@@ -691,7 +695,7 @@ server.registerTool(
       const key = `${p.identifier}-${item.sequence_id}`;
       if (wantModules.length) await Promise.all(wantModules.map((m) => plane.addModuleIssues(p.id, m.id, [item.id])));
       const extras = [
-        people.length ? `指派给 ${people.map((m) => m.display_name).join("、")}` : "",
+        people.length ? `指派给 ${people.map(personName).join("、")}` : "",
         parentTask ? `挂在 ${parentTask.key} 下` : "",
         wantModules.length ? `放进模块 ${wantModules.map((m) => m.name).join("、")}` : "",
       ].filter(Boolean).join("，");
@@ -817,7 +821,7 @@ server.registerTool(
       const p = await projectFor(project, "read");
       const [modules, members] = await Promise.all([plane.listModules(p.id), plane.listProjectMembers(p.id)]);
       if (!modules.length) return text(`项目 ${p.identifier} 还没有模块。按版本或需求分组任务时，用 save_module 新建（名称写成“版本号 需求名”，例如“v1.2 登录改版”）。`);
-      const lead = new Map(members.map((m) => [m.id, m.display_name]));
+      const lead = nameMap(members);
       const rows = modules.map((m) => {
         const done = m.completed_issues ?? 0;
         const total = m.total_issues ?? 0;
@@ -1013,11 +1017,12 @@ server.registerTool(
   },
   async ({ project, type, title, markdown, doc_id, parent_id, task }) =>
     run(async () => {
-      const g = checkOrReject(markdown, type, { title });
+      const g = checkOrReject(markdown.replace(/\(data:image\/[^)]{0,}\)/g, "(data:image)"), type, { title });
       if (!g.ok) return fail(g.report);
       const p = await projectFor(project, "write");
       const t = task ? await resolveTask(task, "write") : undefined;
-      const html = mdToHtml(markdown);
+      const imported = await importInlineImages(markdown, (name, type, b64) => plane.uploadPageImage(p.id, name, type, b64));
+      const html = mdToHtml(imported.md);
       const d = doc_id
         ? await plane.updatePage(p.id, doc_id, { name: title, description_html: html })
         : await plane.createPage(p.id, title, html, parent_id);
@@ -1030,7 +1035,7 @@ server.registerTool(
           .catch((e) => `\n文档已写入，但没能关联到 ${t.key}：${e instanceof PlaneError ? (e.body.match(/"(?:detail|error)"\s*:\s*"([^"]+)"/)?.[1] ?? e.body) : e}`);
       }
       return text(
-        `${doc_id ? "已更新" : "已新建"}文档「${title}」（${d.id}）：${url}${d.live_editing ? "\n有人正在网页上编辑这篇文档，改动已实时合并。" : ""}${linked}${g.report ? `\n\n${g.report}` : ""}`,
+        `${doc_id ? "已更新" : "已新建"}文档「${title}」（${d.id}）：${url}${d.live_editing ? "\n有人正在网页上编辑这篇文档，改动已实时合并。" : ""}${imported.count ? `\n已把 ${imported.count} 张图片（SVG/PNG 等）导入文档。` : ""}${linked}${g.report ? `\n\n${g.report}` : ""}`,
       );
     }),
 );

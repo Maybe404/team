@@ -46,7 +46,7 @@ npm run review -- --daemon --at 09:00  # 常驻，每天 09:00 执行；启动�
 团队 MCP 是服务器上长期运行的 HTTP 服务（`src/http.ts`，部署里的 `team-mcp` 容器），Caddy 把 `<地址>/mcp/*` 转给它。成员本机不用装任何东西。在网页「个人设置 → API Tokens」新建 Token 后，弹窗里有填好的命令：
 
 ```bash
-claude mcp add --transport http team http://<地址>/mcp/<工作区> --header "Authorization: Bearer <Token>"
+claude mcp add --transport http loom http://<地址>/mcp/<工作区> --header "Authorization: Bearer <Token>"
 ```
 
 其他客户端添加一个 HTTP 类型的 MCP 服务：网址 `http://<地址>/mcp/<工作区>`，请求头 `Authorization: Bearer <Token>`。

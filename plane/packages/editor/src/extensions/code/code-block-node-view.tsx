@@ -76,6 +76,8 @@ function MermaidPreview({ code }: { code: string }) {
 
 export function CodeBlockComponent({ node }: Props) {
   const [copied, setCopied] = useState(false);
+  // [team 二开] 流程图块的显示方式：只看图（默认）/ 图和代码都显示 / 只看代码；新建的空块直接显示代码方便输入
+  const [mode, setMode] = useState<"preview" | "both" | "code">(() => (node.textContent.trim() ? "preview" : "both"));
   // derived values
   const attrs = node.attrs as TCodeBlockAttributes;
   const isMermaid = attrs[ECodeBlockAttributeNames.LANGUAGE]?.toLowerCase() === "mermaid";
@@ -94,7 +96,29 @@ export function CodeBlockComponent({ node }: Props) {
 
   return (
     <NodeViewWrapper key={attrs[ECodeBlockAttributeNames.ID]} className="code-block group/code relative">
-      <div className="pointer-events-none absolute top-2 right-2 z-10 opacity-0 transition-opacity group-focus-within/code:pointer-events-auto group-focus-within/code:opacity-100 group-hover/code:pointer-events-auto group-hover/code:opacity-100">
+      <div className="pointer-events-none absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 transition-opacity group-focus-within/code:pointer-events-auto group-focus-within/code:opacity-100 group-hover/code:pointer-events-auto group-hover/code:opacity-100">
+        {isMermaid && (
+          <div contentEditable={false} className="flex overflow-hidden rounded-md border border-subtle bg-surface-1 text-caption-md-regular">
+            {(
+              [
+                ["code", "代码"],
+                ["both", "代码+图"],
+                ["preview", "图"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                title={key === "code" ? "只看代码" : key === "both" ? "代码和图都显示" : "只看图"}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setMode(key)}
+                className={`px-2 py-1 ${mode === key ? "bg-layer-transparent-hover text-primary" : "text-tertiary hover:text-primary"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <IconButton
           aria-label={copied ? "Copied code" : "Copy code"}
           variant="secondary"
@@ -104,10 +128,10 @@ export function CodeBlockComponent({ node }: Props) {
         />
       </div>
 
-      <pre className="my-2 rounded-lg bg-layer-3 p-4 text-primary">
+      <pre className={`my-2 rounded-lg bg-layer-3 p-4 text-primary ${isMermaid && mode === "preview" ? "hidden" : ""}`}>
         <NodeViewContent<"code"> as="code" className="whitespace-pre-wrap" />
       </pre>
-      {isMermaid && <MermaidPreview code={node.textContent} />}
+      {isMermaid && mode !== "code" && <MermaidPreview code={node.textContent} />}
     </NodeViewWrapper>
   );
 }

@@ -100,7 +100,7 @@ Plane 自带的“访客”角色用不上，邀请时不要选。Agent 用的 A
 2. 头像 → 个人设置 → API Tokens → 新建 Token。弹窗里会显示一条已经填好地址、工作区和 Token 的命令，复制到终端执行一次：
 
    ```bash
-   claude mcp add --transport http team http://<地址>/mcp/<工作区> --header "Authorization: Bearer <Token>"
+   claude mcp add --transport http loom http://<地址>/mcp/<工作区> --header "Authorization: Bearer <Token>"
    ```
 
    本机什么都不用装，MCP 跑在服务器上。用 Cursor 等其他客户端的，复制弹窗里的 JSON 配置，或在客户端的 MCP 设置里添加一个 HTTP 类型的服务：网址同上，请求头 `Authorization: Bearer <Token>`。
@@ -145,7 +145,7 @@ MCP 随服务器升级，成员这边不用动。Agent 每次调用工具会带�
 
 ### 公开文档
 
-文档右上角“…” → 公开链接。只有工作区管理员能打开或关闭；打开后拿到链接的人不用登录就能阅读这一篇（只读，看不到评论和项目里的其他内容），关闭后旧链接立即失效。私有文档、已归档的文档不能公开，Agent 也开不了。
+文档右上角“…” → 公开链接。文档作者、项目管理员、项目负责人和工作区管理员能打开或关闭；打开后拿到链接的人不用登录就能阅读这一篇（只读，看不到评论和项目里的其他内容），关闭后旧链接立即失效。私有文档、已归档的文档不能公开，Agent 也开不了。
 
 ## 本地开发
 
@@ -157,7 +157,7 @@ dev/run.sh         # 启动全部服务（含定时回顾），日志在 dev/log
 dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.secrets
 ```
 
-网页 http://localhost:47300 ，API http://localhost:47800/api/v1/ 。仓库根目录的 `.mcp.json` 注册了连开发环境的 `team-dev`（`TEAM_MCP_AS=member` 切成成员账号），和正式安装的 `team` 不冲突。
+网页 http://localhost:47300 ，API http://localhost:47800/api/v1/ 。仓库根目录的 `.mcp.json` 注册了连开发环境的 `loom-dev`（`TEAM_MCP_AS=member` 切成成员账号），和正式安装的 `loom` 不冲突。
 
 首次还需要安装依赖：`plane/apps/api` 下 `uv sync`，`plane/` 下 `pnpm install` 后执行 `pnpm turbo run build --filter="./packages/*"`。
 
@@ -174,7 +174,7 @@ dev/seed.sh        # 建测试管理员、工作区和 API Token，写进 dev/.s
 - Agent Token 限权：API Token 请求不能 DELETE、不能管理成员和邀请、不能改项目设置（`team_delete_guard.py`）
 - 编辑权限（自己的自己改）：`plane/apps/api/plane/utils/team_edit_policy.py`，挂在 `team_delete_guard.enforce_delete_policy` 里；网页端 `apps/web/hooks/use-can-edit-issue.ts`、`store/pages/project-page.ts` 同步隐藏编辑
 - 文档里的流程图：语言为 `mermaid` 的代码块，下方实时渲染（`packages/editor/src/extensions/code/code-block-node-view.tsx`，mermaid 按需加载）
-- 文档里的 HTML 页面块：`packages/editor/src/extensions/html-embed/`（斜杠命令「HTML 页面」）。内容存在节点属性里，沙箱 iframe（无 same-origin）渲染，可拖拽缩放、整页放大、下载，上限 2MB；API 白名单 `utils/content_validator.py`，公开分享页 `space/views/team_page.py`，MCP 里写成 ```html-embed 围栏（`mcp/src/markdown.ts`，图片也用 `![](asset:…)` 往返，全文改写不会丢）
+- 文档里的 HTML 页面块：`packages/editor/src/extensions/html-embed/`（斜杠命令「HTML 页面」）。内容存在节点属性里，沙箱 iframe（无 same-origin）渲染，可拖拽缩放、整页放大、下载，上限 2MB；API 白名单 `utils/content_validator.py`，公开分享页 `space/views/team_page.py`，MCP 里写成 ```html-embed 围栏；SVG 写成 ```svg 围栏、位图写成 data URI 图片，写入时由 `POST /api/v1/.../page-images/`（`api/views/team_page.py`）上传成文档图片（`mcp/src/markdown.ts`，图片也用 `![](asset:…)` 往返，全文改写不会丢）
 - 视图的 Agent 接口：`plane/apps/api/plane/api/views/team_view.py`（列表、新建、修改，改别人的视图被拒绝，不提供删除）；MCP 里 `list_modules` / `save_module` / `list_views` / `save_view` 和任务的 `modules` 参数见 `mcp/src/server.ts`
 - 关联弹窗的候选列表接口：`plane/apps/api/plane/app/views/page/team_page_issue.py` 里的 `TeamLinkCandidatesEndpoint`
 - 文档 ↔ 工作项关联：`TeamPageIssue`（迁移 `0128`），业务 `utils/team_page_issue.py`，网页接口 `app/views/page/team_page_issue.py`，Agent 接口 `api/views/team_page.py`，界面 `apps/web/components/team/page-issue-links.tsx`（工作项侧栏「关联文档」、文档菜单「关联工作项」）

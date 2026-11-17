@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-// [team 二开] 添加 team-mcp 的命令。MCP 是本站 /mcp/<工作区> 下的 HTTP 服务，本机不用装任何东西，
+// [team 二开] 添加 Loom MCP 的命令。MCP 是本站 /mcp/<工作区> 下的 HTTP 服务，本机不用装任何东西，
 // 命令里带好本站地址、工作区和 Token，复制到终端执行一次即可；也给出在客户端界面里手动添加时要填的字段。
 import { useEffect, useMemo, useState } from "react";
 import { observer } from "mobx-react";
@@ -45,13 +45,13 @@ export const TeamMcpInstall = observer(function TeamMcpInstall({ token }: Props)
 
   const url = `${origin}/mcp/${slug}`;
   const tok = token || "<你的 Token>";
-  const command = `claude mcp add --transport http team ${url} --header "Authorization: Bearer ${tok}"`;
-  const json = JSON.stringify({ mcpServers: { team: { type: "http", url, headers: { Authorization: `Bearer ${tok}` } } } }, null, 2);
+  const command = `claude mcp add --transport http loom ${url} --header "Authorization: Bearer ${tok}"`;
+  const json = JSON.stringify({ mcpServers: { loom: { type: "http", url, headers: { Authorization: `Bearer ${tok}` } } } }, null, 2);
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-subtle bg-surface-1 p-4">
       <div>
-        <div className="text-body-sm-medium text-primary">添加 team-mcp</div>
+        <div className="text-body-sm-medium text-primary">添加 Loom MCP</div>
         <div className="text-caption-sm-regular text-tertiary">
           本机不用装任何东西。在终端执行下面这条命令，重启 Claude Code，在团队项目的仓库里让 Agent 调用
           whoami 确认。{token ? "命令里已经带上这个 Token，不要发给别人。" : "把命令里的 Token 换成你自己的。"}

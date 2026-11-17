@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-// [team 二开] 文档公开只读链接：工作区管理员打开后生成一个不用登录就能看的链接，关闭后旧链接立即失效。
+// [team 二开] 文档公开只读链接：作者、项目管理员、项目负责人或工作区管理员打开后生成一个不用登录就能看的链接，关闭后旧链接立即失效。
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { Button } from "@makeplane/propel/components/button";
@@ -112,7 +112,7 @@ export function TeamPageShareModal({ isOpen, onClose, pageId, isPrivate }: Props
                   {share.can_manage ? (
                     <Switch size="md" checked={Boolean(share.anchor)} disabled={busy || (isPrivate && !share.anchor)} onCheckedChange={() => void toggle()} />
                   ) : (
-                    <span className="text-caption-sm-regular text-tertiary">只有工作区管理员能开关</span>
+                    <span className="text-caption-sm-regular text-tertiary">只有文档作者、项目管理员、项目负责人和工作区管理员能开关</span>
                   )}
                 </div>
                 {isPrivate && !share.anchor && (

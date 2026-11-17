@@ -10,6 +10,7 @@ from plane.api.views.team_view import TeamViewDetailAPIEndpoint, TeamViewListCre
 from plane.api.views.team_page import (
     TeamIssuePagesAPIEndpoint,
     TeamPageDetailAPIEndpoint,
+    TeamPageImageAPIEndpoint,
     TeamPageIssuesAPIEndpoint,
     TeamPageListCreateAPIEndpoint,
 )
@@ -34,6 +35,11 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:pk>/work-items/",
         TeamPageIssuesAPIEndpoint.as_view(http_method_names=["get"]),
         name="team-page-issues",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/page-images/",
+        TeamPageImageAPIEndpoint.as_view(http_method_names=["post"]),
+        name="team-page-images",
     ),
     # 项目视图
     path(

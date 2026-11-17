@@ -61,7 +61,7 @@ const http = createHttpServer(async (req, res) => {
   const token = tokenOf(req);
   if (!token) {
     return rpcError(res, 401, `缺少 Loom API Token。到 ${webUrl}/settings/profile/api-tokens 新建一个，按页面上的命令添加。`, {
-      "WWW-Authenticate": 'Bearer realm="team-mcp"',
+      "WWW-Authenticate": 'Bearer realm="loom"',
     });
   }
 
@@ -82,4 +82,4 @@ const http = createHttpServer(async (req, res) => {
   }
 });
 
-http.listen(PORT, () => console.log(`team-mcp ${VERSION} 监听 :${PORT}，Loom ${baseUrl}`));
+http.listen(PORT, () => console.log(`Loom MCP ${VERSION} 监听 :${PORT}，Loom ${baseUrl}`));
