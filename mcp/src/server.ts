@@ -1026,7 +1026,7 @@ server.registerTool(
       title: z.string(),
       markdown: z.string().describe("正文，从二级标题开始，不要写一级标题"),
       doc_id: z.string().optional(),
-      parent_id: z.string().optional().describe("挂在哪篇文档下面：新建时作为父页面；更新时表示把这篇文档移到它下面。相关文档挂在同一个主题页下，不要平铺"),
+      parent_id: z.string().optional().describe("挂在哪篇文档下面：新建时直接作为子文档；更新时表示把这篇文档移到它下面。正文里 [📄 标题](page:ID) 单独一行是子页面块、写在句中是 @ 页面标签。相关文档挂在同一个主题页下，不要平铺"),
       task: z.string().optional().describe("关联的任务编号，写完自动把文档关联到这个任务（任务页和文档页都能看到）"),
     },
   },
