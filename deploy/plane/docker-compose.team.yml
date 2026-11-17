@@ -2,6 +2,9 @@
 # 用法见 deploy/team.sh。
 x-team-api-env: &team-api-env
   # API 调 live 服务做文档增量合并（Pages 二开接口）
+  # 版本：由 team.sh 传入，实例信息和网页里显示
+  APP_VERSION: ${LOOM_VERSION:-}
+  LOOM_COMMIT: ${LOOM_COMMIT:-}
   LIVE_BASE_URL: http://live:3000
   LIVE_BASE_PATH: /live
   # Agent 走 API Token，回顾会扫所有项目，放宽默认的 60 次/分钟
@@ -15,7 +18,7 @@ x-team-api-env: &team-api-env
   LLM_API_KEY: ${LLM_API_KEY:-}
 
 x-team-backend: &team-backend
-  image: team/plane-backend:local
+  image: team/plane-backend:${LOOM_VERSION:-local}
   build:
     context: ../../plane/apps/api
     dockerfile: Dockerfile.api
@@ -29,25 +32,25 @@ services:
   beat-worker: *team-backend
   migrator: *team-backend
   web:
-    image: team/plane-web:local
+    image: team/plane-web:${LOOM_VERSION:-local}
     build: { context: ../../plane, dockerfile: apps/web/Dockerfile.web }
   space:
-    image: team/plane-space:local
+    image: team/plane-space:${LOOM_VERSION:-local}
     build: { context: ../../plane, dockerfile: apps/space/Dockerfile.space }
   admin:
-    image: team/plane-admin:local
+    image: team/plane-admin:${LOOM_VERSION:-local}
     build: { context: ../../plane, dockerfile: apps/admin/Dockerfile.admin }
   live:
-    image: team/plane-live:local
+    image: team/plane-live:${LOOM_VERSION:-local}
     build: { context: ../../plane, dockerfile: apps/live/Dockerfile.live }
   proxy:
-    image: team/plane-proxy:local
+    image: team/plane-proxy:local  # 反向代理没有二开改动，不跟版本号走（构建它要联网拉 caddy 插件）
     build: { context: ../../plane/apps/proxy, dockerfile: Dockerfile.ce }
 
   # 团队 MCP：成员在 Claude Code 里只填一个网址和自己的 Plane API Token（http://<地址>/mcp/<工作区>），
   # 由 Caddy 把 /mcp/* 转到这里。无状态，不存 Token，随 Plane 一起升级。
   team-mcp:
-    image: team/team-mcp:local
+    image: team/team-mcp:${LOOM_VERSION:-local}
     build: { context: ../../mcp }
     command: ["node", "dist/http.js"]
     restart: unless-stopped
@@ -55,11 +58,13 @@ services:
       PORT: 3000
       PLANE_BASE_URL: http://api:8000
       PLANE_WEB_URL: ${WEB_URL}
+      LOOM_VERSION: ${LOOM_VERSION:-}
+      LOOM_COMMIT: ${LOOM_COMMIT:-}
     depends_on:
       - api
 
   team-review:
-    image: team/team-mcp:local
+    image: team/team-mcp:${LOOM_VERSION:-local}
     build: { context: ../../mcp }
     restart: unless-stopped
     profiles: [review]

@@ -18,7 +18,11 @@ import { buildDigest, publishDigest } from "./review.ts";
 import { usageGuide } from "./usage.ts";
 import { agentCanSet, findState, HUMAN_ONLY_HINT, TASK_STATES } from "./workflow.ts";
 
-export const VERSION = (JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { version: string }).version;
+const PKG_VERSION = (JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { version: string }).version;
+// 版本号以仓库根目录 VERSION 为准：部署时由 team.sh 通过环境变量传入，本机开发时读 package.json
+export const VERSION = process.env.LOOM_VERSION || PKG_VERSION;
+export const COMMIT = process.env.LOOM_COMMIT || "";
+export const VERSION_LABEL = `${VERSION}${COMMIT ? `（${COMMIT}）` : ""}`;
 
 export type Env = {
   config: Config;
@@ -495,7 +499,7 @@ server.registerTool(
       topic === "lessons"
         ? LESSON_GUIDE
         : topic === "usage"
-          ? usageGuide(CONFIG.webUrl, CONFIG.workspace)
+          ? `${usageGuide(CONFIG.webUrl, CONFIG.workspace)}\n\n（本指南对应 Loom ${VERSION}）`
           : type
             ? `${WRITING_GUIDE}\n\n${templateGuide(type)}`
             : WRITING_GUIDE,
@@ -544,7 +548,7 @@ server.registerTool(
           ? `关联的是 ${unjoined.map((p) => p.identifier).join("、")}，但你还不是成员，请项目管理员在网页上把你加进项目`
           : `未关联。${notBoundMessage(sc, CONFIG.webUrl, local)}`;
       return text(
-        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nLoom：${CONFIG.webUrl}${local ? `（API ${CONFIG.baseUrl}）` : ""}\nLoom MCP：${VERSION}（${local ? "本机" : "远程"}）\n仓库：${sc.remotes.join("、") || "未提供"}\n团队项目：${repo}\n不熟悉怎么用？调用 get_guide（topic=usage）看任务、页面、周期、模块、视图的用法。`,
+        `账号：${me.display_name}（${me.email}）\n工作区：${CONFIG.workspace}\nLoom：${CONFIG.webUrl}${local ? `（API ${CONFIG.baseUrl}）` : ""}\nLoom 版本：${VERSION_LABEL}（MCP ${local ? "本机" : "远程"}）\n仓库：${sc.remotes.join("、") || "未提供"}\n团队项目：${repo}\n不熟悉怎么用？调用 get_guide（topic=usage）看任务、页面、周期、模块、视图的用法。`,
       );
     }),
 );

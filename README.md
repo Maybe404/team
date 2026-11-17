@@ -84,6 +84,12 @@ docker compose -p team exec -T plane-db sh -c 'PGPASSWORD=$POSTGRES_PASSWORD pg_
 
 Plane 自带的“访客”角色用不上，邀请时不要选。Agent 用的 API Token 不论谁的，都不能删除、管理成员或改项目设置，这些只能由人在网页上做。
 
+### 版本和发版
+
+版本号只在仓库根目录 `VERSION` 里改（`x.y.z`）。`deploy/team.sh build` 会自动把它写进各个 `package.json`，镜像按版本打标签（`team/plane-web:0.11.1`），网页左下角帮助菜单、实例设置页、MCP 的 `whoami` 和使用指南都显示它。`deploy/team.sh version` 看当前版本和提交号。
+
+发版步骤：改 `VERSION` → 在 `CHANGELOG.md` 顶部加这一版 → 提交 → `git tag v<版本> && git push origin main --tags` → 服务器上 `git pull`，`deploy/team.sh build`、`up`。
+
 ### 管理员
 
 1. 打开 `http://localhost:47080/god-mode`，建实例管理员账号，然后回到首页建工作区（slug 用小写英文，例如 `team`）。
