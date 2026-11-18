@@ -27,7 +27,17 @@ export type TNotificationIssueLite = {
   state_group: string | undefined;
 };
 
+export type TNotificationTeamData = {
+  kind: "edit_request" | "edit_approved" | "edit_rejected" | "edit_added";
+  entity_type: "page" | "issue";
+  title: string;
+  url: string;
+  message?: string;
+};
+
 export type TNotificationData = {
+  // [team 二开] 编辑权限相关通知（申请、批准、拒绝、被加为共同维护人），没有 issue 字段
+  team?: TNotificationTeamData;
   issue: TNotificationIssueLite | undefined;
   issue_activity: {
     id: string | undefined;

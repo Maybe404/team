@@ -6,8 +6,9 @@
 
 // [team 二开] 编辑权限：没有编辑权限的成员可以申请；拥有者（文档作者、工作项创建人和指派人）和管理员可以批准申请，
 // 也可以直接指定共同维护人。文档和工作项通用。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { observer } from "mobx-react";
+import { useTranslation } from "@plane/i18n";
 import { Button } from "@makeplane/propel/components/button";
 import {
   Dialog,
@@ -58,6 +59,7 @@ const service = new TeamAccessService();
 /** 页面内的一行输入 + 确认/取消，代替浏览器自带的 prompt 弹窗 */
 function InlineAsk(props: { placeholder: string; confirmLabel: string; busy?: boolean; onConfirm: (value: string) => void; onCancel: () => void }) {
   const { placeholder, confirmLabel, busy, onConfirm, onCancel } = props;
+  const { t } = useTranslation();
   const [value, setValue] = useState("");
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -74,30 +76,44 @@ function InlineAsk(props: { placeholder: string; confirmLabel: string; busy?: bo
         className="min-w-48 flex-1 rounded-md border border-subtle bg-layer-1 px-2 py-1 text-caption-md-regular text-primary outline-none focus:border-accent-strong"
       />
       <Button variant="primary" size="sm" stretch="auto" loading={busy} label={confirmLabel} onClick={() => onConfirm(value.trim())} />
-      <Button variant="ghost" size="sm" stretch="auto" label="取消" onClick={onCancel} />
+      <Button variant="ghost" size="sm" stretch="auto" label={t("loom.common.cancel")} onClick={onCancel} />
     </div>
   );
 }
 
-const errMsg = (e: unknown) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "请稍后再试";
+const errMsg = (e: unknown): string | undefined => (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
 
 export function useAccessStatus(workspaceSlug: string, type: TAccessType, id: string | undefined) {
   const [status, setStatus] = useState<TAccessStatus | null>(null);
+  const latestKey = useRef("");
+  const key = `${workspaceSlug}|${type}|${id ?? ""}`;
+  latestKey.current = key;
   const reload = useCallback(() => {
     if (!workspaceSlug || !id) return;
     service
       .fetch(workspaceSlug, type, id)
-      .then(setStatus)
-      .catch(() => setStatus(null));
+      // 切换到别的工作项后，晚到的旧请求不能覆盖当前状态
+      .then((s) => {
+        if (latestKey.current === `${workspaceSlug}|${type}|${id}`) setStatus(s);
+      })
+      .catch(() => {
+        if (latestKey.current === `${workspaceSlug}|${type}|${id}`) setStatus(null);
+      });
   }, [workspaceSlug, type, id]);
-  useEffect(reload, [reload]);
-  return { status, setStatus, reload };
+  // 对象变了先清空，避免短暂沿用上一个对象的编辑状态
+  useEffect(() => {
+    setStatus(null);
+    reload();
+  }, [reload]);
+  // 状态属于哪个对象：不属于当前对象时当作还没加载
+  return { status: status && status.entity_id === id ? status : null, setStatus, reload };
 }
 
 /** 没有编辑权限时显示在页面顶部的提示条：说明现状，可以申请。 */
 export function AccessRequestBar(props: { workspaceSlug: string; type: TAccessType; id: string | undefined }) {
   const { workspaceSlug, type, id } = props;
   const { status, setStatus } = useAccessStatus(workspaceSlug, type, id);
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   if (!status || status.can_edit) return null;
@@ -107,10 +123,10 @@ export function AccessRequestBar(props: { workspaceSlug: string; type: TAccessTy
     setBusy(true);
     try {
       setStatus(await service.act(workspaceSlug, type, id, { action: "request", message }));
-      setToast({ type: "success", title: "已发出申请", message: "拥有者批准后你就能编辑了" });
+      setToast({ type: "success", title: t("loom.access.request_sent"), message: t("loom.access.request_sent_hint") });
       setAsking(false);
     } catch (e) {
-      setToast({ type: "error", title: "申请失败", message: errMsg(e) });
+      setToast({ type: "error", title: t("loom.access.request_failed"), message: errMsg(e) ?? t("loom.common.retry_later") });
     } finally {
       setBusy(false);
     }
@@ -118,15 +134,15 @@ export function AccessRequestBar(props: { workspaceSlug: string; type: TAccessTy
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-subtle bg-layer-2 px-5 py-2 text-caption-md-regular text-secondary">
       <span className="flex-1">
-        你现在只能阅读和评论。拥有者：{status.owners.map((o) => o.name).join("、") || "—"}
-        {status.my_request?.status === "rejected" ? "（上次申请被拒绝了，可以再申请）" : ""}
+        {t("loom.access.read_only_bar", { owners: status.owners.map((o) => o.name).join(", ") || "—" })}
+        {status.my_request?.status === "rejected" ? ` ${t("loom.access.last_rejected")}` : ""}
       </span>
       {pending ? (
-        <span className="text-tertiary">已申请，等待批准</span>
+        <span className="text-tertiary">{t("loom.access.you_requested")}</span>
       ) : asking ? (
-        <InlineAsk placeholder="给拥有者留句话（可以留空）" confirmLabel="发出申请" busy={busy} onConfirm={(m) => void ask(m)} onCancel={() => setAsking(false)} />
+        <InlineAsk placeholder={t("loom.access.request_placeholder")} confirmLabel={t("loom.access.request_confirm")} busy={busy} onConfirm={(m) => void ask(m)} onCancel={() => setAsking(false)} />
       ) : (
-        <Button variant="secondary" size="sm" stretch="auto" label="申请编辑权限" onClick={() => setAsking(true)} />
+        <Button variant="secondary" size="sm" stretch="auto" label={t("loom.access.request_button")} onClick={() => setAsking(true)} />
       )}
     </div>
   );
@@ -136,6 +152,7 @@ type ModalProps = { isOpen: boolean; onClose: () => void; workspaceSlug: string;
 
 /** 编辑权限弹窗：拥有者和管理员看到共同维护人和待批准的申请；其他人看到现状并可以申请。 */
 export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClose, workspaceSlug, type, id }: ModalProps) {
+  const { t } = useTranslation();
   const { status, setStatus, reload } = useAccessStatus(workspaceSlug, type, isOpen ? id : undefined);
   const [asking, setAsking] = useState(false);
   const {
@@ -154,7 +171,7 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
       setStatus(await service.act(workspaceSlug, type, id, body));
       setToast({ type: "success", title: okTitle });
     } catch (e) {
-      setToast({ type: "error", title: "操作失败", message: errMsg(e) });
+      setToast({ type: "error", title: t("loom.access.action_failed"), message: errMsg(e) ?? t("loom.common.retry_later") });
     } finally {
       setBusy(false);
     }
@@ -169,24 +186,24 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
         <DialogMain>
           <DialogHeader>
             <DialogHeading>
-              <DialogTitle>编辑权限</DialogTitle>
+              <DialogTitle>{t("loom.access.title")}</DialogTitle>
               <DialogDescription>
-                {type === "page" ? "文档作者" : "工作项创建人和指派人"}和管理员可以编辑。别人想改，可以申请；也可以直接指定共同维护人。
+                {type === "page" ? t("loom.access.desc_page") : t("loom.access.desc_issue")}
               </DialogDescription>
             </DialogHeading>
           </DialogHeader>
           <DialogBody>
             {!status ? (
-              <div className="text-body-sm-regular text-tertiary">加载中…</div>
+              <div className="text-body-sm-regular text-tertiary">{t("loom.access.loading")}</div>
             ) : (
               <div className="flex flex-col gap-4 text-body-sm-regular text-primary">
                 <div>
-                  <div className="mb-1 text-caption-md-medium text-tertiary">拥有者</div>
-                  <div>{status.owners.map((o) => o.name).join("、") || "—"}</div>
+                  <div className="mb-1 text-caption-md-medium text-tertiary">{t("loom.access.owners")}</div>
+                  <div>{status.owners.map((o) => o.name).join(", ") || "—"}</div>
                 </div>
                 <div>
-                  <div className="mb-1 text-caption-md-medium text-tertiary">共同维护人</div>
-                  {status.editors.length === 0 && <div className="text-tertiary">还没有</div>}
+                  <div className="mb-1 text-caption-md-medium text-tertiary">{t("loom.access.co_maintainers")}</div>
+                  {status.editors.length === 0 && <div className="text-tertiary">{t("loom.access.none_yet")}</div>}
                   {status.editors.map((p) => (
                     <div key={p.id} className="flex items-center justify-between py-0.5">
                       <span>{p.name}</span>
@@ -195,9 +212,9 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
                           type="button"
                           disabled={busy}
                           className="text-caption-sm-regular text-danger-primary hover:underline"
-                          onClick={() => void run({ action: "remove_editor", user_id: p.id }, "已移除")}
+                          onClick={() => void run({ action: "remove_editor", user_id: p.id }, t("loom.access.removed"))}
                         >
-                          移除
+                          {t("loom.access.remove")}
                         </button>
                       )}
                     </div>
@@ -209,7 +226,7 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
                         onChange={(e) => setPick(e.target.value)}
                         className="min-w-0 flex-1 rounded border border-subtle bg-layer-1 px-2 py-1 text-caption-md-regular"
                       >
-                        <option value="">选择成员…</option>
+                        <option value="">{t("loom.access.select_member")}</option>
                         {candidates.map((m) => (
                           <option key={m} value={m}>
                             {getUserDetails(m)?.display_name ?? m}
@@ -221,9 +238,9 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
                         size="sm"
                         stretch="auto"
                         disabled={!pick || busy}
-                        label="添加"
+                        label={t("loom.access.add")}
                         onClick={() => {
-                          void run({ action: "add_editor", user_id: pick }, "已添加共同维护人");
+                          void run({ action: "add_editor", user_id: pick }, t("loom.access.added"));
                           setPick("");
                         }}
                       />
@@ -232,8 +249,8 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
                 </div>
                 {status.can_manage && (
                   <div>
-                    <div className="mb-1 text-caption-md-medium text-tertiary">待批准的申请</div>
-                    {(status.requests ?? []).length === 0 && <div className="text-tertiary">没有</div>}
+                    <div className="mb-1 text-caption-md-medium text-tertiary">{t("loom.access.pending_requests")}</div>
+                    {(status.requests ?? []).length === 0 && <div className="text-tertiary">{t("loom.access.none")}</div>}
                     {(status.requests ?? []).map((r) => (
                       <div key={r.id} className="flex items-center justify-between gap-2 py-1">
                         <div className="min-w-0">
@@ -241,8 +258,8 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
                           {r.message && <div className="truncate text-caption-sm-regular text-tertiary">{r.message}</div>}
                         </div>
                         <div className="flex shrink-0 gap-2">
-                          <Button variant="primary" size="sm" stretch="auto" disabled={busy} label="同意" onClick={() => void run({ action: "decide", request_id: r.id, approve: true }, "已同意")} />
-                          <Button variant="secondary" size="sm" stretch="auto" disabled={busy} label="拒绝" onClick={() => void run({ action: "decide", request_id: r.id, approve: false }, "已拒绝")} />
+                          <Button variant="primary" size="sm" stretch="auto" disabled={busy} label={t("loom.access.approve")} onClick={() => void run({ action: "decide", request_id: r.id, approve: true }, t("loom.access.approved"))} />
+                          <Button variant="secondary" size="sm" stretch="auto" disabled={busy} label={t("loom.access.reject")} onClick={() => void run({ action: "decide", request_id: r.id, approve: false }, t("loom.access.rejected"))} />
                         </div>
                       </div>
                     ))}
@@ -251,20 +268,20 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
                 {!status.can_edit && (
                   <div>
                     {status.my_request?.status === "pending" ? (
-                      <span className="text-tertiary">你已申请，等待批准</span>
+                      <span className="text-tertiary">{t("loom.access.you_requested")}</span>
                     ) : asking ? (
                       <InlineAsk
-                        placeholder="给拥有者留句话（可以留空）"
-                        confirmLabel="发出申请"
+                        placeholder={t("loom.access.request_placeholder")}
+                        confirmLabel={t("loom.access.request_confirm")}
                         busy={busy}
                         onConfirm={(message) => {
-                          void run({ action: "request", message }, "已发出申请");
+                          void run({ action: "request", message }, t("loom.access.request_sent"));
                           setAsking(false);
                         }}
                         onCancel={() => setAsking(false)}
                       />
                     ) : (
-                      <Button variant="primary" size="sm" stretch="auto" disabled={busy} label="申请编辑权限" onClick={() => setAsking(true)} />
+                      <Button variant="primary" size="sm" stretch="auto" disabled={busy} label={t("loom.access.request_button")} onClick={() => setAsking(true)} />
                     )}
                   </div>
                 )}
@@ -273,7 +290,7 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
           </DialogBody>
         </DialogMain>
         <DialogActions>
-          <Button variant="secondary" size="sm" stretch="auto" label="关闭" onClick={onClose} />
+          <Button variant="secondary" size="sm" stretch="auto" label={t("loom.common.close")} onClick={onClose} />
         </DialogActions>
       </DialogContent>
     </Dialog>
@@ -283,6 +300,7 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
 /** 侧栏里的一小块：一句话说明谁能编辑，点开弹窗申请或管理。 */
 export function AccessSection(props: { workspaceSlug: string; type: TAccessType; id: string }) {
   const { workspaceSlug, type, id } = props;
+  const { t } = useTranslation();
   const { status, reload } = useAccessStatus(workspaceSlug, type, id);
   const [open, setOpen] = useState(false);
   if (!status) return null;
@@ -290,16 +308,16 @@ export function AccessSection(props: { workspaceSlug: string; type: TAccessType;
   return (
     <div className="flex flex-col gap-1 text-caption-md-regular text-secondary">
       <div>
-        {status.can_edit ? "你可以编辑" : "你只能阅读和评论"}
-        {status.editors.length > 0 ? `；共同维护：${status.editors.map((e) => e.name).join("、")}` : ""}
+        {status.can_edit ? t("loom.access.can_edit") : t("loom.access.can_only_read")}
+        {status.editors.length > 0 ? `; ${t("loom.access.co_maintainers_line", { names: status.editors.map((e) => e.name).join(", ") })}` : ""}
       </div>
-      {pendingCount > 0 && <div className="text-accent-primary">有 {pendingCount} 个编辑申请等你处理</div>}
+      {pendingCount > 0 && <div className="text-accent-primary">{t("loom.access.pending_count", { count: pendingCount })}</div>}
       <button
         type="button"
         className="self-start text-accent-primary hover:underline"
         onClick={() => setOpen(true)}
       >
-        {status.can_manage ? "管理编辑权限" : status.can_edit ? "查看编辑权限" : "申请编辑权限"}
+        {status.can_manage ? t("loom.access.manage") : status.can_edit ? t("loom.access.view") : t("loom.access.request_button")}
       </button>
       <TeamAccessModal
         isOpen={open}

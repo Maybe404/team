@@ -26,10 +26,12 @@ from rest_framework.response import Response
 from plane.app.permissions import ProjectEntityPermission
 from plane.app.serializers import PageSerializer
 from plane.bgtasks.page_transaction_task import page_transaction
-from plane.db.models import FileAsset, Page, PageVersion, Workspace
+from plane.db.models import FileAsset, Issue, IssueDescriptionVersion, Page, PageVersion, Workspace
 from plane.settings.storage import S3Storage
 from plane.utils.team_page_tree import check_parent, hidden_page_ids
-from plane.utils.team_edit_policy import can_edit_page
+from plane.utils.team_access import can_view_entity
+from plane.utils.team_edit_policy import can_edit_issue, can_edit_page
+from plane.utils import team_issue_version as iv
 from plane.utils.team_page_version import record_change, snapshot_current, version_dict
 from plane.utils.url import normalize_url_path
 
@@ -373,3 +375,74 @@ class TeamPageVersionsAPIEndpoint(TeamPageBase):
             fields.append("label")
         v.save(update_fields=fields)
         return Response(version_dict(v))
+
+
+# 工作项描述版本（Agent 用）：和文档版本同一套动作
+class TeamIssueVersionsAPIEndpoint(BaseAPIView):
+    permission_classes = [ProjectEntityPermission]
+
+    def _issue(self, request, slug, project_id, pk):
+        issue = Issue.objects.filter(workspace__slug=slug, project_id=project_id, pk=pk).first()
+        if issue is None or not can_view_entity(request.user, "issue", issue, project_id=project_id):
+            return None
+        return issue
+
+    def get(self, request, slug, project_id, pk, version_id=None):
+        issue = self._issue(request, slug, project_id, pk)
+        if issue is None:
+            return Response({"error": "工作项不存在"}, status=status.HTTP_404_NOT_FOUND)
+        qs = IssueDescriptionVersion.objects.filter(issue_id=issue.id)
+        if version_id:
+            v = qs.filter(pk=version_id).first()
+            if v is None:
+                return Response({"error": "没有这个版本"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(iv.version_dict(v, with_body=True))
+        latest = qs.order_by("-last_saved_at").first()
+        return Response({
+            "versions": [iv.version_dict(v) for v in qs.order_by("-last_saved_at")],
+            "current_matches": bool(latest and latest.description_html == issue.description_html),
+        })
+
+    def post(self, request, slug, project_id, pk, version_id=None):
+        issue = self._issue(request, slug, project_id, pk)
+        if issue is None:
+            return Response({"error": "工作项不存在"}, status=status.HTTP_404_NOT_FOUND)
+        if not can_edit_issue(request.user, issue):
+            return Response({"error": "没有编辑权限。可以先申请编辑权限（doc_access）。"}, status=status.HTTP_403_FORBIDDEN)
+        if not version_id:
+            v, created = iv.snapshot_current(issue, request.user, label=request.data.get("label") or "", lock=bool(request.data.get("lock")), source="manual")
+            return Response({**iv.version_dict(v), "created": created})
+        target = IssueDescriptionVersion.objects.filter(issue_id=issue.id, pk=version_id).first()
+        if target is None:
+            return Response({"error": "没有这个版本"}, status=status.HTTP_404_NOT_FOUND)
+        save_current = bool(request.data.get("save_current", True))
+        saved = None
+        if save_current:
+            saved, _ = iv.snapshot_current(issue, request.user, label="恢复前自动保存", source="before-restore")
+        old_state = (issue.description_html, issue.description_binary, issue.description_json, issue.description_stripped)
+        issue.description_html = target.description_html
+        issue.description_json = target.description_json or {}
+        issue.description_stripped = target.description_stripped
+        issue.description_binary = target.description_binary
+        issue.save()
+        iv.record_change(issue, request.user, old_state, source="restore", keep_before=save_current)
+        return Response({"restored": iv.version_dict(target), "saved_current": iv.version_dict(saved) if saved else None})
+
+    def patch(self, request, slug, project_id, pk, version_id=None):
+        issue = self._issue(request, slug, project_id, pk)
+        if issue is None or not version_id:
+            return Response({"error": "工作项或版本不存在"}, status=status.HTTP_404_NOT_FOUND)
+        if not can_edit_issue(request.user, issue):
+            return Response({"error": "没有编辑权限"}, status=status.HTTP_403_FORBIDDEN)
+        v = IssueDescriptionVersion.objects.filter(issue_id=issue.id, pk=version_id).first()
+        if v is None:
+            return Response({"error": "没有这个版本"}, status=status.HTTP_404_NOT_FOUND)
+        fields = ["updated_at"]
+        if "is_locked" in request.data:
+            v.is_locked = bool(request.data["is_locked"])
+            fields.append("is_locked")
+        if "label" in request.data:
+            v.label = str(request.data["label"] or "")[:255]
+            fields.append("label")
+        v.save(update_fields=fields)
+        return Response(iv.version_dict(v))

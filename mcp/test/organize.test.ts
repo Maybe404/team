@@ -50,7 +50,19 @@ const plane = {
   updateView: async (_p: string, id: string, b: Record<string, unknown>) => { const v = views.find((x) => x.id === id)!; Object.assign(v, b); return v; },
   updateWorkItem: async () => ({}),
   createWorkItem: async (_p: string, b: Record<string, unknown>) => { items.push(mkItem(4, "s1", String(b.name))); return items[3]; },
+  listVersions: async (_p: string, id: string, kind = "pages") => { calls.push(`vlist ${kind} ${id}`); return { versions: [{ id: "v1", last_saved_at: now, owned_by: "u1", is_locked: true, label: "定稿", source: "manual" }], current_matches: true }; },
+  saveVersion: async (_p: string, id: string, b: { label?: string }, kind = "pages") => { calls.push(`vsave ${kind} ${id} ${b.label}`); return { id: "v2", last_saved_at: now, owned_by: "u1", is_locked: false, label: b.label ?? "", source: "manual", created: true }; },
+  listIntake: async () => intake,
+  createIntake: async (_p: string, issue: { name: string; description_html: string; priority?: string }) => {
+    const row = { id: `in${intake.length + 1}`, issue: `x${intake.length + 1}`, status: -2, created_by: "u1", issue_detail: { name: issue.name, description_html: issue.description_html, priority: issue.priority } };
+    intake.push(row);
+    calls.push(`intake ${issue.name}`);
+    return row;
+  },
+  decideIntake: async (_p: string, id: string, b: Record<string, unknown>) => { calls.push(`decide ${id} ${JSON.stringify(b)}`); const r = intake.find((x) => x.issue === id)!; Object.assign(r, b); return r; },
+  createComment: async (_p: string, id: string, html: string) => { calls.push(`comment ${id} ${html.includes("拒绝原因")}`); return {}; },
 };
+const intake: { id: string; issue: string; status: number; created_by: string; issue_detail: { name: string; description_html: string; priority?: string } }[] = [];
 
 const [ct, st] = InMemoryTransport.createLinkedPair();
 const server = createServer({ config: { token: "t", workspace: "w", webUrl: "http://loom", baseUrl: "http://loom" } as never, plane: plane as never, local: false });
@@ -222,4 +234,55 @@ test("list_docs 按层级缩进，父文档不在结果里的当顶层", () => {
   assert.match(lines[3], /^- x　/);
   // 成环不死循环
   assert.ok(formatDocTree([d("p", "q"), d("q", "p")]).length >= 0);
+});
+
+
+test("收集：提交、查看、接受、拒绝（带原因留痕）", async () => {
+  const sub = await call("intake_submit", { project: "DEMO", title: "也许要支持离线导出", description: "背景：客户在内网环境，导出要走离线。\n\n不确定：是否值得做。", priority: "low" });
+  assert.ok(!sub.error, sub.text);
+  assert.match(sub.text, /条目 ID：x1/);
+  await call("intake_submit", { project: "DEMO", title: "导出按钮位置不统一", description: "三个页面的导出按钮位置不同。" });
+  const list = await call("intake_list", { project: "DEMO" });
+  assert.match(list.text, /x1.*待处理.*也许要支持离线导出/);
+  assert.match(list.text, /x2/);
+  const ok = await call("intake_decide", { project: "DEMO", item: "x1", action: "accept" });
+  assert.ok(!ok.error, ok.text);
+  assert.ok(calls.some((c) => c === 'decide x1 {"status":1}'));
+  const no = await call("intake_decide", { project: "DEMO", item: "x2", action: "reject", reason: "和现有设计规范重复，已经统一过。" });
+  assert.ok(!no.error, no.text);
+  assert.ok(calls.some((c) => c === 'decide x2 {"status":-1}'));
+  assert.ok(calls.includes("comment x2 true"));
+  const pending = await call("intake_list", { project: "DEMO" });
+  assert.match(pending.text, /没有待处理/);
+  const snooze = await call("intake_decide", { project: "DEMO", item: "x2", action: "snooze" });
+  assert.ok(snooze.error);
+});
+
+
+test("task_versions：工作项描述版本走 issues 路径，和文档版本共用逻辑", async () => {
+  const l = await call("task_versions", { task: "DEMO-1", action: "list" });
+  assert.ok(!l.error, l.text);
+  assert.match(l.text, /v1.*小明.*🔒.*「定稿」.*手动保存/);
+  assert.ok(calls.includes("vlist issues i1"));
+  const sv = await call("task_versions", { task: "DEMO-1", action: "save", label: "评审前" });
+  assert.ok(!sv.error, sv.text);
+  assert.ok(calls.includes("vsave issues i1 评审前"));
+  const d = await call("doc_versions", { doc_id: "pg1", action: "list" });
+  assert.ok(calls.includes("vlist pages pg1"), d.text);
+});
+
+
+test("收集：状态没变要报错，评论失败要提示；搜索范围为空不调接口", async () => {
+  const row = { id: "inx", issue: "x9", status: -2, created_by: "u1", issue_detail: { name: "忽略型", description_html: "" } };
+  intake.push(row);
+  const orig = plane.decideIntake;
+  plane.decideIntake = async () => row; // 模拟服务端忽略了改动，仍返回 200 和旧状态
+  const r = await call("intake_decide", { project: "DEMO", item: "x9", action: "accept" });
+  assert.ok(r.error && /没有改动成功/.test(r.text), r.text);
+  plane.decideIntake = orig;
+  const oc = plane.createComment;
+  plane.createComment = async () => { throw new Error("boom"); };
+  const w = await call("intake_decide", { project: "DEMO", item: "x9", action: "reject", reason: "和现有设计规范重复，已经统一过。" });
+  assert.ok(!w.error && /原因评论没有写进去/.test(w.text), w.text);
+  plane.createComment = oc;
 });

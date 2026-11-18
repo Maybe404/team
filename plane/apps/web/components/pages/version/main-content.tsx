@@ -67,7 +67,7 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
   const saveCurrentSnapshot = async () => {
     if (!pageId || !workspaceSlug || !projectId) return;
     await new ProjectPageVersionService().saveSnapshot(workspaceSlug.toString(), projectId.toString(), pageId, {
-      label: "恢复前自动保存",
+      label: t("loom.version.auto_save_label"),
     });
   };
 
@@ -80,7 +80,7 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
       try {
         await saveCurrentSnapshot();
       } catch {
-        setToast({ type: "error", title: "没能先保存当前内容，已取消恢复" });
+        setToast({ type: "error", title: t("loom.version.save_before_failed") });
         setIsRestoring(false);
         return;
       }
@@ -159,10 +159,10 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
           </div>
           {confirming && (
             <div className="flex flex-wrap items-center gap-2 border-b border-subtle bg-layer-2 px-5 py-3 text-body-sm-regular text-primary">
-              <span className="flex-1">恢复到这个版本前，要不要先把当前内容保存成一个版本？不保存的话，当前未存为版本的改动可能找不回。</span>
-              <Button variant="primary" size="sm" stretch="auto" label="保存当前并恢复" onClick={() => void handleRestoreVersion(true)} />
-              <Button variant="secondary" size="sm" stretch="auto" label="不保存，直接恢复" onClick={() => void handleRestoreVersion(false)} />
-              <Button variant="ghost" size="sm" stretch="auto" label="取消" onClick={() => setConfirming(false)} />
+              <span className="flex-1">{t("loom.version.confirm_text")}</span>
+              <Button variant="primary" size="sm" stretch="auto" label={t("loom.version.save_and_restore")} onClick={() => void handleRestoreVersion(true)} />
+              <Button variant="secondary" size="sm" stretch="auto" label={t("loom.version.restore_without_saving")} onClick={() => void handleRestoreVersion(false)} />
+              <Button variant="ghost" size="sm" stretch="auto" label={t("loom.common.cancel")} onClick={() => setConfirming(false)} />
             </div>
           )}
           <div className="vertical-scrollbar scrollbar-sm h-full overflow-y-scroll pt-8">

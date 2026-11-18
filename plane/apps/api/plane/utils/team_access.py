@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 
-from plane.db.models import Issue, IssueAssignee, Page, ProjectMember, ProjectPage, TeamEditor, TeamEditRequest, User, Workspace, WorkspaceMember
+from plane.db.models import Notification, Issue, IssueAssignee, Page, Project, ProjectMember, ProjectPage, TeamEditor, TeamEditRequest, User, Workspace, WorkspaceMember
 from plane.utils.team_edit_policy import can_edit_issue, can_edit_page, is_workspace_admin
 
 
@@ -29,8 +29,14 @@ def can_view_entity(user, entity_type, obj, project_id=None):
 
     pids = [project_id] if project_id else entity_project_ids(entity_type, obj)
     for pid in pids:
-        if not ProjectMember.objects.filter(project_id=pid, member=user, is_active=True).exists():
+        member = ProjectMember.objects.filter(project_id=pid, member=user, is_active=True).first()
+        if member is None:
             continue
+        # 受限访客：项目没开「访客可看全部」时，只看得到自己创建的工作项、自己写的文档
+        if member.role == 5 and not Project.objects.filter(pk=pid, guest_view_all_features=True).exists():
+            creator = obj.created_by_id if entity_type == "issue" else obj.owned_by_id
+            if creator != user.id:
+                continue
         if entity_type == "page":
             if obj.access == Page.PRIVATE_ACCESS and obj.owned_by_id != user.id:
                 continue
@@ -119,6 +125,42 @@ def pending_for_user(user, slug):
     return out
 
 
+def notify(kind, ws, entity_type, obj, actor, receiver_ids, message=""):
+    """网页通知中心里的编辑权限通知。kind：edit_request / edit_approved / edit_rejected / edit_added。
+    data.team 给前端渲染（文字由前端按语言生成），data.issue_activity 只是为了兼容通知列表的通用字段。"""
+    pids = entity_project_ids(entity_type, obj)
+    pid = pids[0] if pids else None
+    # 通知里带着标题和链接：只发给现在就看得到这个对象的人
+    receiver_ids = [u.id for u in User.objects.filter(id__in=list(receiver_ids)) if can_view_entity(u, entity_type, obj)]
+    if not receiver_ids:
+        return
+    if entity_type == "issue":
+        url = f"{ws.slug}/browse/{obj.project.identifier}-{obj.sequence_id}"
+    else:
+        url = f"{ws.slug}/projects/{pid}/pages/{obj.id}" if pid else ""
+    rows = [
+        Notification(
+            workspace=ws,
+            project_id=pid,
+            sender=f"in_app:team:{kind}",
+            triggered_by=actor,
+            receiver_id=rid,
+            entity_identifier=obj.id,
+            entity_name=entity_type,
+            title=_title(entity_type, obj),
+            message_stripped=message or None,
+            data={
+                "team": {"kind": kind, "entity_type": entity_type, "title": _title(entity_type, obj), "url": url, "message": message},
+                "issue_activity": {"id": None, "actor": str(actor.id), "field": "team", "verb": "created", "new_value": kind, "old_value": ""},
+            },
+        )
+        for rid in set(receiver_ids)
+        if rid and rid != actor.id
+    ]
+    if rows:
+        Notification.objects.bulk_create(rows)
+
+
 def _bad(msg, code=status.HTTP_400_BAD_REQUEST):
     return Response({"error": msg}, status=code)
 
@@ -145,9 +187,12 @@ def handle_access(request, slug, entity_type, entity_id):
             return _bad("你已经有编辑权限了")
         exists = TeamEditRequest.objects.filter(entity_type=entity_type, entity_id=obj.id, requester=user, status="pending").exists()
         if not exists:
-            TeamEditRequest.objects.create(
-                workspace=ws, entity_type=entity_type, entity_id=obj.id, requester=user, message=(request.data.get("message") or "")[:500]
-            )
+            note = (request.data.get("message") or "")[:500]
+            TeamEditRequest.objects.create(workspace=ws, entity_type=entity_type, entity_id=obj.id, requester=user, message=note)
+            receivers = [i for i in owner_ids(entity_type, obj) if i]
+            if not receivers:  # 拥有者已停用时转给管理员
+                receivers = list(WorkspaceMember.objects.filter(workspace=ws, role=20, is_active=True).values_list("member_id", flat=True))
+            notify("edit_request", ws, entity_type, obj, user, receivers, note)
     elif action in ("add_editor", "remove_editor", "decide"):
         if not can_manage(user, entity_type, obj):
             return _bad("只有拥有者或管理员能管理编辑权限", status.HTTP_403_FORBIDDEN)
@@ -156,19 +201,26 @@ def handle_access(request, slug, entity_type, entity_id):
             if req is None:
                 return _bad("没有这个待处理的申请")
             approve = bool(request.data.get("approve"))
+            if approve and not can_view_entity(req.requester, entity_type, obj):
+                return _bad("申请人现在已经没有这个项目的访问权限，不能批准")
             req.status = "approved" if approve else "rejected"
             req.decided_by = user
             req.decided_at = timezone.now()
             req.save()
             if approve:
                 TeamEditor.objects.get_or_create(entity_type=entity_type, entity_id=obj.id, user_id=req.requester_id, defaults={"workspace": ws})
+            notify("edit_approved" if approve else "edit_rejected", ws, entity_type, obj, user, [req.requester_id])
         else:
             uid = request.data.get("user_id")
             target = User.objects.filter(pk=uid).first()
             if target is None or not WorkspaceMember.objects.filter(workspace=ws, member=target, is_active=True).exists():
                 return _bad("这个成员不在工作区里")
+            if action == "add_editor" and not can_view_entity(target, entity_type, obj):
+                return _bad("这个成员不在该对象所在的项目里（或看不到它），不能加为共同维护人")
             if action == "add_editor":
-                TeamEditor.objects.get_or_create(entity_type=entity_type, entity_id=obj.id, user=target, defaults={"workspace": ws})
+                _, created = TeamEditor.objects.get_or_create(entity_type=entity_type, entity_id=obj.id, user=target, defaults={"workspace": ws})
+                if created:
+                    notify("edit_added", ws, entity_type, obj, user, [target.id])
                 TeamEditRequest.objects.filter(entity_type=entity_type, entity_id=obj.id, requester=target, status="pending").update(
                     status="approved", decided_by=user, decided_at=timezone.now()
                 )

@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { useTranslation } from "@plane/i18n";
 import { observer } from "mobx-react";
 import { ClockOutline } from "@makeplane/propel/icons";
 // plane imports
@@ -15,6 +16,7 @@ import { cn, calculateTimeAgo, renderFormattedDate, renderFormattedTime, getFile
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 import { useNotification } from "@/hooks/store/notifications/use-notification";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
+import { useAppRouter } from "@/hooks/use-app-router";
 import { useWorkspace } from "@/hooks/store/use-workspace";
 // local imports
 import { NotificationContent } from "./content";
@@ -32,6 +34,8 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
   const { asJson: notification, markNotificationAsRead } = useNotification(notificationId);
   const { getIsIssuePeeked, setPeekIssue } = useIssueDetail();
   const { getWorkspaceBySlug } = useWorkspace();
+  const { t } = useTranslation();
+  const router = useAppRouter();
   // states
   const [isSnoozeStateModalOpen, setIsSnoozeStateModalOpen] = useState(false);
   const [customSnoozeModal, setCustomSnoozeModal] = useState(false);
@@ -42,7 +46,8 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
   const isUnread = notification.read_at === null;
   const workspace = getWorkspaceBySlug(workspaceSlug);
 
-  const notificationField = notification?.data?.issue_activity.field || undefined;
+  const notificationField = notification?.data?.issue_activity?.field || undefined;
+  const teamData = notification?.data?.team; // [team 二开] 编辑权限通知
   const notificationTriggeredBy = notification.triggered_by_details || undefined;
 
   const handleNotificationIssuePeekOverview = async () => {
@@ -66,6 +71,58 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
       }
     }
   };
+
+  const handleTeamNotificationClick = async () => {
+    if (!teamData?.url) return;
+    setCurrentSelectedNotificationId(notificationId);
+    if (notification.read_at === null) {
+      try {
+        await markNotificationAsRead(workspaceSlug);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    router.push(`/${teamData.url}`);
+  };
+
+  if (teamData && workspaceSlug && notification?.id) {
+    const name = notificationTriggeredBy?.display_name || notificationTriggeredBy?.first_name || "";
+    const key = `loom.access.notif_${teamData.kind.replace("edit_", "")}` as
+      | "loom.access.notif_request"
+      | "loom.access.notif_approved"
+      | "loom.access.notif_rejected"
+      | "loom.access.notif_added";
+    return (
+      <Row
+        className={cn("group relative flex cursor-pointer items-center gap-2 border-b border-subtle py-4 transition-all", {
+          "bg-layer-1/30": currentSelectedNotificationId === notification?.id,
+        })}
+        onClick={() => void handleTeamNotificationClick()}
+      >
+        {isUnread && <div className="absolute top-[50%] left-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent-primary" />}
+        <div className="relative flex w-full gap-2">
+          <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-layer-1">
+            {notificationTriggeredBy && (
+              <Avatar
+                alt={name}
+                fallback={name?.[0]?.toUpperCase()}
+                src={getFileURL(notificationTriggeredBy.avatar_url)}
+                size="xl"
+              />
+            )}
+          </div>
+          <div className="w-full space-y-1">
+            <div className={cn("line-clamp-2 w-full break-words", isUnread ? "text-body-xs-semibold text-primary" : "text-body-xs-regular text-secondary")}>
+              {t(key, { name })}
+            </div>
+            <div className="line-clamp-1 text-caption-sm-regular text-secondary">{teamData.title}</div>
+            {teamData.message && <div className="line-clamp-1 text-caption-sm-regular text-tertiary">“{teamData.message}”</div>}
+            <p className="text-caption-sm-regular text-tertiary">{notification.created_at && calculateTimeAgo(notification.created_at)}</p>
+          </div>
+        </div>
+      </Row>
+    );
+  }
 
   if (!workspaceSlug || !notificationId || !notification?.id || !notificationField || !workspace?.id || !projectId)
     return <></>;

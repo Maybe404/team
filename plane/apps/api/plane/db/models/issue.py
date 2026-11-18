@@ -791,6 +791,10 @@ class IssueDescriptionVersion(ProjectBaseModel):
         on_delete=models.CASCADE,
         related_name="issue_description_versions",
     )
+    # [team 二开] 和文档版本一致：可命名、可锁定、记录来源
+    is_locked = models.BooleanField(default=False)
+    label = models.CharField(max_length=255, blank=True, default="")
+    source = models.CharField(max_length=32, blank=True, default="editor")
 
     class Meta:
         verbose_name = "Issue Description Version"

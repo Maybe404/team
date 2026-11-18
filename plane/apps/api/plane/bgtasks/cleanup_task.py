@@ -105,16 +105,18 @@ def get_email_logs_queryset():
 
 
 def get_page_versions_queryset():
-    """Get page versions beyond the maximum allowed (20 per page)."""
+    """Get unlocked page versions beyond the maximum allowed per page (see team_page_version.MAX_UNLOCKED_VERSIONS)."""
+    from plane.utils.team_page_version import MAX_UNLOCKED_VERSIONS
+
     subq = (
         PageVersion.all_objects.filter(is_locked=False).annotate(
             row_num=Window(
                 expression=RowNumber(),
                 partition_by=[F("page_id")],
-                order_by=F("created_at").desc(),
+                order_by=F("last_saved_at").desc(),
             )
         )
-        .filter(row_num__gt=20)
+        .filter(row_num__gt=MAX_UNLOCKED_VERSIONS)
         .values("id")
     )
 
@@ -126,21 +128,23 @@ def get_page_versions_queryset():
 
 
 def get_issue_description_versions_queryset():
-    """Get issue description versions beyond the maximum allowed (20 per issue)."""
+    """Get unlocked issue description versions beyond the maximum per issue (see team_issue_version.MAX_UNLOCKED_VERSIONS)."""
+    from plane.utils.team_issue_version import MAX_UNLOCKED_VERSIONS
+
     subq = (
-        IssueDescriptionVersion.all_objects.annotate(
+        IssueDescriptionVersion.all_objects.filter(is_locked=False).annotate(
             row_num=Window(
                 expression=RowNumber(),
                 partition_by=[F("issue_id")],
-                order_by=F("created_at").desc(),
+                order_by=F("last_saved_at").desc(),
             )
         )
-        .filter(row_num__gt=20)
+        .filter(row_num__gt=MAX_UNLOCKED_VERSIONS)
         .values("id")
     )
 
     return (
-        IssueDescriptionVersion.all_objects.filter(id__in=Subquery(subq))
+        IssueDescriptionVersion.all_objects.filter(is_locked=False, id__in=Subquery(subq))
         .values_list("id", flat=True)
         .iterator(chunk_size=BATCH_SIZE)
     )

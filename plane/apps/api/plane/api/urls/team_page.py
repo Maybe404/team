@@ -9,15 +9,26 @@ from django.urls import path
 from plane.api.views.team_view import TeamViewDetailAPIEndpoint, TeamViewListCreateAPIEndpoint
 from plane.api.views.team_page import (
     TeamIssuePagesAPIEndpoint,
+    TeamIssueVersionsAPIEndpoint,
     TeamPageDetailAPIEndpoint,
     TeamPageImageAPIEndpoint,
     TeamPageIssuesAPIEndpoint,
     TeamPageListCreateAPIEndpoint,
     TeamPageVersionsAPIEndpoint,
 )
-from plane.api.views.team_access import TeamAccessAPIEndpoint, TeamAccessPendingAPIEndpoint
+from plane.api.views.team_access import TeamAccessAPIEndpoint, TeamAccessPendingAPIEndpoint, TeamSearchAPIEndpoint
 
 urlpatterns = [
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:pk>/description-versions/",
+        TeamIssueVersionsAPIEndpoint.as_view(http_method_names=["get", "post"]),
+        name="team-issue-versions",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:pk>/description-versions/<uuid:version_id>/",
+        TeamIssueVersionsAPIEndpoint.as_view(http_method_names=["get", "patch", "post"]),
+        name="team-issue-version-detail",
+    ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:pk>/versions/",
         TeamPageVersionsAPIEndpoint.as_view(http_method_names=["get", "post"]),
@@ -27,6 +38,11 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:pk>/versions/<uuid:version_id>/",
         TeamPageVersionsAPIEndpoint.as_view(http_method_names=["get", "patch", "post"]),
         name="team-page-version-detail",
+    ),
+    path(
+        "workspaces/<str:slug>/team-search/",
+        TeamSearchAPIEndpoint.as_view(http_method_names=["get"]),
+        name="team-search",
     ),
     path(
         "workspaces/<str:slug>/team-access/pending/",

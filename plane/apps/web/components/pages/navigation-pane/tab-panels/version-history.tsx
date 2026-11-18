@@ -50,15 +50,15 @@ type VersionRowProps = {
   onToggleLock?: (version: TPageVersion) => void;
 };
 
-const SOURCE_LABELS: Record<string, string> = {
-  mcp: "Agent 改写",
-  "before-mcp": "Agent 改写前",
-  restore: "恢复",
-  "before-restore": "恢复前",
-  manual: "手动保存",
-  "web-api": "接口改写",
-  "before-web-api": "接口改写前",
-};
+const SOURCE_KEYS = {
+  mcp: "loom.version.source_mcp",
+  "before-mcp": "loom.version.source_before_mcp",
+  restore: "loom.version.source_restore",
+  "before-restore": "loom.version.source_before_restore",
+  manual: "loom.version.source_manual",
+  "web-api": "loom.version.source_web_api",
+  "before-web-api": "loom.version.source_before_web_api",
+} as const;
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
@@ -92,11 +92,11 @@ const VersionRow = observer(function VersionRow(props: VersionRowProps) {
               ? `${renderFormattedDate(version.last_saved_at)}, ${renderFormattedTime(version.last_saved_at)}`
               : t("page_navigation_pane.tabs.info.version_history.current_version")}
           </span>
-          {version?.is_locked && <span title="已锁定，不会被自动清理">🔒</span>}
+          {version?.is_locked && <span title={t("loom.version.locked_hint")}>🔒</span>}
         </p>
-        {version && (version.label || (version.source && SOURCE_LABELS[version.source])) && (
+        {version && (version.label || (version.source && version.source in SOURCE_KEYS)) && (
           <p className="truncate text-caption-sm-regular text-secondary">
-            {version.label || SOURCE_LABELS[version.source ?? ""]}
+            {version.label || t(SOURCE_KEYS[version.source as keyof typeof SOURCE_KEYS])}
           </p>
         )}
         {version && (
@@ -119,7 +119,7 @@ const VersionRow = observer(function VersionRow(props: VersionRowProps) {
           className="mt-0.5 ml-1.5 text-caption-sm-regular text-tertiary hover:text-primary"
           onClick={() => onToggleLock(version)}
         >
-          {version.is_locked ? "解除锁定" : "锁定此版本"}
+          {version.is_locked ? t("loom.version.unlock") : t("loom.version.lock")}
         </button>
       )}
     </li>
@@ -160,9 +160,9 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
       void versionService
         .updateVersion(workspaceSlug.toString(), projectId.toString(), id, version.id, { is_locked: !version.is_locked })
         .then(() => mutateVersionsList())
-        .catch(() => setToast({ type: "error", title: "操作没成功，请稍后再试" }));
+        .catch(() => setToast({ type: "error", title: t("loom.version.op_failed") }));
     },
-    [id, mutateVersionsList, projectId, versionService, workspaceSlug]
+    [id, mutateVersionsList, projectId, versionService, workspaceSlug, t]
   );
   const handleSaveSnapshot = useCallback(
     (label: string) => {
@@ -171,17 +171,17 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
     void versionService
       .saveSnapshot(workspaceSlug.toString(), projectId.toString(), id, { label: label.trim() })
       .then(() => {
-        setToast({ type: "success", title: "已把当前内容保存为一个版本" });
+        setToast({ type: "success", title: t("loom.version.saved") });
         return mutateVersionsList();
       })
-      .catch(() => setToast({ type: "error", title: "保存没成功，请稍后再试" }))
+      .catch(() => setToast({ type: "error", title: t("loom.version.save_failed") }))
       .finally(() => {
         setSaving(false);
         setNaming(false);
         setLabelDraft("");
       });
     },
-    [id, mutateVersionsList, projectId, versionService, workspaceSlug]
+    [id, mutateVersionsList, projectId, versionService, workspaceSlug, t]
   );
 
   const getVersionLink = useCallback(
@@ -243,7 +243,7 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
                 autoFocus
                 value={labelDraft}
                 maxLength={100}
-                placeholder="给这个版本起个名字（可以留空）"
+                placeholder={t("loom.version.name_placeholder")}
                 onChange={(e) => setLabelDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSaveSnapshot(labelDraft.trim());
@@ -252,12 +252,12 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
                 className="w-full rounded-md border border-subtle bg-layer-1 px-2 py-1 text-caption-md-regular text-primary outline-none focus:border-accent-strong"
               />
               <div className="flex gap-2">
-                <Button variant="primary" size="sm" stretch="auto" loading={saving} onClick={() => handleSaveSnapshot(labelDraft.trim())} label="保存" />
-                <Button variant="ghost" size="sm" stretch="auto" onClick={() => setNaming(false)} label="取消" />
+                <Button variant="primary" size="sm" stretch="auto" loading={saving} onClick={() => handleSaveSnapshot(labelDraft.trim())} label={t("loom.common.save")} />
+                <Button variant="ghost" size="sm" stretch="auto" onClick={() => setNaming(false)} label={t("loom.common.cancel")} />
               </div>
             </div>
           ) : (
-            <Button variant="secondary" size="sm" stretch="auto" onClick={() => setNaming(true)} label="把当前内容保存为一个版本" />
+            <Button variant="secondary" size="sm" stretch="auto" onClick={() => setNaming(true)} label={t("loom.version.save_current")} />
           )}
         </div>
       )}

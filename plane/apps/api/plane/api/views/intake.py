@@ -117,6 +117,10 @@ class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
         Returns paginated results when listing all intake work items.
         """
         issue_queryset = self.get_queryset()
+        # [team 二开] 按状态在服务端筛选再分页，历史条目多时不会漏掉待处理的
+        wanted = [int(x) for x in (request.query_params.get("status") or "").split(",") if x.lstrip("-").isdigit()]
+        if wanted:
+            issue_queryset = issue_queryset.filter(status__in=wanted)
         return self.paginate(
             request=request,
             queryset=(issue_queryset),
@@ -160,7 +164,8 @@ class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
         project = Project.objects.get(workspace__slug=slug, pk=project_id)
 
         # Intake view
-        if intake is None and not project.intake_view:
+        # 读列表时关闭收集会返回空，所以这里也必须按开关拒绝，否则提交成功却看不到
+        if not project.intake_view:
             return Response(
                 {"error": "Intake is not enabled for this project enable it through the project's api"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -405,7 +410,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
                 return Response(issue_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         # Only project admins and members can edit intake issue attributes
-        if project_member.role > 15:
+        if project_member.role >= 15:
             intake_serializer = IntakeIssueUpdateSerializer(intake_issue, data=request.data, partial=True)
 
             if not intake_serializer.is_valid():

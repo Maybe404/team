@@ -15,7 +15,7 @@ import { buildInbox, reminderLine } from "./inbox.ts";
 import { docHints, findSimilar, formatHints, taskHints } from "./hints.ts";
 import { htmlToMd, importInlineImages, mdToHtml, mdToHtmlWith, type Person } from "./markdown.ts";
 import { COMMENT_KINDS, formatGate, gate, gatePlain, LESSON_GUIDE, SELF_CHECK, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
-import { Loom, PlaneError, type Member, type Module, type Project, type View, type WorkItem } from "./plane.ts";
+import { Loom, PlaneError, type Member, type Module, type Project, type SearchHit, type View, type WorkItem } from "./plane.ts";
 import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
 import { buildDigest, publishDigest } from "./review.ts";
 import { usageGuide } from "./usage.ts";
@@ -43,7 +43,7 @@ const REPO_PARAM = z
   .optional()
   .describe("当前仓库 git remote get-url origin 的输出，每次都带");
 const NO_REPO = new Set(["get_guide", "check_text"]);
-const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson", "save_module", "save_view", "doc_versions", "doc_access"]);
+const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson", "save_module", "save_view", "doc_versions", "task_versions", "doc_access", "intake_submit", "intake_decide"]);
 
 const lastRemind = new Map<string, number>();
 
@@ -79,7 +79,7 @@ const server = new McpServer(
 10. 项目里按版本或需求整理任务用模块：建任务前先 list_modules，有合适的放进去（create_task、update_task 的 modules 参数），没有再 save_module 新建；用户想经常看某种筛选时用 save_view 建视图。
 11. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_guide（topic=usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。
 12. 写文档、任务后，结果末尾的「提示」要看：漏了关联工作项、@人、指派、模块，或标题和内容有重复、太短、不合理，都要告诉用户并问他要不要补或优化，不要默默忽略，也不要擅自合并、覆盖已有内容。正文里写 @姓名 会变成提及标签（任务描述、评论、文档都支持）。
-13. 开始一段工作前、做完一件事后调用 my_inbox，把待办（等你决定、等你审查、阻塞、指派给你的、收集待分诊）转告用户；工具结果末尾出现「待办提醒」时同样转告，问用户现在处不处理。`,
+13. 还不确定是不是正式工作的事（想法、线索、别人提的需求）先用 intake_submit 放进收集，确定要做的才用 create_task；收集里的条目用 intake_list 查看，intake_decide 接受、拒绝、稍后处理或标记重复，拿不准先问用户。\n14. 开始一段工作前、做完一件事后调用 my_inbox，把待办（等你决定、等你审查、阻塞、指派给你的、收集待分诊）转告用户；工具结果末尾出现「待办提醒」时同样转告，问用户现在处不处理。`,
   },
 );
 
@@ -1143,9 +1143,209 @@ server.registerTool(
 );
 
 
+
+server.registerTool(
+  "search",
+  {
+    title: "统一搜索",
+    description:
+      "跨项目、跨文档搜索：文档按标题和正文、工作项按标题和描述，关键词用空格分隔（都要出现）。输入工作项编号（如 ABC-12）直接命中。默认搜当前仓库关联的项目，加上不绑定仓库的项目和共享项目；用 project 缩小范围。只会搜到你看得到的内容。找到后用 read_doc、get_task 看全文。写新内容前先搜一遍，避免重复。",
+    inputSchema: {
+      query: z.string().describe("关键词，空格分隔；或工作项编号"),
+      types: z.array(z.enum(["page", "issue"])).optional().describe("默认文档和工作项都搜"),
+      project: z.string().optional().describe("只搜这个项目（标识或名称）"),
+      limit: z.number().int().min(1).max(50).optional().describe("每类最多返回多少条，默认 15"),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ query, types, project, limit }) =>
+    run(async () => {
+      const b = await boundProjects();
+      let scope = [...b.projects, ...b.shared.filter((s) => !b.projects.some((p) => p.id === s.id))];
+      if (project) {
+        const hit = scope.filter((p) => p.identifier.toLowerCase() === project.toLowerCase() || p.name === project);
+        if (!hit.length) throw new Error(`项目 ${project} 不在当前可搜范围内（当前仓库关联的项目、不绑定仓库的项目和共享项目）。`);
+        scope = hit;
+      }
+      if (!scope.length) return text("当前没有可搜的项目：当前目录没有关联项目，也没有不绑定仓库的项目。");
+      const r = await plane.search(query, types ?? ["page", "issue"], scope.map((p) => p.id), limit ?? 15);
+      const line = (h: SearchHit) =>
+        h.type === "page"
+          ? `- 📄 [${h.title}](${webUrl(`projects/${h.project_id}/pages/${h.id}`)})（${h.project}，doc_id=${h.id}）${h.snippet ? `\n  ${h.snippet}` : ""}`
+          : `- [${h.key}](${webUrl(`browse/${h.key}`)}) ${h.title}（${h.project}${h.state ? `，${h.state}` : ""}）${h.snippet ? `\n  ${h.snippet}` : ""}`;
+      const pages = r.pages ?? [];
+      const issues = r.issues ?? [];
+      if (!pages.length && !issues.length) return text(`没有搜到「${query}」。换个关键词，或去掉一两个词再搜；范围是 ${scope.map((p) => p.identifier).join("、")}。`);
+      return text([pages.length ? `## 文档（${pages.length}）\n\n${pages.map(line).join("\n")}` : "", issues.length ? `## 工作项（${issues.length}）\n\n${issues.map(line).join("\n")}` : ""].filter(Boolean).join("\n\n"));
+    }),
+);
+
+
+// ---------- 收集（待分诊）----------
+// 不确定是不是正式工作的事先放进收集，由有权限的人确认后再接受成工作项，或拒绝。
+
+const INTAKE_STATUS: Record<number, string> = { [-2]: "待处理", [-1]: "已拒绝", 0: "稍后处理", 1: "已接受", 2: "重复" };
+
+server.registerTool(
+  "intake_list",
+  {
+    title: "查看收集",
+    description: "列出项目收集里的条目（默认只看待处理的）。每条带条目 ID，intake_decide 用它接受、拒绝或稍后处理。",
+    inputSchema: {
+      project: z.string().optional().describe("默认当前仓库关联的项目"),
+      status: z.enum(["待处理", "已接受", "已拒绝", "稍后处理", "重复", "全部"]).optional().describe("默认待处理"),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ project, status }) =>
+    run(async () => {
+      const p = await projectFor(project, "read");
+      const want = status ?? "待处理";
+      const wantCodes = Object.entries(INTAKE_STATUS).filter(([, n]) => want !== "全部" && n === want).map(([c]) => Number(c));
+      const rows = (await plane.listIntake(p.id, 200, wantCodes.length ? wantCodes : undefined)).filter((r) => want === "全部" || INTAKE_STATUS[r.status] === want);
+      if (!rows.length) return text(`项目 ${p.identifier} 的收集里没有${want === "全部" ? "" : want}的条目。网页入口：${webUrl(`projects/${p.id}/intake`)}`);
+      const people = await peopleOf(p.id);
+      const names = new Map(people.map((x) => [x.id, x.name]));
+      return text(
+        `项目 ${p.identifier} 收集（${want}，${rows.length} 条）：${webUrl(`projects/${p.id}/intake`)}\n\n${rows
+          .map((r) => {
+            const d = r.issue_detail;
+            const body = htmlToMd(d?.description_html ?? "", people).trim().slice(0, 200).replace(/\n+/g, " ");
+            return `- ${r.issue}（${INTAKE_STATUS[r.status] ?? r.status}）${d?.name ?? "（无标题）"}${d?.priority && d.priority !== "none" ? ` [${d.priority}]` : ""}${r.created_by ? ` · 提交人 ${names.get(r.created_by) ?? "未知成员"}` : ""}${body ? `\n  ${body}` : ""}`;
+          })
+          .join("\n")}`,
+      );
+    }),
+);
+
+server.registerTool(
+  "intake_submit",
+  {
+    title: "提交到收集",
+    description:
+      "把还不确定的事先放进收集（待分诊）：想法、线索、可能的问题、别人提的需求，是不是正式工作还没定。确定要做的事直接用 create_task，别绕收集。提交后由有权限的人在网页或用 intake_decide 确认后再转成工作项。提交前先 search 一遍，避免重复。",
+    inputSchema: {
+      project: z.string().optional().describe("默认当前仓库关联的项目"),
+      title: z.string().min(4).describe("一句话讲清楚是什么事"),
+      description: z.string().describe("Markdown：背景、为什么觉得值得做、哪里还不确定、来源或证据"),
+      priority: z.enum(["urgent", "high", "medium", "low", "none"]).optional(),
+    },
+  },
+  async ({ project, title, description, priority }) =>
+    run(async () => {
+      const p = await projectFor(project, "write");
+      for (const [label, v] of [["标题", title], ["描述", description]] as const) {
+        const r = gatePlain(v);
+        if (!r.ok) return fail(`收集${label}${formatGate(r)}\n\n${SELF_CHECK}`);
+      }
+      const row = await plane.createIntake(p.id, { name: title, description_html: mdToHtml(description, { members: await peopleOf(p.id) }), priority: priority ?? "none" }).catch((e) => {
+        if (e instanceof PlaneError && /not enabled/i.test(e.body)) throw new Error(`项目 ${p.identifier} 没有开启收集。请项目管理员在网页「项目设置 → 功能」里开启。`);
+        throw e;
+      });
+      return text(`已提交到 ${p.identifier} 的收集（待处理）：${title}\n条目 ID：${row.issue}\n确认后用 intake_decide 接受成工作项，或在网页处理：${webUrl(`projects/${p.id}/intake`)}`);
+    }),
+);
+
+server.registerTool(
+  "intake_decide",
+  {
+    title: "处理收集条目",
+    description:
+      "处理收集里的条目。action：accept 接受，转成正式工作项；reject 拒绝（建议带 reason，会写成评论留痕）；snooze 稍后处理（带 until，日期 YYYY-MM-DD）；duplicate 标记重复（带 duplicate_of，重复的任务编号）。需要项目成员权限，别人提的条目也能处理。拿不准就先问用户，不要替用户做决定。",
+    inputSchema: {
+      project: z.string().optional().describe("默认当前仓库关联的项目"),
+      item: z.string().describe("条目 ID，intake_list 里能查到"),
+      action: z.enum(["accept", "reject", "snooze", "duplicate"]),
+      reason: z.string().optional().describe("reject、duplicate 时写明原因，会作为评论记在这条工作项上"),
+      until: z.string().optional().describe("snooze 时的日期，YYYY-MM-DD"),
+      duplicate_of: z.string().optional().describe("duplicate 时重复的任务编号，如 ABC-12"),
+    },
+  },
+  async ({ project, item, action, reason, until, duplicate_of }) =>
+    run(async () => {
+      const p = await projectFor(project, "write");
+      const body: Record<string, unknown> = {};
+      if (action === "accept") body.status = 1;
+      if (action === "reject") body.status = -1;
+      if (action === "snooze") {
+        if (!until || !/^\d{4}-\d{2}-\d{2}$/.test(until)) throw new Error("snooze 需要 until（YYYY-MM-DD）");
+        body.status = 0;
+        body.snoozed_till = until; // 只传日期，由服务端按项目时区处理；拼 UTC 时间会在西半球提前一天
+      }
+      if (action === "duplicate") {
+        if (!duplicate_of) throw new Error("duplicate 需要 duplicate_of（任务编号）");
+        const t = await resolveTask(duplicate_of, "read");
+        body.status = 2;
+        body.duplicate_to = t.item.id;
+      }
+      if (reason) {
+        const r = gatePlain(reason);
+        if (!r.ok) return fail(`原因${formatGate(r)}\n\n${SELF_CHECK}`);
+      }
+      const row = await plane.decideIntake(p.id, item, body).catch((e) => {
+        if (e instanceof PlaneError && e.status === 404) throw new Error(`项目 ${p.identifier} 的收集里没有条目 ${item}。用 intake_list 查。`);
+        if (e instanceof PlaneError && /cannot edit intake/i.test(e.body)) throw new Error("没有权限处理这个收集条目：访客只能处理自己提交的。");
+        throw e;
+      });
+      // 接口返回 200 不代表状态真的改了（没有处理权限时服务端会忽略），以返回的状态为准
+      if (typeof row.status === "number" && row.status !== body.status) {
+        throw new Error("没有改动成功：条目状态没有变化。处理收集条目需要项目成员或管理员身份（访客不行）。");
+      }
+      let warn = "";
+      if (reason && (action === "reject" || action === "duplicate")) {
+        try {
+          await plane.createComment(p.id, item, mdToHtml(`**${action === "reject" ? "拒绝原因" : "重复原因"}**\n\n${reason.trim()}`, { members: await peopleOf(p.id) }));
+        } catch (e) {
+          warn = `\n注意：状态已改，但原因评论没有写进去（${e instanceof Error ? e.message : String(e)}）。用 comment_task 补一条。`;
+        }
+      }
+      const label = { accept: "已接受，转成了正式工作项", reject: "已拒绝", snooze: `已稍后处理，${until} 再提醒`, duplicate: `已标记为重复（${duplicate_of}）` }[action];
+      return text(`${label}：${row.issue_detail?.name ?? item}\n${action === "accept" ? `在项目里查看：${webUrl(`projects/${p.id}/issues`)}` : `收集：${webUrl(`projects/${p.id}/intake`)}`}${warn}`);
+    }),
+);
+
 // ---------- 文档版本与编辑权限 ----------
 
 const SRC_LABEL: Record<string, string> = { mcp: "Agent 改写", "before-mcp": "Agent 改写前", restore: "恢复", "before-restore": "恢复前", manual: "手动保存", "web-api": "接口改写", "before-web-api": "接口改写前" };
+
+type VersionArgs = { action: string; version_id?: string; label?: string; lock?: boolean; save_current?: boolean };
+async function versionsHandler(kind: "pages" | "issues", p: Project, doc_id: string, { action, version_id, label, lock, save_current }: VersionArgs) {
+      const need = () => {
+        if (!version_id) throw new Error(`action=${action} 需要 version_id，先用 action=list 查。`);
+        return version_id;
+      };
+      const wrap = <T,>(f: () => Promise<T>) =>
+        f().catch((e) => {
+          if (e instanceof PlaneError && e.status === 403) throw new Error("没有这个对象的编辑权限。用 doc_access（action=request）向拥有者申请，或在评论里提建议。");
+          throw e;
+        });
+      const names = new Map((await plane.listProjectMembers(p.id).catch(() => [])).map((m) => [m.id, personName(m)]));
+      const line = (v: { id: string; last_saved_at: string; owned_by?: string; is_locked?: boolean; label?: string; source?: string }) =>
+        `- ${v.id} ${v.last_saved_at.slice(0, 16).replace("T", " ")}${v.owned_by ? ` ${names.get(v.owned_by) ?? "未知成员"}` : ""}${v.is_locked ? " 🔒" : ""}${v.label ? ` 「${v.label}」` : ""}${v.source ? `（${SRC_LABEL[v.source] ?? v.source}）` : ""}`;
+      if (action === "list") {
+        const r = await plane.listVersions(p.id, doc_id, kind);
+        return text(`共 ${r.versions.length} 个版本，当前内容${r.current_matches ? "和最新版本一致" : "比最新版本新（有未存为版本的改动）"}：\n\n${r.versions.map(line).join("\n") || "无"}`);
+      }
+      if (action === "read") {
+        const v = await plane.getVersion(p.id, doc_id, need(), kind);
+        return text(`${line(v)}\n\n${htmlToMd(v.description_html, await peopleOf(p.id))}`);
+      }
+      if (action === "save") {
+        const v = await wrap(() => plane.saveVersion(p.id, doc_id, { label, lock }, kind));
+        return text(v.created ? `已把当前内容存为版本：\n${line(v)}` : `当前内容和最新版本一致，没有新建；已更新那一版：\n${line(v)}`);
+      }
+      if (action === "lock" || action === "unlock") {
+        const v = await wrap(() => plane.patchVersion(p.id, doc_id, need(), { is_locked: action === "lock" }, kind));
+        return text(`${action === "lock" ? "已锁定" : "已解锁"}：\n${line(v)}`);
+      }
+      if (action === "label") {
+        const v = await wrap(() => plane.patchVersion(p.id, doc_id, need(), { label: label ?? "" }, kind));
+        return text(`已更新说明：\n${line(v)}`);
+      }
+      const keep = save_current !== false;
+      const r = await wrap(() => plane.restoreVersion(p.id, doc_id, need(), keep, kind));
+      return text(`已回退到：\n${line(r.restored)}\n${r.saved_current ? `回退前的内容已存为版本，随时可以回来：\n${line(r.saved_current)}` : "回退前的内容没有另存为版本（save_current=false）；最近一次改动之前的内容如果已经有版本，仍然可以从版本列表里找回。"}`);
+}
 
 server.registerTool(
   "doc_versions",
@@ -1166,41 +1366,29 @@ server.registerTool(
   async ({ project, doc_id, action, version_id, label, lock, save_current }) =>
     run(async () => {
       const p = await projectFor(project, action === "list" || action === "read" ? "read" : "write");
-      const need = () => {
-        if (!version_id) throw new Error(`action=${action} 需要 version_id，先用 action=list 查。`);
-        return version_id;
-      };
-      const wrap = <T,>(f: () => Promise<T>) =>
-        f().catch((e) => {
-          if (e instanceof PlaneError && e.status === 403) throw new Error("没有这篇文档的编辑权限。用 doc_access（action=request）向拥有者申请，或在评论里提建议。");
-          throw e;
-        });
-      const names = new Map((await plane.listProjectMembers(p.id).catch(() => [])).map((m) => [m.id, personName(m)]));
-      const line = (v: { id: string; last_saved_at: string; owned_by?: string; is_locked?: boolean; label?: string; source?: string }) =>
-        `- ${v.id} ${v.last_saved_at.slice(0, 16).replace("T", " ")}${v.owned_by ? ` ${names.get(v.owned_by) ?? "未知成员"}` : ""}${v.is_locked ? " 🔒" : ""}${v.label ? ` 「${v.label}」` : ""}${v.source ? `（${SRC_LABEL[v.source] ?? v.source}）` : ""}`;
-      if (action === "list") {
-        const r = await plane.listVersions(p.id, doc_id);
-        return text(`共 ${r.versions.length} 个版本，当前内容${r.current_matches ? "和最新版本一致" : "比最新版本新（有未存为版本的改动）"}：\n\n${r.versions.map(line).join("\n") || "无"}`);
-      }
-      if (action === "read") {
-        const v = await plane.getVersion(p.id, doc_id, need());
-        return text(`${line(v)}\n\n${htmlToMd(v.description_html, await peopleOf(p.id))}`);
-      }
-      if (action === "save") {
-        const v = await wrap(() => plane.saveVersion(p.id, doc_id, { label, lock }));
-        return text(v.created ? `已把当前内容存为版本：\n${line(v)}` : `当前内容和最新版本一致，没有新建；已更新那一版：\n${line(v)}`);
-      }
-      if (action === "lock" || action === "unlock") {
-        const v = await wrap(() => plane.patchVersion(p.id, doc_id, need(), { is_locked: action === "lock" }));
-        return text(`${action === "lock" ? "已锁定" : "已解锁"}：\n${line(v)}`);
-      }
-      if (action === "label") {
-        const v = await wrap(() => plane.patchVersion(p.id, doc_id, need(), { label: label ?? "" }));
-        return text(`已更新说明：\n${line(v)}`);
-      }
-      const keep = save_current !== false;
-      const r = await wrap(() => plane.restoreVersion(p.id, doc_id, need(), keep));
-      return text(`已回退到：\n${line(r.restored)}\n${r.saved_current ? `回退前的内容已存为版本，随时可以回来：\n${line(r.saved_current)}` : "回退前的内容没有另存为版本（save_current=false）；最近一次改动之前的内容如果已经有版本，仍然可以从版本列表里找回。"}`);
+      return versionsHandler("pages", p, doc_id, { action, version_id, label, lock, save_current });
+    }),
+);
+
+server.registerTool(
+  "task_versions",
+  {
+    title: "工作项描述版本管理",
+    description:
+      "管理工作项描述的版本历史，用法和 doc_versions 一样。action：list / read / save / lock / unlock / label / restore。update_task 每次改写描述前后会自动留版本，网页编辑按时间合并保存。锁定的版本不会被自动清理，回退前默认先把当前描述存成一个版本。需要编辑权限，没有时用 doc_access（type=issue）申请。",
+    inputSchema: {
+      task: z.string().describe("工作项编号，如 ABC-12"),
+      action: z.enum(["list", "read", "save", "lock", "unlock", "label", "restore"]),
+      version_id: z.string().optional(),
+      label: z.string().optional(),
+      lock: z.boolean().optional(),
+      save_current: z.boolean().optional(),
+    },
+  },
+  async ({ task, ...rest }) =>
+    run(async () => {
+      const t = await resolveTask(task, rest.action === "list" || rest.action === "read" ? "read" : "write");
+      return versionsHandler("issues", t.project, t.item.id, rest);
     }),
 );
 
@@ -1219,14 +1407,17 @@ server.registerTool(
       request_id: z.string().optional(),
       approve: z.boolean().optional(),
       member: z.string().optional().describe("add_editor / remove_editor 的成员姓名或邮箱"),
+      all_projects: z.boolean().optional().describe("pending 默认只列当前仓库关联的项目；true 列出你有权审批的全部"),
     },
   },
-  async ({ action, type, id, project, message, request_id, approve, member }) =>
+  async ({ action, type, id, project, message, request_id, approve, member, all_projects }) =>
     run(async () => {
       const pn = (x?: { name?: string }) => x?.name ?? "未知成员";
       if (action === "pending") {
-        const rows = await plane.pendingAccess();
-        return text(rows.length ? `等你审批的编辑申请（${rows.length}）：\n${rows.map((r) => `- request_id=${r.id} ${pn(r.requester)} 申请编辑${r.entity_type === "page" ? "文档" : "工作项"}「${r.title}」（type=${r.entity_type === "page" ? "page" : "issue"} id=${r.entity_type === "page" ? r.entity_id : (r.key ?? r.entity_id)}）${r.message ? `：${r.message}` : ""}`).join("\n")}\n\n处理：doc_access action=decide，type 和 id 照上面填，再带 request_id 和 approve（true 批准，false 拒绝）。` : "没有等你审批的编辑申请。");
+        const bound = all_projects ? undefined : (await boundProjects().catch(() => ({ projects: [] as Project[] }))).projects.map((p) => p.id);
+        if (bound && !bound.length) return text("当前目录没有关联项目，没法按仓库筛选。传 all_projects=true 看你有权审批的全部申请。");
+        const rows = (await plane.pendingAccess()).filter((r) => !bound || bound.includes(r.project_id));
+        return text(rows.length ? `等你审批的编辑申请（${rows.length}）：\n${rows.map((r) => `- request_id=${r.id} ${pn(r.requester)} 申请编辑${r.entity_type === "page" ? "文档" : "工作项"}「${r.title}」（type=${r.entity_type === "page" ? "page" : "issue"} id=${r.entity_id}）${r.message ? `：${r.message}` : ""}`).join("\n")}\n\n处理：doc_access action=decide，type 和 id 照上面填，再带 request_id 和 approve（true 批准，false 拒绝）。` : "没有等你审批的编辑申请。");
       }
       if (!type || !id) throw new Error("需要 type 和 id");
       let entityId = id;
@@ -1355,7 +1546,8 @@ server.registerTool(
   async ({ all_projects }) =>
     run(async () => {
       const ids = all_projects ? undefined : (await boundProjects().catch(() => ({ projects: [] as Project[] }))).projects.map((p) => p.id);
-      const inbox = await buildInbox(plane, ids?.length ? ids : undefined);
+      if (ids && !ids.length) return text("当前目录没有关联到任何项目，没法按仓库筛选待办。传 all_projects=true 看你加入的所有项目。");
+      const inbox = await buildInbox(plane, ids);
       lastRemind.set(`${CONFIG.baseUrl}|${CONFIG.workspace}|${CONFIG.token.slice(-16)}`, Date.now());
       return text(inbox.md);
     }),

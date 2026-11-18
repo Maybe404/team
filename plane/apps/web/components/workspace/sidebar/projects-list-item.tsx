@@ -406,10 +406,10 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
                       {/* [team 二开] 置顶 / 取消置顶 */}
                       <MenuItem
                         icon={<Icon icon={PinOutline} />}
-                        label={project?.is_pinned ? "取消置顶" : "置顶项目"}
+                        label={project?.is_pinned ? t("loom.project.unpin") : t("loom.project.pin")}
                         onClick={() => {
                           void togglePinProject(workspaceSlug.toString(), projectId, !project?.is_pinned).catch(() =>
-                            setToast({ type: "error", title: "操作没成功，请稍后再试" })
+                            setToast({ type: "error", title: t("loom.project.op_failed") })
                           );
                         }}
                       />

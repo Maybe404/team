@@ -5,6 +5,7 @@
  */
 
 import { useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { LeftSidePaneOutline, LinkOutline, SearchOutline } from "@makeplane/propel/icons";
 import { useTranslation } from "@plane/i18n";
 // plane imports
@@ -47,7 +48,10 @@ export const usePowerKMiscellaneousCommands = (): TPowerKCommandConfig[] => {
   }, [topNavInputRef]);
   // Without a mounted top-nav input the command has nothing to focus, and Cmd+F must fall
   // through to the browser's Find
-  const hasTopNavInput = useCallback(() => Boolean(topNavInputRef?.current), [topNavInputRef]);
+  // [team 二开] 在文档页里，Cmd+F 留给浏览器的页面内查找（搜文档里的关键字）；全局搜索用 Cmd+K 或点顶部搜索框
+  const pathname = usePathname();
+  const isDocumentPage = /\/pages\/[0-9a-fA-F-]{8,}/.test(pathname ?? "");
+  const hasTopNavInput = useCallback(() => Boolean(topNavInputRef?.current) && !isDocumentPage, [topNavInputRef, isDocumentPage]);
 
   return [
     {

@@ -224,7 +224,7 @@ export function ProjectDetailsForm(props: IProjectDetailsForm) {
                     value?.in_use ? (
                       <Logo logo={value} size={28} />
                     ) : (
-                      <span className="text-body-xs-regular text-on-color">设置图标</span>
+                      <span className="text-body-xs-regular text-on-color">{t("loom.project.set_icon")}</span>
                     )
                   }
                   // TODO: fix types
@@ -255,7 +255,7 @@ export function ProjectDetailsForm(props: IProjectDetailsForm) {
                 className="self-end text-caption-sm-regular text-on-color underline"
                 onClick={() => setValue("logo_props", {} as never, { shouldDirty: true })}
               >
-                移除图标
+                {t("loom.project.remove_icon")}
               </button>
             )}
             <div className="flex flex-col gap-1 truncate text-on-color">

@@ -80,6 +80,17 @@ export type Page = {
   live_editing?: boolean;
 };
 export type Version = { id: string; last_saved_at: string; is_locked?: boolean; label?: string; source?: string; owned_by?: string };
+export type IntakeRow = {
+  id: string;
+  issue: string;
+  status: number;
+  snoozed_till?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  duplicate_to?: string | null;
+  issue_detail?: { name?: string; description_html?: string; priority?: string; sequence_id?: number };
+};
+export type SearchHit = { type: "page" | "issue"; id: string; project_id: string; project: string; identifier: string; key?: string; title: string; state?: string | null; snippet: string; updated_at: string };
 export type Access = Record<string, unknown> & { can_edit?: boolean; can_manage?: boolean };
 export type PendingAccess = { id: string; entity_type: string; entity_id: string; project_id: string; key?: string | null; title: string; requester: { id?: string; name?: string }; message?: string };
 export type Me = { id: string; email: string; display_name: string };
@@ -220,21 +231,43 @@ export class Loom {
     return this.req<LinkedIssue[]>("GET", this.ws(`projects/${projectId}/pages/${pageId}/work-items/`));
   }
 
-  // 文档版本（二开接口）
-  listVersions(projectId: string, pageId: string) {
-    return this.req<{ versions: Version[]; current_matches: boolean }>("GET", this.ws(`projects/${projectId}/pages/${pageId}/versions/`));
+  // 文档 / 工作项描述版本（二开接口）。kind=pages 是文档，issues 是工作项
+  private vpath(projectId: string, id: string, kind: "pages" | "issues", versionId?: string) {
+    const base = kind === "pages" ? `projects/${projectId}/pages/${id}/versions/` : `projects/${projectId}/issues/${id}/description-versions/`;
+    return this.ws(versionId ? `${base}${versionId}/` : base);
   }
-  getVersion(projectId: string, pageId: string, versionId: string) {
-    return this.req<Version & { description_html: string }>("GET", this.ws(`projects/${projectId}/pages/${pageId}/versions/${versionId}/`));
+  listVersions(projectId: string, id: string, kind: "pages" | "issues" = "pages") {
+    return this.req<{ versions: Version[]; current_matches: boolean }>("GET", this.vpath(projectId, id, kind));
   }
-  saveVersion(projectId: string, pageId: string, body: { label?: string; lock?: boolean }) {
-    return this.req<Version & { created: boolean }>("POST", this.ws(`projects/${projectId}/pages/${pageId}/versions/`), body);
+  getVersion(projectId: string, id: string, versionId: string, kind: "pages" | "issues" = "pages") {
+    return this.req<Version & { description_html: string }>("GET", this.vpath(projectId, id, kind, versionId));
   }
-  patchVersion(projectId: string, pageId: string, versionId: string, body: { is_locked?: boolean; label?: string }) {
-    return this.req<Version>("PATCH", this.ws(`projects/${projectId}/pages/${pageId}/versions/${versionId}/`), body);
+  saveVersion(projectId: string, id: string, body: { label?: string; lock?: boolean }, kind: "pages" | "issues" = "pages") {
+    return this.req<Version & { created: boolean }>("POST", this.vpath(projectId, id, kind), body);
   }
-  restoreVersion(projectId: string, pageId: string, versionId: string, saveCurrent: boolean) {
-    return this.req<{ restored: Version; saved_current: Version | null }>("POST", this.ws(`projects/${projectId}/pages/${pageId}/versions/${versionId}/`), { save_current: saveCurrent });
+  patchVersion(projectId: string, id: string, versionId: string, body: { is_locked?: boolean; label?: string }, kind: "pages" | "issues" = "pages") {
+    return this.req<Version>("PATCH", this.vpath(projectId, id, kind, versionId), body);
+  }
+  restoreVersion(projectId: string, id: string, versionId: string, saveCurrent: boolean, kind: "pages" | "issues" = "pages") {
+    return this.req<{ restored: Version; saved_current: Version | null }>("POST", this.vpath(projectId, id, kind, versionId), { save_current: saveCurrent });
+  }
+
+  // 收集（intake）：待分诊的工作项。status：-2 待处理、-1 已拒绝、0 稍后处理、1 已接受、2 重复
+  listIntake(projectId: string, limit = 200, statuses?: number[]) {
+    return this.all<IntakeRow>(this.ws(`projects/${projectId}/intake-issues/${statuses?.length ? `?status=${statuses.join(",")}` : ""}`), limit);
+  }
+  createIntake(projectId: string, issue: { name: string; description_html: string; priority?: string }) {
+    return this.req<IntakeRow>("POST", this.ws(`projects/${projectId}/intake-issues/`), { issue });
+  }
+  decideIntake(projectId: string, issueId: string, body: Record<string, unknown>) {
+    return this.req<IntakeRow>("PATCH", this.ws(`projects/${projectId}/intake-issues/${issueId}/`), body);
+  }
+
+  // 统一搜索（二开接口）：文档按标题和正文、工作项按标题和描述
+  search(query: string, types: string[], projectIds: string[], limit: number) {
+    const qs = new URLSearchParams({ q: query, types: types.join(","), limit: String(limit) });
+    qs.set("project", projectIds.join(","));
+    return this.req<{ pages?: SearchHit[]; issues?: SearchHit[] }>("GET", this.ws(`team-search/?${qs.toString()}`));
   }
 
   // 编辑权限（二开接口）
@@ -260,7 +293,7 @@ export class Loom {
 
   /** 收集里待分诊（状态为待处理）的条目名称 */
   async listIntakePending(projectId: string): Promise<string[]> {
-    const rows = await this.all<{ status?: number; issue_detail?: { name?: string }; name?: string }>(this.ws(`projects/${projectId}/intake-issues/`), 200);
+    const rows = await this.all<{ status?: number; issue_detail?: { name?: string }; name?: string }>(this.ws(`projects/${projectId}/intake-issues/?status=-2`), 200);
     return rows.filter((r) => r.status === -2).map((r) => r.issue_detail?.name ?? r.name ?? "（无标题）");
   }
 

@@ -83,7 +83,7 @@ function ProjectCreateHeader(props: Props) {
               buttonClassName="flex items-center justify-center"
               label={
                 <span className="grid h-11 w-11 place-items-center rounded-md border border-subtle bg-layer-2">
-                  {value?.in_use ? <Logo logo={value} size={20} /> : <span className="text-caption-sm-regular text-tertiary">图标</span>}
+                  {value?.in_use ? <Logo logo={value} size={20} /> : <span className="text-caption-sm-regular text-tertiary">{t("loom.project.icon")}</span>}
                 </span>
               }
               onChange={(val: any) => {
@@ -120,7 +120,7 @@ function ProjectCreateHeader(props: Props) {
               handleFormOnChange?.();
             }}
           >
-            移除图标
+            {t("loom.project.remove_icon")}
           </button>
         )}
       </div>

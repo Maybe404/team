@@ -10,13 +10,17 @@ import json
 
 from plane.db.models import Issue, IssueDescriptionVersion
 from plane.utils.exception_logger import log_exception
+from plane.utils.team_issue_version import trim_versions
 
 
 def should_update_existing_version(
     version: IssueDescriptionVersion, user_id: str, max_time_difference: int = 600
 ) -> bool:
     if not version:
-        return
+        return False
+    # 手动快照、锁定、命名过、接口改写留下的版本都不能被自动保存覆盖
+    if version.is_locked or version.label or (version.source or "editor") != "editor":
+        return False
 
     time_difference = (timezone.now() - version.last_saved_at).total_seconds()
     return str(version.owned_by_id) == str(user_id) and time_difference <= max_time_difference
@@ -64,6 +68,7 @@ def issue_description_version_task(updated_issue, issue_id, user_id, is_creating
                 update_existing_version(latest_version, issue)
             else:
                 IssueDescriptionVersion.log_issue_description_version(issue, user_id)
+                trim_versions(issue_id)
 
             return
 

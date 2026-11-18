@@ -846,6 +846,7 @@ class IssueDetailAPIEndpoint(BaseAPIView):
         issue = Issue.objects.get(workspace__slug=slug, project_id=project_id, pk=pk)
         project = Project.objects.get(pk=project_id)
         current_instance = json.dumps(IssueSerializer(issue).data, cls=DjangoJSONEncoder)
+        old_desc = (issue.description_html, issue.description_binary, issue.description_json, issue.description_stripped)
         serializer = IssueSerializer(
             issue,
             data=request.data,
@@ -872,6 +873,12 @@ class IssueDetailAPIEndpoint(BaseAPIView):
                 )
 
             serializer.save()
+            # [team 二开] 接口改写描述：改写前后各存一个版本，留下来源
+            issue.refresh_from_db()
+            if issue.description_html != old_desc[0]:
+                from plane.utils.team_issue_version import record_change as record_issue_change
+
+                record_issue_change(issue, request.user, old_desc, source="mcp")
             # Read-only fields are ignored on save, so they are not reported as changes either.
             accepted_data = writable_data(serializer, request.data)
             issue_activity.delay(

@@ -147,12 +147,12 @@ export const IssueDetailSidebarSections = observer(function IssueDetailSidebarSe
         </IssueDetailSidebarGroup>
 
         {/* [team 二开] 关联文档：一键关联，文档页里也能看到 */}
-        <IssueDetailSidebarGroup label="关联文档">
+        <IssueDetailSidebarGroup label={t("loom.access.linked_pages")}>
           <TeamIssuePages workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
         </IssueDetailSidebarGroup>
 
         {/* [team 二开] 编辑权限：申请、批准、共同维护人 */}
-        <IssueDetailSidebarGroup label="编辑权限">
+        <IssueDetailSidebarGroup label={t("loom.access.menu")}>
           <AccessSection workspaceSlug={workspaceSlug} type="issue" id={issueId} />
         </IssueDetailSidebarGroup>
 

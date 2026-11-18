@@ -97,7 +97,7 @@ class GlobalSearchEndpoint(BaseAPIView):
         )
 
     def filter_issues(self, query, slug, project_id, workspace_search):
-        fields = ["name", "sequence_id", "project__identifier"]
+        fields = ["name", "description_stripped", "sequence_id", "project__identifier"]  # [team 二开] 描述也能搜到
         q = Q()
         if query:
             for field in fields:
@@ -183,7 +183,7 @@ class GlobalSearchEndpoint(BaseAPIView):
         )
 
     def filter_pages(self, query, slug, project_id, workspace_search):
-        fields = ["name"]
+        fields = ["name", "description_stripped"]  # [team 二开] 正文也能搜到
         q = Q()
         if query:
             for field in fields:
@@ -229,6 +229,10 @@ class GlobalSearchEndpoint(BaseAPIView):
 
             pages = pages.annotate(project_id=Subquery(project_subquery)).filter(project_id=project_id)
 
+        # [team 二开] 别人私有页面的子树不出现在搜索里
+        from plane.utils.team_search import all_hidden_page_ids, visible_projects
+
+        pages = pages.exclude(id__in=all_hidden_page_ids(self.request.user, visible_projects(self.request.user, slug)))
         return (
             pages.order_by("-created_at")
             .distinct()

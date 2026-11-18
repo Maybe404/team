@@ -51,7 +51,14 @@ def snapshot_current(page, user, label="", lock=False, source="manual"):
     """把当前内容存成一个版本；和最新一版内容相同就直接给它加名字/锁，不重复存。"""
     last = latest_version(page.id)
     if last is not None and last.description_html == page.description_html:
+        # 恢复前的自动保存：已有相同内容的版本就原样复用，不改名字、来源和锁定
+        if source == "before-restore":
+            return last, False
         changed = []
+        # 手动保存是明确的动作：复用的版本也标成手动，之后编辑器自动保存不会再覆盖它
+        if last.source != source:
+            last.source = source
+            changed.append("source")
         if label and last.label != label[:255]:
             last.label = label[:255]
             changed.append("label")

@@ -57,6 +57,7 @@ from plane.utils.team_page_version import record_change
 from plane.bgtasks.recent_visited_task import recent_visited_task
 from plane.bgtasks.copy_s3_object import copy_s3_objects_of_description_and_assets
 from plane.app.permissions import ProjectPagePermission
+from plane.utils.team_edit_policy import can_edit_page  # [team 二开] 共同维护人也能归档
 from plane.utils.team_page_tree import check_parent, hidden_page_ids
 
 
@@ -343,7 +344,7 @@ class PageViewSet(BaseViewSet):
             ProjectMember.objects.filter(
                 project_id=project_id, member=request.user, is_active=True, role__lte=15
             ).exists()
-            and request.user.id != page.owned_by_id
+            and not can_edit_page(request.user, page)
         ):
             return Response(
                 {"error": "Only the owner or admin can archive the page"},
@@ -374,7 +375,7 @@ class PageViewSet(BaseViewSet):
             ProjectMember.objects.filter(
                 project_id=project_id, member=request.user, is_active=True, role__lte=15
             ).exists()
-            and request.user.id != page.owned_by_id
+            and not can_edit_page(request.user, page)
         ):
             return Response(
                 {"error": "Only the owner or admin can un archive the page"},

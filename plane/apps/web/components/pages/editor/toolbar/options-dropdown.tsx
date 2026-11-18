@@ -5,6 +5,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useTranslation } from "@plane/i18n";
 import { observer } from "mobx-react";
 import { ClipboardOutline, ExportOutline, GlobeOutline, HistoryOutline, WorkItemsOutline } from "@makeplane/propel/icons";
 import { useParams } from "react-router";
@@ -41,6 +42,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
   const [isLinkIssuesOpen, setIsLinkIssuesOpen] = useState(false);
   const [isAccessOpen, setIsAccessOpen] = useState(false);
   const { workspaceSlug, projectId } = useParams();
+  const { t } = useTranslation();
   // navigation
   const router = useAppRouter();
   // store values
@@ -129,7 +131,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
           // [team 二开] 编辑权限：申请、批准、共同维护人
           key: "team-access",
           action: () => setIsAccessOpen(true),
-          title: "编辑权限",
+          title: t("loom.access.menu"),
           icon: GlobeOutline,
           shouldRender: !page.archived_at,
         },
@@ -154,6 +156,7 @@ export const PageOptionsDropdown = observer(function PageOptionsDropdown(props: 
       setIsExportModalOpen,
       setIsLinkIssuesOpen,
       page.archived_at,
+      t,
     ]
   );
 
