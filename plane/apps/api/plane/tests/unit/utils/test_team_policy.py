@@ -372,8 +372,7 @@ def test_templates_visibility_and_permissions(world):
     assert handle_templates(rq(guest, "POST", {"kind": "page", "name": "x"}), slug).status_code == 403
 
 
-def test_intake_notification_and_email_task(world):
-    from plane.bgtasks.team_email_task import team_notification_email
+def test_intake_notification(world):
     from plane.db.models import Notification
     from plane.utils.team_access import notify
 
@@ -382,5 +381,3 @@ def test_intake_notification_and_email_task(world):
     n = Notification.objects.get(receiver=world.owner)
     assert n.data["team"]["kind"] == "intake_new" and n.data["team"]["url"].endswith("/intake")
     assert not Notification.objects.filter(receiver=world.other).exists()  # 不通知提交人自己
-    # 邮件任务：没配邮件服务时直接跳过，不抛错
-    assert team_notification_email([str(n.id)]) is None

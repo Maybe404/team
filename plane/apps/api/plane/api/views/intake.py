@@ -237,18 +237,10 @@ class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
             intake=str(intake_issue.id),
         )
 
-        # [team 二开] 通知项目管理员有新的收集条目待处理（网页通知 + 邮件）
-        try:
-            from plane.db.models import ProjectMember, Workspace
-            from plane.utils.team_access import notify
+        # [team 二开] 通知项目管理员有新的收集条目待处理
+        from plane.utils.team_access import notify_intake_new
 
-            admins = list(ProjectMember.objects.filter(project_id=project_id, role=20, is_active=True).values_list("member_id", flat=True))
-            notify("intake_new", Workspace.objects.get(pk=project.workspace_id), "issue", issue, request.user, admins,
-                   url=f"{project.workspace.slug}/projects/{project_id}/intake")
-        except Exception as e:  # 通知失败不能让提交失败
-            from plane.utils.exception_logger import log_exception
-
-            log_exception(e)
+        notify_intake_new(project, issue, request.user)
 
         serializer = IntakeIssueSerializer(intake_issue)
         return Response(serializer.data, status=status.HTTP_201_CREATED)

@@ -160,14 +160,18 @@ def notify(kind, ws, entity_type, obj, actor, receiver_ids, message="", url=None
         if rid and rid != actor.id
     ]
     if rows:
-        created = Notification.objects.bulk_create(rows)
-        # 同时发邮件（没配邮件服务就跳过）；放到事务提交之后，避免读不到刚写的通知
-        from django.db import transaction
+        Notification.objects.bulk_create(rows)
 
-        from plane.bgtasks.team_email_task import team_notification_email
 
-        ids = [str(n.id) for n in created]
-        transaction.on_commit(lambda: team_notification_email.delay(ids))
+def notify_intake_new(project, issue, actor):
+    """有人提交了收集条目：通知项目管理员（网页通知）。网页入口和 API/MCP 入口共用。通知失败不影响提交。"""
+    try:
+        admins = list(ProjectMember.objects.filter(project_id=project.id, role=20, is_active=True).values_list("member_id", flat=True))
+        notify("intake_new", project.workspace, "issue", issue, actor, admins, url=f"{project.workspace.slug}/projects/{project.id}/intake")
+    except Exception as e:
+        from plane.utils.exception_logger import log_exception
+
+        log_exception(e)
 
 
 def _bad(msg, code=status.HTTP_400_BAD_REQUEST):

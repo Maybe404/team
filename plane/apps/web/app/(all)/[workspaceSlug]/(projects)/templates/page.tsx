@@ -5,7 +5,7 @@
  */
 
 // [team 二开] 团队模板管理：文档、工作项的常用写法骨架（Markdown）。Agent 用 MCP 的 list_templates / get_template 读取。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { API_BASE_URL } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
@@ -49,12 +49,15 @@ function TemplatesPage({ params }: Route.ComponentProps) {
   const [form, setForm] = useState<typeof EMPTY | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // t 每次渲染都可能是新函数，放进依赖会让列表反复请求；用 ref 取最新值，加载只随工作区变化
+  const tRef = useRef(t);
+  tRef.current = t;
   const load = useCallback(() => {
     service
       .list(workspaceSlug)
       .then((r) => setList(r.templates))
-      .catch(() => setToast({ type: "error", title: t("loom.templates.load_failed") }));
-  }, [workspaceSlug, t]);
+      .catch(() => setToast({ type: "error", title: tRef.current("loom.templates.load_failed") }));
+  }, [workspaceSlug]);
   useEffect(load, [load]);
 
   const edit = (id: string) =>

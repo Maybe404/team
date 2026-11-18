@@ -5,6 +5,8 @@
 # Python imports
 import json
 
+from django.db import transaction
+
 # Django import
 from django.utils import timezone
 from django.db.models import Q, Count, OuterRef, Func, F, Prefetch, Subquery
@@ -242,6 +244,11 @@ class IntakeIssueViewSet(BaseViewSet):
             return Response({"error": "Invalid priority"}, status=status.HTTP_400_BAD_REQUEST)
 
         project = Project.objects.get(pk=project_id)
+        # [team 二开] 关闭收集后不能再提交；开启了但没有队列时补建，避免留下孤立工作项
+        if not project.intake_view:
+            return Response({"error": "Intake is not enabled for this project"}, status=status.HTTP_400_BAD_REQUEST)
+        if not Intake.objects.filter(workspace__slug=slug, project_id=project_id).exists():
+            Intake.objects.create(name=f"{project.name} Intake", project=project, is_default=True)
 
         # get the triage state
         triage_state = State.triage_objects.filter(project_id=project_id, workspace__slug=slug).first()
@@ -268,15 +275,17 @@ class IntakeIssueViewSet(BaseViewSet):
             },
         )
         if serializer.is_valid():
-            serializer.save()
             intake_id = Intake.objects.filter(workspace__slug=slug, project_id=project_id).first()
-            # create an intake issue
-            intake_issue = IntakeIssue.objects.create(
-                intake_id=intake_id.id,
-                project_id=project_id,
-                issue_id=serializer.data["id"],
-                source=SourceType.IN_APP,
-            )
+            # [team 二开] 工作项和收集条目同一个事务，失败不留孤立工作项
+            with transaction.atomic():
+                serializer.save()
+                # create an intake issue
+                intake_issue = IntakeIssue.objects.create(
+                    intake_id=intake_id.id,
+                    project_id=project_id,
+                    issue_id=serializer.data["id"],
+                    source=SourceType.IN_APP,
+                )
             # Create an Issue Activity
             issue_activity.delay(
                 type="issue.activity.created",
@@ -297,6 +306,10 @@ class IntakeIssueViewSet(BaseViewSet):
                 user_id=request.user.id,
                 is_creating=True,
             )
+            # [team 二开] 通知项目管理员
+            from plane.utils.team_access import notify_intake_new
+
+            notify_intake_new(project, Issue.objects.get(pk=serializer.data["id"]), request.user)
             intake_issue = (
                 IntakeIssue.objects.select_related("issue")
                 .prefetch_related("issue__labels", "issue__assignees")
@@ -337,6 +350,9 @@ class IntakeIssueViewSet(BaseViewSet):
         skip_activity = request.data.pop("skip_activity", False)
         is_description_update = request.data.get("description_html") is not None
 
+        # [team 二开] 关闭收集后不能再处理条目
+        if not Project.objects.filter(pk=project_id, intake_view=True).exists():
+            return Response({"error": "Intake is not enabled for this project"}, status=status.HTTP_400_BAD_REQUEST)
         intake_id = Intake.objects.filter(workspace__slug=slug, project_id=project_id).first()
         intake_issue = IntakeIssue.objects.get(
             issue_id=pk,

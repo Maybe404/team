@@ -12,6 +12,7 @@ import { Button } from "@makeplane/propel/components/button";
 import { Loader } from "@plane/blocks/skeleton";
 import type { EditorRefApi } from "@plane/editor";
 import { useTranslation } from "@plane/i18n";
+import { setToast } from "@plane/blocks/toast";
 import type { TNameDescriptionLoader } from "@plane/types";
 import { EFileAssetType, EIssueServiceType } from "@plane/types";
 // components
@@ -216,11 +217,11 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
                   workItemVersionService.retrieveDescriptionVersion(workspaceSlug, projectId, issueId, versionId),
               }}
               handleRestore={(descriptionHTML) => {
-                // 恢复前先把当前描述存成一个版本，随时可以回来
+                // 恢复前先把当前描述存成一个版本，随时可以回来；存不成功就不恢复，保留当前正文
                 void workItemVersionService
                   .saveSnapshot(workspaceSlug, projectId, issueId, { label: t("loom.version.auto_save_label"), source: "before-restore" })
-                  .catch(() => undefined)
-                  .finally(() => editorRef.current?.setEditorValue(descriptionHTML, true));
+                  .then(() => editorRef.current?.setEditorValue(descriptionHTML, true))
+                  .catch(() => setToast({ type: "error", title: t("loom.version.save_before_failed") }));
               }}
               manage={{
                 getCurrentHtml: () => editorRef.current?.getDocument()?.html ?? issue.description_html,
