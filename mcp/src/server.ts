@@ -108,6 +108,7 @@ async function withReminder<T extends ReturnType<typeof text>>(r: T): Promise<T>
   const now = Date.now();
   if (now - (lastRemind.get(key) ?? 0) < remindEveryHours * 3_600_000) return r;
   lastRemind.set(key, now);
+  if (lastRemind.size > 500) for (const [k, t] of lastRemind) if (now - t > remindEveryHours * 3_600_000) lastRemind.delete(k);
   try {
     const inbox = await buildInbox(plane);
     if (!inbox.total) return r;
@@ -1174,8 +1175,9 @@ server.registerTool(
           if (e instanceof PlaneError && e.status === 403) throw new Error("没有这篇文档的编辑权限。用 doc_access（action=request）向拥有者申请，或在评论里提建议。");
           throw e;
         });
-      const line = (v: { id: string; last_saved_at: string; is_locked?: boolean; label?: string; source?: string }) =>
-        `- ${v.id} ${v.last_saved_at.slice(0, 16).replace("T", " ")}${v.is_locked ? " 🔒" : ""}${v.label ? ` 「${v.label}」` : ""}${v.source ? `（${SRC_LABEL[v.source] ?? v.source}）` : ""}`;
+      const names = new Map((await plane.listProjectMembers(p.id).catch(() => [])).map((m) => [m.id, personName(m)]));
+      const line = (v: { id: string; last_saved_at: string; owned_by?: string; is_locked?: boolean; label?: string; source?: string }) =>
+        `- ${v.id} ${v.last_saved_at.slice(0, 16).replace("T", " ")}${v.owned_by ? ` ${names.get(v.owned_by) ?? "未知成员"}` : ""}${v.is_locked ? " 🔒" : ""}${v.label ? ` 「${v.label}」` : ""}${v.source ? `（${SRC_LABEL[v.source] ?? v.source}）` : ""}`;
       if (action === "list") {
         const r = await plane.listVersions(p.id, doc_id);
         return text(`共 ${r.versions.length} 个版本，当前内容${r.current_matches ? "和最新版本一致" : "比最新版本新（有未存为版本的改动）"}：\n\n${r.versions.map(line).join("\n") || "无"}`);
@@ -1198,7 +1200,7 @@ server.registerTool(
       }
       const keep = save_current !== false;
       const r = await wrap(() => plane.restoreVersion(p.id, doc_id, need(), keep));
-      return text(`已回退到：\n${line(r.restored)}\n${r.saved_current ? `回退前的内容已存为版本，随时可以回来：\n${line(r.saved_current)}` : "回退前的内容没有保存（save_current=false）。"}`);
+      return text(`已回退到：\n${line(r.restored)}\n${r.saved_current ? `回退前的内容已存为版本，随时可以回来：\n${line(r.saved_current)}` : "回退前的内容没有另存为版本（save_current=false）；最近一次改动之前的内容如果已经有版本，仍然可以从版本列表里找回。"}`);
     }),
 );
 
@@ -1224,15 +1226,21 @@ server.registerTool(
       const pn = (x?: { name?: string }) => x?.name ?? "未知成员";
       if (action === "pending") {
         const rows = await plane.pendingAccess();
-        return text(rows.length ? `等你审批的编辑申请（${rows.length}）：\n${rows.map((r) => `- ${r.id} ${pn(r.requester)} 申请编辑${r.entity_type === "page" ? "文档" : "工作项"}「${r.title}」（${r.entity_id}）${r.message ? `：${r.message}` : ""}`).join("\n")}\n\n用 action=decide、request_id、approve 处理。` : "没有等你审批的编辑申请。");
+        return text(rows.length ? `等你审批的编辑申请（${rows.length}）：\n${rows.map((r) => `- request_id=${r.id} ${pn(r.requester)} 申请编辑${r.entity_type === "page" ? "文档" : "工作项"}「${r.title}」（type=${r.entity_type === "page" ? "page" : "issue"} id=${r.entity_type === "page" ? r.entity_id : (r.key ?? r.entity_id)}）${r.message ? `：${r.message}` : ""}`).join("\n")}\n\n处理：doc_access action=decide，type 和 id 照上面填，再带 request_id 和 approve（true 批准，false 拒绝）。` : "没有等你审批的编辑申请。");
       }
       if (!type || !id) throw new Error("需要 type 和 id");
       let entityId = id;
       let pid = "";
       if (type === "issue") {
-        const t = await resolveTask(id, "read");
-        entityId = t.item.id;
-        pid = t.project.id;
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+          // 直接给 UUID：成员匹配时需要项目，从待审批列表里找
+          const row = (await plane.pendingAccess().catch(() => [])).find((r) => r.entity_id === id);
+          pid = row?.project_id ?? "";
+        } else {
+          const t = await resolveTask(id, "read");
+          entityId = t.item.id;
+          pid = t.project.id;
+        }
       }
       const body: Record<string, unknown> = { action };
       if (action === "request") body.message = message ?? "";

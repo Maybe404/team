@@ -101,9 +101,11 @@ export function CustomImageBlock(props: CustomImageBlockProps) {
     setEditorContainer(closestEditorContainer);
     const aspectRatioCalculated = img.naturalWidth / img.naturalHeight;
 
-    if (nodeWidth === "35%") {
+    // [team 二开] 不只是默认的 35%：Agent 写入的 "70%" 之类百分比宽度也换算成像素，否则图会缩成一个很小的默认尺寸
+    if (typeof nodeWidth === "string" && /^\d+(\.\d+)?%$/.test(nodeWidth)) {
       const editorWidth = closestEditorContainer.clientWidth;
-      const initialWidth = Math.max(editorWidth * 0.35, MIN_SIZE);
+      const ratio = Math.min(100, Math.max(5, parseFloat(nodeWidth))) / 100;
+      const initialWidth = Math.max(editorWidth * ratio, MIN_SIZE);
       const initialHeight = initialWidth / aspectRatioCalculated;
 
       const initialComputedSize: TCustomImageSize = {

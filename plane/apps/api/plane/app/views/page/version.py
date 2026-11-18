@@ -16,7 +16,17 @@ from plane.app.permissions import ProjectPagePermission
 class PageVersionEndpoint(BaseAPIView):
     permission_classes = [ProjectPagePermission]
 
+    def _hidden(self, request, slug, project_id, page_id):
+        """[team 二开] 别人的私有页面、或祖先里有别人私有页的子页面，版本历史也看不到"""
+        from plane.db.models import Page
+        from plane.utils.team_access import can_view_entity
+
+        page = Page.objects.filter(pk=page_id, workspace__slug=slug).first()
+        return page is None or not can_view_entity(request.user, "page", page, project_id)
+
     def get(self, request, slug, project_id, page_id, pk=None):
+        if self._hidden(request, slug, project_id, page_id):
+            return Response({"error": "Page not found"}, status=status.HTTP_404_NOT_FOUND)
         # Check if pk is provided
         if pk:
             # Return a single page version. Scope to an *active* ProjectPage link
@@ -60,7 +70,7 @@ class PageVersionEndpoint(BaseAPIView):
         from plane.utils.team_page_version import snapshot_current, version_dict
 
         page = Page.objects.filter(pk=page_id, workspace__slug=slug).first()
-        if page is None:
+        if page is None or self._hidden(request, slug, project_id, page_id):
             return Response({"error": "页面不存在"}, status=status.HTTP_404_NOT_FOUND)
         if not can_edit_page(request.user, page):
             return Response({"error": "没有编辑权限"}, status=status.HTTP_403_FORBIDDEN)
@@ -75,7 +85,7 @@ class PageVersionEndpoint(BaseAPIView):
 
         page = Page.objects.filter(pk=page_id, workspace__slug=slug).first()
         v = PageVersion.objects.filter(page_id=page_id, pk=pk).first() if pk else None
-        if page is None or v is None:
+        if page is None or v is None or self._hidden(request, slug, project_id, page_id):
             return Response({"error": "版本不存在"}, status=status.HTTP_404_NOT_FOUND)
         if not can_edit_page(request.user, page):
             return Response({"error": "没有编辑权限"}, status=status.HTTP_403_FORBIDDEN)

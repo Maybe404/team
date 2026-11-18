@@ -108,11 +108,11 @@ test("图片宽度按原图尺寸算", () => {
   const png = Buffer.alloc(24);
   png.writeUInt32BE(1600, 16);
   png.writeUInt32BE(900, 20);
-  assert.equal(autoImageWidth("image/png", png), "100%");
+  assert.equal(autoImageWidth("image/png", png), "725px");
   png.writeUInt32BE(400, 16);
   png.writeUInt32BE(300, 20);
-  assert.equal(autoImageWidth("image/png", png), "55%");
-  assert.equal(autoImageWidth("image/png", Buffer.alloc(3)), "70%");
+  assert.equal(autoImageWidth("image/png", png), "399px");
+  assert.equal(autoImageWidth("image/png", Buffer.alloc(3)), "507px");
 });
 
 test("识别过宽的表格", () => {
@@ -128,4 +128,11 @@ test("提示块往返：> [!TIP] 变成 callout，读回来仍是提示块写法
   const back = htmlToMd(html);
   assert.match(back, /> \[!TIP\]/);
   assert.match(back, /先看一眼/);
+});
+
+test("图片宽度写百分比时折成像素，网页编辑器只认像素", () => {
+  const html = mdToHtml('![](asset:abc "70%||center")\n\n![](asset:def "725px|1.5|left")', { projectId: "p" } as never);
+  assert.match(html, /width="507px"/);
+  assert.match(html, /width="725px"/);
+  assert.ok(!/<image-component[^>]*width="[\d.]+%"/.test(html));
 });

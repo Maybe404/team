@@ -1,7 +1,16 @@
 // 排版自动适配：Agent 写 Markdown 时没法指定表格列宽和图片宽度，这里按内容替它定一个“适中”的值。
-// 正文栏按约 720px 算。纯函数，方便测试。
+// 正文栏按 725px 算（网页实测值）。编辑器的图片宽度按像素工作，百分比写进去网页上不生效，所以图片宽度一律输出像素。纯函数，方便测试。
 
-const COLUMN_PX = 720;
+export const COLUMN_PX = 725;
+
+/** 把 "70%" 折成像素（占正文栏的比例）；已经是像素或纯数字的原样返回成 "Npx" */
+export function widthToPx(w: string): string {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(%|px)?\s*$/.exec(w);
+  if (!m) return w;
+  const n = Number(m[1]);
+  if (m[2] === "%") return `${Math.round((Math.min(100, Math.max(5, n)) / 100) * COLUMN_PX)}px`;
+  return `${Math.round(n)}px`;
+}
 
 /** 一段文字在表格里的视觉宽度（汉字按 2 算，其余按 1 算） */
 const visual = (s: string) => Array.from(s).reduce((n, c) => n + (/[ -~]/.test(c) ? 1 : 2), 0);
@@ -77,17 +86,17 @@ export function imageSize(type: string, data: Buffer): { w: number; h: number } 
 }
 
 /**
- * 图片显示宽度（占正文栏的百分比）：原图宽度折成正文栏的占比，夹在 [45%, 100%]；
+ * 图片显示宽度（像素，按占正文栏的比例折算）：原图宽度折成正文栏的占比，夹在 [45%, 100%]；
  * 很宽的图（接近或超过一栏）用 100%，很扁的长图（宽高比大于 3）也用 100%；读不出尺寸时用 70%。
  * SVG 没有固有像素，按 viewBox 宽度折算后再统一放大到至少 70%。
  */
 export function autoImageWidth(type: string, data: Buffer): string {
   const s = imageSize(type, data);
-  if (!s || !s.w || !s.h) return "70%";
-  if (s.w / s.h > 3) return "100%";
+  if (!s || !s.w || !s.h) return widthToPx("70%");
+  if (s.w / s.h > 3) return widthToPx("100%");
   let pct = (s.w / COLUMN_PX) * 100;
   if (type === "image/svg+xml") pct = Math.max(70, pct);
-  return `${Math.round(Math.min(100, Math.max(45, pct)) / 5) * 5}%`;
+  return widthToPx(`${Math.round(Math.min(100, Math.max(45, pct)) / 5) * 5}%`);
 }
 
 /** 写入提示用：Markdown 里有没有太宽的表格（列数过多）。 */

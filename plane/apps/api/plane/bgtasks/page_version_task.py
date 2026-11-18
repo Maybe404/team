@@ -38,12 +38,15 @@ def track_page_version(page_id, existing_instance, user_id):
             if (
                 page_version
                 and not page_version.is_locked
+                # [team 二开] 只合并编辑器自己的自动保存；手动保存、起过名字、恢复前后、Agent 改写的版本不动
+                and (page_version.source or "editor") == "editor"
+                and not page_version.label
                 and str(page_version.owned_by_id) == str(user_id)
                 and (timezone.now() - page_version.last_saved_at).total_seconds() <= PAGE_VERSION_TASK_TIMEOUT
             ):
                 page_version.description_html = page.description_html
                 page_version.description_binary = page.description_binary
-                page_version.description_json = page.description
+                page_version.description_json = page.description_json
                 page_version.description_stripped = page.description_stripped
                 page_version.sub_pages_data = sub_pages
                 page_version.save(
@@ -61,7 +64,7 @@ def track_page_version(page_id, existing_instance, user_id):
                 PageVersion.objects.create(
                     page_id=page_id,
                     workspace_id=page.workspace_id,
-                    description_json=page.description,
+                    description_json=page.description_json,
                     description_html=page.description_html,
                     description_binary=page.description_binary,
                     description_stripped=page.description_stripped,

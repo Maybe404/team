@@ -55,6 +55,30 @@ class TeamAccessService extends APIService {
 }
 const service = new TeamAccessService();
 
+/** 页面内的一行输入 + 确认/取消，代替浏览器自带的 prompt 弹窗 */
+function InlineAsk(props: { placeholder: string; confirmLabel: string; busy?: boolean; onConfirm: (value: string) => void; onCancel: () => void }) {
+  const { placeholder, confirmLabel, busy, onConfirm, onCancel } = props;
+  const [value, setValue] = useState("");
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        autoFocus
+        value={value}
+        maxLength={200}
+        placeholder={placeholder}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onConfirm(value.trim());
+          if (e.key === "Escape") onCancel();
+        }}
+        className="min-w-48 flex-1 rounded-md border border-subtle bg-layer-1 px-2 py-1 text-caption-md-regular text-primary outline-none focus:border-accent-strong"
+      />
+      <Button variant="primary" size="sm" stretch="auto" loading={busy} label={confirmLabel} onClick={() => onConfirm(value.trim())} />
+      <Button variant="ghost" size="sm" stretch="auto" label="取消" onClick={onCancel} />
+    </div>
+  );
+}
+
 const errMsg = (e: unknown) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "请稍后再试";
 
 export function useAccessStatus(workspaceSlug: string, type: TAccessType, id: string | undefined) {
@@ -75,15 +99,16 @@ export function AccessRequestBar(props: { workspaceSlug: string; type: TAccessTy
   const { workspaceSlug, type, id } = props;
   const { status, setStatus } = useAccessStatus(workspaceSlug, type, id);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
   if (!status || status.can_edit) return null;
   const pending = status.my_request?.status === "pending";
-  const ask = async () => {
-    const message = window.prompt("给拥有者留句话（可以留空）：", "");
-    if (message === null || !id) return;
+  const ask = async (message: string) => {
+    if (!id) return;
     setBusy(true);
     try {
       setStatus(await service.act(workspaceSlug, type, id, { action: "request", message }));
       setToast({ type: "success", title: "已发出申请", message: "拥有者批准后你就能编辑了" });
+      setAsking(false);
     } catch (e) {
       setToast({ type: "error", title: "申请失败", message: errMsg(e) });
     } finally {
@@ -98,8 +123,10 @@ export function AccessRequestBar(props: { workspaceSlug: string; type: TAccessTy
       </span>
       {pending ? (
         <span className="text-tertiary">已申请，等待批准</span>
+      ) : asking ? (
+        <InlineAsk placeholder="给拥有者留句话（可以留空）" confirmLabel="发出申请" busy={busy} onConfirm={(m) => void ask(m)} onCancel={() => setAsking(false)} />
       ) : (
-        <Button variant="secondary" size="sm" stretch="auto" loading={busy} label="申请编辑权限" onClick={() => void ask()} />
+        <Button variant="secondary" size="sm" stretch="auto" label="申请编辑权限" onClick={() => setAsking(true)} />
       )}
     </div>
   );
@@ -110,6 +137,7 @@ type ModalProps = { isOpen: boolean; onClose: () => void; workspaceSlug: string;
 /** 编辑权限弹窗：拥有者和管理员看到共同维护人和待批准的申请；其他人看到现状并可以申请。 */
 export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClose, workspaceSlug, type, id }: ModalProps) {
   const { status, setStatus, reload } = useAccessStatus(workspaceSlug, type, isOpen ? id : undefined);
+  const [asking, setAsking] = useState(false);
   const {
     workspace: { workspaceMemberIds },
     getUserDetails,
@@ -224,18 +252,19 @@ export const TeamAccessModal = observer(function TeamAccessModal({ isOpen, onClo
                   <div>
                     {status.my_request?.status === "pending" ? (
                       <span className="text-tertiary">你已申请，等待批准</span>
-                    ) : (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        stretch="auto"
-                        disabled={busy}
-                        label="申请编辑权限"
-                        onClick={() => {
-                          const message = window.prompt("给拥有者留句话（可以留空）：", "");
-                          if (message !== null) void run({ action: "request", message }, "已发出申请");
+                    ) : asking ? (
+                      <InlineAsk
+                        placeholder="给拥有者留句话（可以留空）"
+                        confirmLabel="发出申请"
+                        busy={busy}
+                        onConfirm={(message) => {
+                          void run({ action: "request", message }, "已发出申请");
+                          setAsking(false);
                         }}
+                        onCancel={() => setAsking(false)}
                       />
+                    ) : (
+                      <Button variant="primary" size="sm" stretch="auto" disabled={busy} label="申请编辑权限" onClick={() => setAsking(true)} />
                     )}
                   </div>
                 )}

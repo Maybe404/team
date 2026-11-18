@@ -1,7 +1,7 @@
 // Agent 读写都用 Markdown；Loom 存的是 HTML。在这里来回转换。
 import { randomUUID } from "node:crypto";
 import { marked } from "marked";
-import { autoImageWidth, sizeTables } from "./layout.ts";
+import { autoImageWidth, sizeTables, widthToPx } from "./layout.ts";
 import TurndownService from "turndown";
 // @ts-expect-error 该插件没有类型声明
 import { gfm } from "@joplin/turndown-plugin-gfm";
@@ -92,9 +92,10 @@ export function mdToHtmlWith(md: string, opts: { projectId?: string; members?: P
   // 文档里的图片：![](asset:<附件ID> "宽度|宽高比|对齐") 还原成编辑器的图片节点
   html = html.replace(/(<p>\s*)?<img src="asset:([^"]+)"([^>]*)>(\s*<\/p>)?/g, (_m, _p, id: string, rest: string) => {
     const title = /title="([^"]*)"/.exec(rest)?.[1] ?? "";
-    const [width = "70%", ratio = "", align = "center"] = title.split("|");
+    const [rawWidth = "", ratio = "", align = "center"] = title.split("|");
+    const width = widthToPx(rawWidth || "70%"); // 编辑器按像素算宽度，百分比不生效，这里统一折成像素
     const r = ratio ? ` aspectRatio="${ratio}"` : "";
-    return `<image-component src="${id}" width="${width || "70%"}" height="auto"${r} alignment="${align || "center"}" status="uploaded"></image-component>`;
+    return `<image-component src="${id}" width="${width}" height="auto"${r} alignment="${align || "center"}" status="uploaded"></image-component>`;
   });
   // Loom 编辑器的任务列表：<ul data-type="taskList"><li data-type="taskItem" data-checked="true">
   html = html.replace(/<ul>\s*(<li><input[^>]*type="checkbox"[\s\S]*?)<\/ul>/g, (_m, items: string) => {
@@ -202,7 +203,7 @@ export async function importInlineImages(md: string, upload: ImageUploader): Pro
     const width = /width=(\d+%?)/.exec(info)?.[1] ?? "auto";
     const caption = /caption="([^"]*)"/.exec(info)?.[1] ?? "";
     const buf = Buffer.from(body, "utf8");
-    jobs.push({ name, type: "image/svg+xml", b64: buf.toString("base64"), width: width === "auto" ? autoImageWidth("image/svg+xml", buf) : /%$/.test(width) ? width : `${width}%`, caption });
+    jobs.push({ name, type: "image/svg+xml", b64: buf.toString("base64"), width: width === "auto" ? autoImageWidth("image/svg+xml", buf) : widthToPx(/%$/.test(width) ? width : `${width}%`), caption });
     return `\u0000IMG${jobs.length - 1}\u0000`;
   });
   out = out.replace(DATA_IMG, (_m, alt: string, type: string, b64: string) => {

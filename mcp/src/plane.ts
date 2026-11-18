@@ -81,7 +81,7 @@ export type Page = {
 };
 export type Version = { id: string; last_saved_at: string; is_locked?: boolean; label?: string; source?: string; owned_by?: string };
 export type Access = Record<string, unknown> & { can_edit?: boolean; can_manage?: boolean };
-export type PendingAccess = { id: string; entity_type: string; entity_id: string; project_id: string; title: string; requester: { id?: string; name?: string }; message?: string };
+export type PendingAccess = { id: string; entity_type: string; entity_id: string; project_id: string; key?: string | null; title: string; requester: { id?: string; name?: string }; message?: string };
 export type Me = { id: string; email: string; display_name: string };
 
 type Paginated<T> = { results: T[]; next_cursor?: string; next_page_results?: boolean };

@@ -44,6 +44,16 @@ CYCLE_EDIT_VIEWS = {
 }
 
 
+# 按动作（ViewSet 的 action）检查：锁定、归档、改访问级别这些不是 PATCH，但同样是改别人的东西
+PAGE_EDIT_ACTIONS = {"PageViewSet": ("page_id", {"lock", "unlock", "archive", "unarchive", "access"})}
+ISSUE_EDIT_ACTIONS = {"IssueArchiveViewSet": ("pk", {"archive", "unarchive"})}
+# 批量操作：请求体里带多个工作项 ID，任何一个不能改就整体拒绝
+ISSUE_BULK_VIEWS = {
+    "BulkArchiveIssuesEndpoint": lambda data: data.get("issue_ids") or [],
+    "IssueBulkUpdateDateEndpoint": lambda data: [u.get("id") for u in (data.get("updates") or []) if isinstance(u, dict)],
+}
+
+
 def is_workspace_admin(user, workspace_id) -> bool:
     return WorkspaceMember.objects.filter(workspace_id=workspace_id, member=user, role=ADMIN_ROLE, is_active=True).exists()
 
@@ -73,11 +83,37 @@ def can_edit_cycle(user, cycle) -> bool:
     return cycle.owned_by_id == user.id or cycle.created_by_id == user.id or is_workspace_admin(user, cycle.workspace_id)
 
 
+def _enforce_extra(view, request, kwargs, name, user):
+    action = getattr(view, "action", None)
+    if name in PAGE_EDIT_ACTIONS:
+        param, actions = PAGE_EDIT_ACTIONS[name]
+        if action in actions and kwargs.get(param):
+            page = Page.objects.filter(pk=kwargs[param]).only("id", "owned_by_id", "workspace_id").first()
+            if page and not can_edit_page(user, page):
+                raise PermissionDenied(PAGE_MESSAGE)
+    if name in ISSUE_EDIT_ACTIONS:
+        param, actions = ISSUE_EDIT_ACTIONS[name]
+        if action in actions and kwargs.get(param):
+            issue = Issue.objects.filter(pk=kwargs[param]).only("id", "created_by_id", "workspace_id").first()
+            if issue and not can_edit_issue(user, issue):
+                raise PermissionDenied(ISSUE_MESSAGE)
+    if name in ISSUE_BULK_VIEWS and request.method in ("POST", "PATCH", "PUT"):
+        try:
+            ids = [i for i in ISSUE_BULK_VIEWS[name](request.data) if i]
+        except Exception:
+            ids = []
+        if ids:
+            for issue in Issue.objects.filter(pk__in=ids).only("id", "created_by_id", "workspace_id"):
+                if not can_edit_issue(user, issue):
+                    raise PermissionDenied(ISSUE_MESSAGE)
+
+
 def enforce_edit_policy(view, request, kwargs):
     name = view.__class__.__name__
     user = request.user
     if not getattr(user, "is_authenticated", False):
         return
+    _enforce_extra(view, request, kwargs, name, user)
     if name in ISSUE_EDIT_VIEWS:
         param, methods = ISSUE_EDIT_VIEWS[name]
         if request.method in methods and kwargs.get(param):

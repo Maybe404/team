@@ -2,16 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { htmlToMd, importInlineImages, mdToHtml } from "../src/markdown.ts";
 
-const page = '<ul><li>a</li></ul><html-embed-component data-html="<h1 a=&quot;1&quot;>你好&lt;/h1&gt;&lt;script&gt;x&gt;1&lt;/script&gt;" data-name="demo.html" data-height="500" data-width="80"></html-embed-component><image-component src="abc-1" width="50%" height="auto" alignment="center" status="uploaded"></image-component><p>尾</p>';
+const page = '<ul><li>a</li></ul><html-embed-component data-html="<h1 a=&quot;1&quot;>你好&lt;/h1&gt;&lt;script&gt;x&gt;1&lt;/script&gt;" data-name="demo.html" data-height="500" data-width="80"></html-embed-component><image-component src="abc-1" width="363px" height="auto" alignment="center" status="uploaded"></image-component><p>尾</p>';
 
 test("HTML 嵌入块和图片经 Markdown 往返不丢失", () => {
   const md = htmlToMd(page);
   assert.match(md, /```html-embed name="demo.html" height=500 width=80/);
-  assert.match(md, /!\[\]\(asset:abc-1 "50%\|\|center"\)/);
+  assert.match(md, /!\[\]\(asset:abc-1 "363px\|\|center"\)/);
   const back = mdToHtml(md);
   assert.match(back, /<html-embed-component data-html="<h1 a=&quot;1&quot;>你好/);
   assert.match(back, /data-height="500" data-width="80"/);
-  assert.match(back, /<image-component src="abc-1" width="50%" height="auto" alignment="center" status="uploaded">/);
+  assert.match(back, /<image-component src="abc-1" width="363px" height="auto" alignment="center" status="uploaded">/);
   assert.equal(htmlToMd(back), md);
 });
 
@@ -47,8 +47,8 @@ test("SVG 围栏和 data URI 图片上传后变成 asset 图片", async () => {
   assert.equal(calls[0].name, "架构.svg");
   assert.match(Buffer.from(calls[0].b64, "base64").toString(), /<svg/);
   assert.equal(calls[1].type, "image/png");
-  assert.match(r.md, /!\[\]\(asset:id1 "70%\|\|center"\)\n\n\*图 1：整体架构\*/);
-  assert.match(r.md, /!\[\]\(asset:id2 "70%\|\|center"\)\n\n\*截图\*/);
+  assert.match(r.md, /!\[\]\(asset:id1 "507px\|\|center"\)\n\n\*图 1：整体架构\*/);
+  assert.match(r.md, /!\[\]\(asset:id2 "507px\|\|center"\)\n\n\*截图\*/);
   assert.ok(!r.md.includes("```svg"));
   const none = await importInlineImages("普通文字", async () => "x");
   assert.equal(none.count, 0);

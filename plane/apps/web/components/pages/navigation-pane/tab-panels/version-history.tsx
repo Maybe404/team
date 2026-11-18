@@ -138,6 +138,8 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
   const { workspaceSlug, projectId } = useParams();
   const canEdit = page.canCurrentUserEditPage;
   const [saving, setSaving] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const [labelDraft, setLabelDraft] = useState("");
   // translation
   const { currentLocale, t } = useTranslation();
   // query params
@@ -162,10 +164,9 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
     },
     [id, mutateVersionsList, projectId, versionService, workspaceSlug]
   );
-  const handleSaveSnapshot = useCallback(() => {
+  const handleSaveSnapshot = useCallback(
+    (label: string) => {
     if (!id || !workspaceSlug || !projectId) return;
-    const label = window.prompt("给这个版本起个名字（可以留空）：", "") ?? null;
-    if (label === null) return;
     setSaving(true);
     void versionService
       .saveSnapshot(workspaceSlug.toString(), projectId.toString(), id, { label: label.trim() })
@@ -174,8 +175,14 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
         return mutateVersionsList();
       })
       .catch(() => setToast({ type: "error", title: "保存没成功，请稍后再试" }))
-      .finally(() => setSaving(false));
-  }, [id, mutateVersionsList, projectId, versionService, workspaceSlug]);
+      .finally(() => {
+        setSaving(false);
+        setNaming(false);
+        setLabelDraft("");
+      });
+    },
+    [id, mutateVersionsList, projectId, versionService, workspaceSlug]
+  );
 
   const getVersionLink = useCallback(
     (versionID?: string) =>
@@ -230,7 +237,28 @@ export const PageNavigationPaneVersionHistoryPanel = observer(function PageNavig
       </div>
       {canEdit && (
         <div className="mt-3">
-          <Button variant="secondary" size="sm" stretch="auto" loading={saving} onClick={handleSaveSnapshot} label="把当前内容保存为一个版本" />
+          {naming ? (
+            <div className="flex flex-col gap-2">
+              <input
+                autoFocus
+                value={labelDraft}
+                maxLength={100}
+                placeholder="给这个版本起个名字（可以留空）"
+                onChange={(e) => setLabelDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveSnapshot(labelDraft.trim());
+                  if (e.key === "Escape") setNaming(false);
+                }}
+                className="w-full rounded-md border border-subtle bg-layer-1 px-2 py-1 text-caption-md-regular text-primary outline-none focus:border-accent-strong"
+              />
+              <div className="flex gap-2">
+                <Button variant="primary" size="sm" stretch="auto" loading={saving} onClick={() => handleSaveSnapshot(labelDraft.trim())} label="保存" />
+                <Button variant="ghost" size="sm" stretch="auto" onClick={() => setNaming(false)} label="取消" />
+              </div>
+            </div>
+          ) : (
+            <Button variant="secondary" size="sm" stretch="auto" onClick={() => setNaming(true)} label="把当前内容保存为一个版本" />
+          )}
         </div>
       )}
       <div className="vertical-scrollbar mt-4 scrollbar-sm flex-1 space-y-4 overflow-y-auto pb-4">

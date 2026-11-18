@@ -352,7 +352,7 @@ class TeamPageVersionsAPIEndpoint(TeamPageBase):
         page.description_html = live_result["description_html"]
         page.description_json = live_result["description_json"]
         page.save()
-        record_change(page, request.user, old_state, source="restore")
+        record_change(page, request.user, old_state, source="restore", keep_before=bool(request.data.get("save_current", True)))
         return Response({"restored": version_dict(target), "saved_current": version_dict(saved) if saved else None})
 
     def patch(self, request, slug, project_id, pk, version_id=None):

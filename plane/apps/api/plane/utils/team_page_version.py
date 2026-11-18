@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from plane.db.models import PageVersion
 
-MAX_UNLOCKED_VERSIONS = 20
+MAX_UNLOCKED_VERSIONS = 50  # Agent 每次改写存前后两版，20 个只够回溯约 10 次
 
 
 def trim_versions(page_id):
@@ -36,12 +36,12 @@ def latest_version(page_id):
     return PageVersion.objects.filter(page_id=page_id).order_by("-last_saved_at").first()
 
 
-def record_change(page, user, old_state, source="api"):
+def record_change(page, user, old_state, source="api", keep_before=True):
     """接口改写正文后调用：old_state = (html, binary, json) 是改写前的内容。page 必须是已保存的最新状态。"""
     old_html, old_binary, old_json = old_state
     last = latest_version(page.id)
-    if old_html and (last is None or last.description_html != old_html):
-        _create(page, page.owned_by_id, "before-" + source, when=timezone.now() - timedelta(seconds=1), html=old_html, binary=old_binary, json=old_json)
+    if keep_before and old_html and (last is None or last.description_html != old_html):
+        _create(page, (last.owned_by_id if last else page.owned_by_id), "before-" + source, when=timezone.now() - timedelta(seconds=1), html=old_html, binary=old_binary, json=old_json)
     version = _create(page, user.id, source)
     trim_versions(page.id)
     return version

@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 
-from plane.db.models import Issue, IssueAssignee, Page, TeamEditor, TeamEditRequest, User, Workspace, WorkspaceMember
+from plane.db.models import Issue, IssueAssignee, Page, ProjectMember, ProjectPage, TeamEditor, TeamEditRequest, User, Workspace, WorkspaceMember
 from plane.utils.team_edit_policy import can_edit_issue, can_edit_page, is_workspace_admin
 
 
@@ -15,6 +15,29 @@ def get_entity(entity_type, entity_id, slug):
     if entity_type == "issue":
         return Issue.objects.filter(pk=entity_id, workspace__slug=slug).first()
     return None
+
+
+def entity_project_ids(entity_type, obj):
+    if entity_type == "issue":
+        return [obj.project_id]
+    return list(ProjectPage.objects.filter(page_id=obj.id, deleted_at__isnull=True).values_list("project_id", flat=True))
+
+
+def can_view_entity(user, entity_type, obj, project_id=None):
+    """能不能看到这个对象：必须是它所在项目的在职成员；文档还要自己看得到（不是别人的私有页，祖先里也没有别人的私有页）。"""
+    from plane.utils.team_page_tree import hidden_page_ids
+
+    pids = [project_id] if project_id else entity_project_ids(entity_type, obj)
+    for pid in pids:
+        if not ProjectMember.objects.filter(project_id=pid, member=user, is_active=True).exists():
+            continue
+        if entity_type == "page":
+            if obj.access == Page.PRIVATE_ACCESS and obj.owned_by_id != user.id:
+                continue
+            if obj.id in hidden_page_ids(user, pid):
+                continue
+        return True
+    return False
 
 
 def can_edit(user, entity_type, obj):
@@ -79,13 +102,15 @@ def pending_for_user(user, slug):
         obj = get_entity(r.entity_type, r.entity_id, slug)
         if obj is None:
             continue
-        if admin or user.id in owner_ids(r.entity_type, obj):
+        if (admin or user.id in owner_ids(r.entity_type, obj)) and can_view_entity(user, r.entity_type, obj):
+            pids = entity_project_ids(r.entity_type, obj)
             out.append(
                 {
                     "id": str(r.id),
                     "entity_type": r.entity_type,
                     "entity_id": str(r.entity_id),
-                    "project_id": str(getattr(obj, "project_id", "") or ""),
+                    "project_id": str(pids[0]) if pids else "",
+                    "key": f"{obj.project.identifier}-{obj.sequence_id}" if r.entity_type == "issue" else None,
                     "title": _title(r.entity_type, obj),
                     "requester": _person(r.requester_id),
                     "message": r.message,
@@ -107,7 +132,8 @@ def handle_access(request, slug, entity_type, entity_id):
     user = request.user
     if not WorkspaceMember.objects.filter(workspace__slug=slug, member=user, is_active=True).exists():
         return _bad("找不到这个对象", status.HTTP_404_NOT_FOUND)
-    if entity_type == "page" and obj.access == Page.PRIVATE_ACCESS and not can_manage(user, entity_type, obj):
+    # 项目成员才看得到；别人的私有文档（含祖先里有私有页的子页面）一律当作不存在
+    if not can_view_entity(user, entity_type, obj):
         return _bad("找不到这个对象", status.HTTP_404_NOT_FOUND)
     if request.method == "GET":
         return Response(access_status(user, entity_type, obj))

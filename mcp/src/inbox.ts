@@ -64,7 +64,7 @@ export async function buildInbox(plane: Loom, projectIds?: string[]): Promise<In
           .map((x) => `- [${x.key}](${x.url}) ${x.name}（${x.project}，${x.state}，${x.days} 天没动）`)
           .join("\n") + (r.length > limit ? `\n- …还有 ${r.length - limit} 项` : "")
       : "无";
-  const access = await plane.pendingAccess?.().catch(() => []) ?? [];
+  const access = ((await plane.pendingAccess?.().catch(() => [])) ?? []).filter((r) => !projectIds || projectIds.includes(r.project_id));
   const counts = { access: access.length, decide: decide.length, review: review.length, blocked: blocked.length, todo: todo.length, intake: intake.reduce((n, i) => n + i.names.length, 0), lessons };
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const md = [
@@ -73,7 +73,7 @@ export async function buildInbox(plane: Loom, projectIds?: string[]): Promise<In
     `## 等你审查（${review.length}）\n\n${rows(review)}`,
     `## 阻塞中（${blocked.length}）\n\n${rows(blocked)}`,
     `## 指派给你的未完成任务（${todo.length}）\n\n${rows(todo)}`,
-    `## 等你审批的编辑申请（${access.length}）\n\n${access.length ? access.slice(0, 8).map((r) => `- ${r.requester?.name ?? "有人"} 申请编辑「${r.title}」（doc_access decide，request_id=${r.id}）`).join("\n") : "无"}`,
+    `## 等你审批的编辑申请（${access.length}）\n\n${access.length ? access.slice(0, 8).map((r) => `- ${r.requester?.name ?? "有人"} 申请编辑「${r.title}」（doc_access decide：type=${r.entity_type === "page" ? "page" : "issue"} id=${r.entity_type === "page" ? r.entity_id : (r.key ?? r.entity_id)} request_id=${r.id}）`).join("\n") : "无"}`,
     `## 收集里待分诊（${counts.intake}）\n\n${intake.length ? intake.map((i) => `- ${i.project}：${i.names.join("、")}（${i.url}）`).join("\n") : "无"}`,
     `## 待审核的经验（${lessons}）\n\n${lessons ? "在网页「经验库」项目里采纳或驳回。" : "无"}`,
   ].join("\n\n");

@@ -72,7 +72,8 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
   };
 
   const handleRestoreVersion = async (saveFirst: boolean) => {
-    if (!restoreEnabled) return;
+    // 历史正文还没加载出来时不能恢复，否则会把空白写回文档
+    if (!restoreEnabled || !versionDetails?.description_html) return;
     setIsRestoring(true);
     setConfirming(false);
     if (saveFirst) {
@@ -84,7 +85,7 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
         return;
       }
     }
-    await handleRestore(versionDetails?.description_html ?? "<p></p>")
+    await handleRestore(versionDetails.description_html)
       .then(() => {
         setToast({
           type: "success",
@@ -152,6 +153,7 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
                 }
                 onClick={() => setConfirming(true)}
                 loading={isRestoring}
+                disabled={!versionDetails?.description_html}
               />
             )}
           </div>
