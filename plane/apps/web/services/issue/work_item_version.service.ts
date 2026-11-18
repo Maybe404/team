@@ -34,6 +34,40 @@ export class WorkItemVersionService extends APIService {
       });
   }
 
+  // [team 二开] 保存快照、命名、锁定
+  async saveSnapshot(
+    workspaceSlug: string,
+    projectId: string,
+    workItemId: string,
+    payload: { label?: string; lock?: boolean; source?: "before-restore" } = {}
+  ): Promise<{ id: string }> {
+    return this.post(
+      `/api/workspaces/${workspaceSlug}/projects/${projectId}/${this.serviceType}/${workItemId}/description-versions/`,
+      payload
+    )
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async updateDescriptionVersion(
+    workspaceSlug: string,
+    projectId: string,
+    workItemId: string,
+    versionId: string,
+    payload: { label?: string; is_locked?: boolean }
+  ): Promise<unknown> {
+    return this.patch(
+      `/api/workspaces/${workspaceSlug}/projects/${projectId}/${this.serviceType}/${workItemId}/description-versions/${versionId}/`,
+      payload
+    )
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
   async retrieveDescriptionVersion(
     workspaceSlug: string,
     projectId: string,

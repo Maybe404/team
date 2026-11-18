@@ -46,7 +46,8 @@
       "notif_request": "{name} 申請編輯權限",
       "notif_approved": "{name} 同意了你的編輯申請",
       "notif_rejected": "{name} 拒絕了你的編輯申請",
-      "notif_added": "{name} 把你加為共同維護人"
+      "notif_added": "{name} 把你加為共同維護人",
+      "notif_intake_new": "{name} 提交了一個收集條目，等你處理"
     },
     "version": {
       "source_mcp": "Agent 改寫",
@@ -68,7 +69,8 @@
       "save_before_failed": "未能先儲存目前內容，已取消還原",
       "confirm_text": "還原到這個版本前，要不要先把目前內容儲存成一個版本？不儲存的話，目前未存為版本的改動可能找不回來。",
       "save_and_restore": "儲存目前並還原",
-      "restore_without_saving": "不儲存，直接還原"
+      "restore_without_saving": "不儲存，直接還原",
+      "rename": "改名"
     },
     "project": {
       "pin": "置頂專案",
@@ -77,6 +79,46 @@
       "set_icon": "設定圖示",
       "icon": "圖示",
       "remove_icon": "移除圖示"
+    },
+    "diff": {
+      "compare": "與目前內容比較",
+      "back": "返回此版本",
+      "no_change": "與目前內容沒有差別。",
+      "legend": "紅色：只在此版本有；綠色：只在目前內容有。",
+      "folded": "… 中間 {count} 段沒有變動"
+    },
+    "search": {
+      "title": "搜尋",
+      "placeholder": "依標題或內文搜尋文件與工作項",
+      "button": "搜尋",
+      "type_all": "全部",
+      "type_page": "文件",
+      "type_issue": "工作項",
+      "all_projects": "所有專案",
+      "hint": "在你有權存取的所有專案中搜尋，輸入後按 Enter。",
+      "failed": "搜尋失敗，請稍後再試",
+      "empty": "找不到「{q}」相關內容",
+      "untitled": "無標題",
+      "command": "跨專案搜尋"
+    },
+    "templates": {
+      "command": "範本",
+      "title": "範本",
+      "desc": "文件與工作項的常用寫法骨架。Agent 以 list_templates、get_template 讀取，並依相同結構撰寫。",
+      "new": "新增範本",
+      "kind_page": "文件",
+      "kind_issue": "工作項",
+      "scope_workspace": "整個工作區通用",
+      "name": "範本名稱",
+      "when": "什麼時候用（一句話）",
+      "body_placeholder": "Markdown 骨架，例如 ## 概述，用 <!-- 提示 --> 說明每段寫什麼",
+      "save_failed": "範本未能儲存",
+      "load_failed": "範本未能載入",
+      "saved": "範本已儲存",
+      "confirm_delete": "刪除這個範本？刪除後無法復原。",
+      "empty": "還沒有範本。可以新增一個，也可以讓 Agent 用 save_template 存一個。",
+      "edit": "編輯",
+      "delete": "刪除"
     }
   }
 }

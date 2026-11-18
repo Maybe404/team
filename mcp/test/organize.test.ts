@@ -52,6 +52,20 @@ const plane = {
   createWorkItem: async (_p: string, b: Record<string, unknown>) => { items.push(mkItem(4, "s1", String(b.name))); return items[3]; },
   listVersions: async (_p: string, id: string, kind = "pages") => { calls.push(`vlist ${kind} ${id}`); return { versions: [{ id: "v1", last_saved_at: now, owned_by: "u1", is_locked: true, label: "定稿", source: "manual" }], current_matches: true }; },
   saveVersion: async (_p: string, id: string, b: { label?: string }, kind = "pages") => { calls.push(`vsave ${kind} ${id} ${b.label}`); return { id: "v2", last_saved_at: now, owned_by: "u1", is_locked: false, label: b.label ?? "", source: "manual", created: true }; },
+  listTemplates: async () => ({ templates: tpls.map(({ body: _b, ...t }) => t) }),
+  getTemplate: async (id: string) => tpls.find((t) => t.id === id)!,
+  createTemplate: async (b: { kind: "page" | "issue"; name: string; body?: string; description?: string; project_id?: string }) => {
+    const t = { id: `t${tpls.length + 1}`, kind: b.kind, name: b.name, description: b.description ?? "", project_id: b.project_id ?? null, created_by: "u1", updated_at: now, body: b.body ?? "" };
+    tpls.push(t);
+    return t;
+  },
+  updateTemplate: async (id: string, b: Record<string, string>) => Object.assign(tpls.find((t) => t.id === id)!, b),
+  getProjectSettings: async () => ({ is_pinned: settings.pinned, logo_props: settings.logo }),
+  patchProjectSettings: async (_p: string, b: { is_pinned?: boolean; logo_props?: Record<string, unknown> }) => {
+    if (b.is_pinned !== undefined) settings.pinned = b.is_pinned;
+    if (b.logo_props !== undefined) settings.logo = b.logo_props;
+    return { is_pinned: settings.pinned, logo_props: settings.logo };
+  },
   listIntake: async () => intake,
   createIntake: async (_p: string, issue: { name: string; description_html: string; priority?: string }) => {
     const row = { id: `in${intake.length + 1}`, issue: `x${intake.length + 1}`, status: -2, created_by: "u1", issue_detail: { name: issue.name, description_html: issue.description_html, priority: issue.priority } };
@@ -62,6 +76,8 @@ const plane = {
   decideIntake: async (_p: string, id: string, b: Record<string, unknown>) => { calls.push(`decide ${id} ${JSON.stringify(b)}`); const r = intake.find((x) => x.issue === id)!; Object.assign(r, b); return r; },
   createComment: async (_p: string, id: string, html: string) => { calls.push(`comment ${id} ${html.includes("拒绝原因")}`); return {}; },
 };
+const tpls: { id: string; kind: "page" | "issue"; name: string; description: string; project_id: string | null; created_by: string | null; updated_at: string; body: string }[] = [];
+const settings: { pinned: boolean; logo: Record<string, unknown> } = { pinned: false, logo: {} };
 const intake: { id: string; issue: string; status: number; created_by: string; issue_detail: { name: string; description_html: string; priority?: string } }[] = [];
 
 const [ct, st] = InMemoryTransport.createLinkedPair();
@@ -285,4 +301,35 @@ test("收集：状态没变要报错，评论失败要提示；搜索范围为�
   const w = await call("intake_decide", { project: "DEMO", item: "x9", action: "reject", reason: "和现有设计规范重复，已经统一过。" });
   assert.ok(!w.error && /原因评论没有写进去/.test(w.text), w.text);
   plane.createComment = oc;
+});
+
+
+test("模板：保存、列出、按名称读取", async () => {
+  const empty = await call("list_templates", {});
+  assert.match(empty.text, /还没有模板/);
+  const c = await call("save_template", { kind: "page", name: "周报", description: "每周五写", body: "## 本周完成\n\n<!-- 写已经合入的事 -->\n\n## 下周计划" });
+  assert.ok(!c.error, c.text);
+  const l = await call("list_templates", { kind: "page" });
+  assert.match(l.text, /t1 \[文档\] 周报（工作区通用）：每周五写/);
+  const g = await call("get_template", { template: "周报" });
+  assert.match(g.text, /write_doc/);
+  assert.match(g.text, /## 本周完成/);
+  const u = await call("save_template", { template_id: "t1", description: "每周四写" });
+  assert.match(u.text, /已更新模板/);
+  const miss = await call("get_template", { template: "不存在" });
+  assert.ok(miss.error);
+});
+
+test("project_settings：置顶、设置表情图标、移除", async () => {
+  const pin = await call("project_settings", { project: "DEMO", action: "pin" });
+  assert.match(pin.text, /已置顶/);
+  const e = await call("project_settings", { project: "DEMO", action: "set_icon", emoji: "🚀" });
+  assert.match(e.text, /表情 🚀/);
+  assert.deepEqual(settings.logo, { in_use: "emoji", emoji: { value: "128640" } });
+  const i = await call("project_settings", { project: "DEMO", action: "set_icon", icon: "Briefcase", color: "#3f76ff" });
+  assert.match(i.text, /图标 Briefcase/);
+  const r = await call("project_settings", { project: "DEMO", action: "remove_icon" });
+  assert.match(r.text, /图标：无/);
+  const bad = await call("project_settings", { project: "DEMO", action: "set_icon" });
+  assert.ok(bad.error);
 });

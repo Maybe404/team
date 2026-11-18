@@ -42,3 +42,18 @@ class TeamEditRequest(BaseModel):
     class Meta:
         db_table = "team_edit_requests"
         indexes = [models.Index(fields=["entity_type", "entity_id", "status"], name="team_editreq_entity_idx")]
+
+
+class TeamTemplate(BaseModel):
+    """[team 二开] 团队模板：常用文档、工作项的写法骨架（Markdown）。project 为空表示整个工作区通用。"""
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="team_templates")
+    project = models.ForeignKey("db.Project", null=True, blank=True, on_delete=models.CASCADE, related_name="team_templates")
+    kind = models.CharField(max_length=10, choices=ENTITY_TYPES)
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=300, blank=True, default="")
+    body = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "team_templates"
+        ordering = ("kind", "name")

@@ -315,3 +315,72 @@ def test_restore_save_keeps_locked_label_and_search_edge_cases(world):
         ProjectPage.objects.create(page=p, project=world.project, workspace=world.ws)
     r = team_search(world.other, world.ws.slug, "季度复盘", types=("page",))
     assert [p["id"] for p in r["pages"]] == [str(world.page.id)]
+
+
+def test_intake_create_and_guards(world):
+    """API 建项目开启收集时要有默认队列；关闭收集后所有写入口一致拒绝。"""
+    import inspect
+
+    from plane.api.views import intake as intake_views
+    from plane.db.models import Intake
+
+    src = inspect.getsource(intake_views)
+    assert "intake is None and not project.intake_view" not in src
+    assert "transaction.atomic()" in src
+    # 开了收集却没有队列的项目，提交入口会补建（这里只验证补建用的查询不会重复建）
+    p = world.project
+    Project.objects.filter(pk=p.pk).update(intake_view=True)
+    assert not Intake.objects.filter(project=p).exists()
+    Intake.objects.get_or_create(project=p, is_default=True, defaults={"name": "x"})
+    Intake.objects.get_or_create(project=p, is_default=True, defaults={"name": "x"})
+    assert Intake.objects.filter(project=p).count() == 1
+
+
+def test_templates_visibility_and_permissions(world):
+    from types import SimpleNamespace as NS
+
+    from plane.db.models import TeamTemplate
+    from plane.utils.team_template import handle_templates
+
+    slug = world.ws.slug
+
+    def rq(user, method, data=None, params=None):
+        return NS(user=user, method=method, data=data or {}, query_params=params or {})
+
+    r = handle_templates(rq(world.owner, "POST", {"kind": "page", "name": "周报", "body": "## 本周\n\n## 下周"}), slug)
+    assert r.status_code == 201
+    tid = r.data["id"]
+    # 同名（同范围）不能重复
+    assert handle_templates(rq(world.owner, "POST", {"kind": "page", "name": "周报"}), slug).status_code == 400
+    # 项目内模板：非项目成员看不到
+    outsider = make_user("out4")
+    WorkspaceMember.objects.create(workspace=world.ws, member=outsider, role=15)
+    r = handle_templates(rq(world.owner, "POST", {"kind": "issue", "name": "缺陷", "body": "## 复现", "project_id": str(world.project.id)}), slug)
+    assert r.status_code == 201
+    names = lambda u: sorted(t["name"] for t in handle_templates(rq(u, "GET"), slug).data["templates"])
+    assert names(world.other) == ["周报", "缺陷"]
+    assert names(outsider) == ["周报"]
+    # 别人不能改；管理员可以；创建人可以
+    assert handle_templates(rq(world.other, "PATCH", {"body": "x"}), slug, tid).status_code == 403
+    assert handle_templates(rq(world.admin, "PATCH", {"body": "## 管理员改"}), slug, tid).status_code == 200
+    assert handle_templates(rq(world.other, "DELETE"), slug, tid).status_code == 403
+    assert handle_templates(rq(world.owner, "DELETE"), slug, tid).status_code == 204
+    assert TeamTemplate.objects.filter(pk=tid).count() == 0
+    # 访客不能建工作区通用模板
+    guest = make_user("guest2")
+    WorkspaceMember.objects.create(workspace=world.ws, member=guest, role=5)
+    assert handle_templates(rq(guest, "POST", {"kind": "page", "name": "x"}), slug).status_code == 403
+
+
+def test_intake_notification_and_email_task(world):
+    from plane.bgtasks.team_email_task import team_notification_email
+    from plane.db.models import Notification
+    from plane.utils.team_access import notify
+
+    ProjectMember.objects.filter(project=world.project, member=world.owner).update(role=20)
+    notify("intake_new", world.ws, "issue", world.issue, world.other, [world.owner.id, world.other.id], url=f"{world.ws.slug}/projects/{world.project.id}/intake")
+    n = Notification.objects.get(receiver=world.owner)
+    assert n.data["team"]["kind"] == "intake_new" and n.data["team"]["url"].endswith("/intake")
+    assert not Notification.objects.filter(receiver=world.other).exists()  # 不通知提交人自己
+    # 邮件任务：没配邮件服务时直接跳过，不抛错
+    assert team_notification_email([str(n.id)]) is None

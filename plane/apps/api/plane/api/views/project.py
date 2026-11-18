@@ -278,6 +278,13 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
                     add_workspace_members_to_shared(serializer.instance)  # [team 二开]
                     # [team 二开] 模块和视图是整理任务的主要方式，新项目默认开启
                     Project.objects.filter(pk=serializer.instance.id).update(module_view=True, issue_views_view=True)
+                    # [team 二开] 创建时就开启收集的项目，同步建好默认收集队列，否则首次提交会失败
+                    if serializer.instance.intake_view:
+                        from plane.db.models import Intake
+
+                        Intake.objects.get_or_create(
+                            project=serializer.instance, is_default=True, defaults={"name": f"{serializer.instance.name} Intake"}
+                        )
                     project = self.get_queryset().filter(pk=serializer.instance.id).first()
 
                     # Defer the activity-log task until the surrounding

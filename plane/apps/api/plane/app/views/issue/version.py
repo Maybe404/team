@@ -131,6 +131,9 @@ class WorkItemDescriptionVersionEndpoint(BaseAPIView):
             "issue",
             "last_saved_at",
             "owned_by",
+            "is_locked",
+            "label",
+            "source",
             "created_at",
             "updated_at",
             "created_by",
@@ -139,7 +142,7 @@ class WorkItemDescriptionVersionEndpoint(BaseAPIView):
 
         issue_description_versions_queryset = IssueDescriptionVersion.objects.filter(
             workspace__slug=slug, project_id=project_id, issue_id=work_item_id
-        ).order_by("-created_at")
+        ).order_by("-last_saved_at")
         paginated_data = paginate(
             base_queryset=issue_description_versions_queryset,
             queryset=issue_description_versions_queryset,
@@ -149,3 +152,45 @@ class WorkItemDescriptionVersionEndpoint(BaseAPIView):
             ),
         )
         return Response(paginated_data, status=status.HTTP_200_OK)
+
+    # [team 二开] 网页上保存快照、命名、锁定（和文档版本一致）
+    def _editable_issue(self, request, slug, project_id, work_item_id):
+        from plane.utils.team_edit_policy import can_edit_issue
+
+        issue = Issue.objects.filter(workspace__slug=slug, project_id=project_id, pk=work_item_id).first()
+        if issue is None:
+            return None, Response({"error": "工作项不存在"}, status=status.HTTP_404_NOT_FOUND)
+        if issue_hidden_from_guest(request, slug, project_id, work_item_id) or not can_edit_issue(request.user, issue):
+            return None, Response({"error": "没有编辑权限"}, status=status.HTTP_403_FORBIDDEN)
+        return issue, None
+
+    @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def post(self, request, slug, project_id, work_item_id, pk=None):
+        from plane.utils import team_issue_version as iv
+
+        issue, err = self._editable_issue(request, slug, project_id, work_item_id)
+        if err:
+            return err
+        src = "before-restore" if request.data.get("source") == "before-restore" else "manual"
+        v, created = iv.snapshot_current(issue, request.user, label=request.data.get("label") or "", lock=bool(request.data.get("lock")), source=src)
+        return Response({**iv.version_dict(v), "created": created})
+
+    @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def patch(self, request, slug, project_id, work_item_id, pk=None):
+        from plane.utils import team_issue_version as iv
+
+        issue, err = self._editable_issue(request, slug, project_id, work_item_id)
+        if err:
+            return err
+        v = IssueDescriptionVersion.objects.filter(issue_id=work_item_id, pk=pk).first() if pk else None
+        if v is None:
+            return Response({"error": "版本不存在"}, status=status.HTTP_404_NOT_FOUND)
+        fields = ["updated_at"]
+        if "is_locked" in request.data:
+            v.is_locked = bool(request.data["is_locked"])
+            fields.append("is_locked")
+        if "label" in request.data:
+            v.label = str(request.data["label"] or "")[:255]
+            fields.append("label")
+        v.save(update_fields=fields)
+        return Response(iv.version_dict(v))

@@ -42,7 +42,7 @@ export class ProjectPageVersionService extends APIService {
     workspaceSlug: string,
     projectId: string,
     pageId: string,
-    payload: { label?: string; lock?: boolean } = {}
+    payload: { label?: string; lock?: boolean; source?: "before-restore" } = {}
   ): Promise<TPageVersion> {
     return this.post(`/api/workspaces/${workspaceSlug}/projects/${projectId}/pages/${pageId}/versions/`, payload)
       .then((response) => response?.data)

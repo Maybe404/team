@@ -91,7 +91,8 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
       | "loom.access.notif_request"
       | "loom.access.notif_approved"
       | "loom.access.notif_rejected"
-      | "loom.access.notif_added";
+      | "loom.access.notif_added"
+      | "loom.access.notif_intake_new";
     return (
       <Row
         className={cn("group relative flex cursor-pointer items-center gap-2 border-b border-subtle py-4 transition-all", {

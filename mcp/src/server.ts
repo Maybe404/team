@@ -43,7 +43,7 @@ const REPO_PARAM = z
   .optional()
   .describe("当前仓库 git remote get-url origin 的输出，每次都带");
 const NO_REPO = new Set(["get_guide", "check_text"]);
-const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson", "save_module", "save_view", "doc_versions", "task_versions", "doc_access", "intake_submit", "intake_decide"]);
+const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson", "save_module", "save_view", "doc_versions", "task_versions", "project_settings", "save_template", "doc_access", "intake_submit", "intake_decide"]);
 
 const lastRemind = new Map<string, number>();
 
@@ -79,7 +79,7 @@ const server = new McpServer(
 10. 项目里按版本或需求整理任务用模块：建任务前先 list_modules，有合适的放进去（create_task、update_task 的 modules 参数），没有再 save_module 新建；用户想经常看某种筛选时用 save_view 建视图。
 11. 用户不熟悉这个产品，或问到周期、模块、视图、页面该怎么用时，先调用 get_guide（topic=usage），按里面的说明引导，并明确告诉用户哪些要去网页上操作。
 12. 写文档、任务后，结果末尾的「提示」要看：漏了关联工作项、@人、指派、模块，或标题和内容有重复、太短、不合理，都要告诉用户并问他要不要补或优化，不要默默忽略，也不要擅自合并、覆盖已有内容。正文里写 @姓名 会变成提及标签（任务描述、评论、文档都支持）。
-13. 还不确定是不是正式工作的事（想法、线索、别人提的需求）先用 intake_submit 放进收集，确定要做的才用 create_task；收集里的条目用 intake_list 查看，intake_decide 接受、拒绝、稍后处理或标记重复，拿不准先问用户。\n14. 开始一段工作前、做完一件事后调用 my_inbox，把待办（等你决定、等你审查、阻塞、指派给你的、收集待分诊）转告用户；工具结果末尾出现「待办提醒」时同样转告，问用户现在处不处理。`,
+13. 还不确定是不是正式工作的事（想法、线索、别人提的需求）先用 intake_submit 放进收集，确定要做的才用 create_task；收集里的条目用 intake_list 查看，intake_decide 接受、拒绝、稍后处理或标记重复，拿不准先问用户。\n14. 写文档、建任务前先 list_templates 看有没有合适的团队模板，有就 get_template 取来，按它的结构写，再用 write_doc 或 create_task 写入；占位提示写完要去掉。要把常用写法沉淀成模板，用 save_template。\n15. 开始一段工作前、做完一件事后调用 my_inbox，把待办（等你决定、等你审查、阻塞、指派给你的、收集待分诊）转告用户；工具结果末尾出现「待办提醒」时同样转告，问用户现在处不处理。`,
   },
 );
 
@@ -1183,6 +1183,129 @@ server.registerTool(
 
 // ---------- 收集（待分诊）----------
 // 不确定是不是正式工作的事先放进收集，由有权限的人确认后再接受成工作项，或拒绝。
+
+// ---------- 团队模板 ----------
+
+server.registerTool(
+  "list_templates",
+  {
+    title: "查看模板",
+    description:
+      "列出团队模板（文档、工作项的常用写法骨架）。kind：page 文档、issue 工作项，不传列出全部；project 限定某个项目（同时包含工作区通用模板）。写文档、建任务前先看有没有合适的模板，有就用 get_template 取来按它的结构写。",
+    inputSchema: {
+      kind: z.enum(["page", "issue"]).optional(),
+      project: z.string().optional().describe("只看这个项目的模板（也包含工作区通用的）"),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ kind, project }) =>
+    run(async () => {
+      const p = project ? await projectFor(project, "read") : undefined;
+      const { templates } = await plane.listTemplates(kind, p?.id);
+      if (!templates.length) return text("还没有模板。可以用 save_template 把常用的写法存成模板，也可以在网页的「模板」页管理。");
+      const projects = new Map((await plane.listProjects().catch(() => [])).map((x) => [x.id, x.identifier]));
+      return text(templates.map((t) => `- ${t.id} [${t.kind === "page" ? "文档" : "工作项"}] ${t.name}${t.project_id ? `（项目 ${projects.get(t.project_id) ?? ""}）` : "（工作区通用）"}${t.description ? `：${t.description}` : ""}`).join("\n") + "\n\n用 get_template 取正文。");
+    }),
+);
+
+server.registerTool(
+  "get_template",
+  {
+    title: "读取模板",
+    description: "读取一个模板的正文（Markdown 骨架）。按它的标题结构和提示填写内容，再用 write_doc 或 create_task 写入；骨架里的 <!-- 提示 --> 是写作说明，写完要去掉，不要把占位文字留在正文里。",
+    inputSchema: { template: z.string().describe("模板 ID 或名称") },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ template }) =>
+    run(async () => {
+      const all = (await plane.listTemplates()).templates;
+      const hit = all.find((t) => t.id === template) ?? all.find((t) => t.name === template) ?? all.find((t) => t.name.includes(template));
+      if (!hit) throw new Error(`没有找到模板「${template}」。用 list_templates 查看。`);
+      const t = await plane.getTemplate(hit.id);
+      return text(`模板「${t.name}」（${t.kind === "page" ? "文档，用 write_doc 写入" : "工作项，用 create_task 写入"}）${t.description ? `\n${t.description}` : ""}\n\n${t.body}`);
+    }),
+);
+
+server.registerTool(
+  "save_template",
+  {
+    title: "保存模板",
+    description:
+      "新建或更新团队模板。新建传 kind、name、body；更新传 template_id 加要改的字段。body 是 Markdown 骨架：写好标题结构，用 <!-- 提示 --> 注释说明每段该写什么。project 不传是整个工作区通用。只有创建人和管理员能改别人的模板；删除要在网页上做。",
+    inputSchema: {
+      template_id: z.string().optional().describe("更新时填"),
+      kind: z.enum(["page", "issue"]).optional().describe("新建时必填"),
+      name: z.string().optional(),
+      description: z.string().optional().describe("一句话说明什么时候用"),
+      body: z.string().optional().describe("Markdown 骨架"),
+      project: z.string().optional().describe("新建时限定到某个项目，不传是工作区通用"),
+    },
+  },
+  async ({ template_id, kind, name, description, body, project }) =>
+    run(async () => {
+      const fix = (e: unknown): never => {
+        if (e instanceof PlaneError) throw new Error(e.body.match(/"error"\s*:\s*"([^"]+)"/)?.[1] ?? e.body);
+        throw e;
+      };
+      if (body) {
+        const g = gatePlain(body.replace(/<!--[\s\S]*?-->/g, ""));
+        if (!g.ok) return fail(`模板正文${formatGate(g)}\n\n${SELF_CHECK}`);
+      }
+      if (template_id) {
+        const t = await plane.updateTemplate(template_id, { name, description, body }).catch(fix);
+        return text(`已更新模板：${t.name}（${t.id}）`);
+      }
+      if (!kind || !name) throw new Error("新建模板需要 kind 和 name");
+      const p = project ? await projectFor(project, "write") : undefined;
+      const t = await plane.createTemplate({ kind, name, description, body, project_id: p?.id }).catch(fix);
+      return text(`已创建模板：${t.name}（${t.id}）${p ? `，限项目 ${p.identifier}` : "，工作区通用"}。网页「模板」页可以管理：${webUrl("templates")}`);
+    }),
+);
+
+// ---------- 项目置顶与图标 ----------
+
+/** 表情字符 → 编辑器存的十进制码点串（多个码点用 - 连接） */
+const emojiToValue = (emoji: string) => Array.from(emoji.trim()).map((c) => c.codePointAt(0)).filter((n): n is number => n !== undefined && n !== 0xfe0f).join("-");
+
+server.registerTool(
+  "project_settings",
+  {
+    title: "项目置顶与图标",
+    description:
+      "查看或设置项目的置顶和图标。action：get 看当前状态；pin / unpin 置顶或取消置顶（只影响你自己的侧边栏，成员都能用）；set_icon 设置图标，传 emoji（一个表情字符，如 🚀），或 icon（图标名，如 Briefcase）加可选 color（如 #3f76ff）；remove_icon 移除图标。改图标需要项目管理员，没有权限时让管理员在网页上改。",
+    inputSchema: {
+      project: z.string().optional().describe("默认当前仓库关联的项目"),
+      action: z.enum(["get", "pin", "unpin", "set_icon", "remove_icon"]),
+      emoji: z.string().optional().describe("set_icon：一个表情字符"),
+      icon: z.string().optional().describe("set_icon：图标名，和 emoji 二选一"),
+      color: z.string().optional().describe("set_icon 用图标名时的颜色，如 #3f76ff"),
+    },
+  },
+  async ({ project, action, emoji, icon, color }) =>
+    run(async () => {
+      const p = await projectFor(project, action === "get" ? "read" : "write");
+      const show = (s: { is_pinned: boolean; logo_props: Record<string, unknown> }) => {
+        const l = s.logo_props as { in_use?: string; emoji?: { value?: string }; icon?: { name?: string; color?: string } };
+        const logo = l.in_use === "emoji" ? `表情 ${String(l.emoji?.value ?? "").split("-").map((n) => String.fromCodePoint(Number(n))).join("")}` : l.in_use === "icon" ? `图标 ${l.icon?.name}（${l.icon?.color}）` : "无";
+        return `项目 ${p.identifier}（${p.name}）：${s.is_pinned ? "已置顶" : "未置顶"}，图标：${logo}`;
+      };
+      const forbid = (e: unknown): never => {
+        if (e instanceof PlaneError && e.status === 403) throw new Error("只有项目管理员能改项目图标，请管理员在网页上改（项目设置）。");
+        throw e;
+      };
+      if (action === "get") return text(show(await plane.getProjectSettings(p.id)));
+      if (action === "pin" || action === "unpin") return text(show(await plane.patchProjectSettings(p.id, { is_pinned: action === "pin" })));
+      if (action === "remove_icon") return text(show(await plane.patchProjectSettings(p.id, { logo_props: {} }).catch(forbid)));
+      if (emoji && icon) throw new Error("emoji 和 icon 只能传一个");
+      if (emoji) {
+        const value = emojiToValue(emoji);
+        if (!value) throw new Error("emoji 不是有效的表情字符");
+        return text(show(await plane.patchProjectSettings(p.id, { logo_props: { in_use: "emoji", emoji: { value } } }).catch(forbid)));
+      }
+      if (icon) return text(show(await plane.patchProjectSettings(p.id, { logo_props: { in_use: "icon", icon: { name: icon, color: color ?? "#6d7b8a" } } }).catch(forbid)));
+      throw new Error("set_icon 需要 emoji 或 icon");
+    }),
+);
 
 const INTAKE_STATUS: Record<number, string> = { [-2]: "待处理", [-1]: "已拒绝", 0: "稍后处理", 1: "已接受", 2: "重复" };
 

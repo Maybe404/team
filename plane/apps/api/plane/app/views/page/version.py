@@ -74,7 +74,7 @@ class PageVersionEndpoint(BaseAPIView):
             return Response({"error": "页面不存在"}, status=status.HTTP_404_NOT_FOUND)
         if not can_edit_page(request.user, page):
             return Response({"error": "没有编辑权限"}, status=status.HTTP_403_FORBIDDEN)
-        v, created = snapshot_current(page, request.user, label=request.data.get("label") or "", lock=bool(request.data.get("lock")), source="manual")
+        v, created = snapshot_current(page, request.user, label=request.data.get("label") or "", lock=bool(request.data.get("lock")), source=("before-restore" if request.data.get("source") == "before-restore" else "manual"))
         return Response({**version_dict(v), "created": created})
 
     def patch(self, request, slug, project_id, page_id, pk=None):

@@ -5,7 +5,7 @@
  */
 
 import { useCallback } from "react";
-import { usePathname } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { LeftSidePaneOutline, LinkOutline, SearchOutline } from "@makeplane/propel/icons";
 import { useTranslation } from "@plane/i18n";
 // plane imports
@@ -16,6 +16,7 @@ import type { TPowerKCommandConfig } from "@/components/power-k/core/types";
 // hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { usePowerK } from "@/hooks/store/use-power-k";
+import { useAppRouter } from "@/hooks/use-app-router";
 
 export const usePowerKMiscellaneousCommands = (): TPowerKCommandConfig[] => {
   // store hooks
@@ -50,6 +51,8 @@ export const usePowerKMiscellaneousCommands = (): TPowerKCommandConfig[] => {
   // through to the browser's Find
   // [team 二开] 在文档页里，Cmd+F 留给浏览器的页面内查找（搜文档里的关键字）；全局搜索用 Cmd+K 或点顶部搜索框
   const pathname = usePathname();
+  const router = useAppRouter();
+  const { workspaceSlug } = useParams();
   const isDocumentPage = /\/pages\/[0-9a-fA-F-]{8,}/.test(pathname ?? "");
   const hasTopNavInput = useCallback(() => Boolean(topNavInputRef?.current) && !isDocumentPage, [topNavInputRef, isDocumentPage]);
 
@@ -76,6 +79,30 @@ export const usePowerKMiscellaneousCommands = (): TPowerKCommandConfig[] => {
       modifierShortcut: "cmd+shift+c",
       isEnabled: () => true,
       isVisible: () => true,
+      closeOnSelect: true,
+    },
+    {
+      // [team 二开] 跨项目统一搜索页
+      id: "open_search_page",
+      group: "miscellaneous",
+      type: "action",
+      i18n_title: "loom.search.command",
+      icon: SearchOutline,
+      action: () => router.push(`/${workspaceSlug}/search`),
+      isEnabled: () => Boolean(workspaceSlug),
+      isVisible: () => Boolean(workspaceSlug),
+      closeOnSelect: true,
+    },
+    {
+      // [team 二开] 团队模板页
+      id: "open_templates_page",
+      group: "miscellaneous",
+      type: "action",
+      i18n_title: "loom.templates.command",
+      icon: SearchOutline,
+      action: () => router.push(`/${workspaceSlug}/templates`),
+      isEnabled: () => Boolean(workspaceSlug),
+      isVisible: () => Boolean(workspaceSlug),
       closeOnSelect: true,
     },
     {

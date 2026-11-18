@@ -2,6 +2,8 @@
 
 export type PlaneConfig = { baseUrl: string; token: string; workspace: string; webUrl?: string };
 
+export type Template = { id: string; kind: "page" | "issue"; name: string; description: string; project_id: string | null; created_by: string | null; updated_at: string; body?: string };
+
 export type Project = {
   id: string;
   name: string;
@@ -250,6 +252,31 @@ export class Loom {
   }
   restoreVersion(projectId: string, id: string, versionId: string, saveCurrent: boolean, kind: "pages" | "issues" = "pages") {
     return this.req<{ restored: Version; saved_current: Version | null }>("POST", this.vpath(projectId, id, kind, versionId), { save_current: saveCurrent });
+  }
+
+  // 团队模板
+  listTemplates(kind?: string, projectId?: string) {
+    const qs = new URLSearchParams();
+    if (kind) qs.set("kind", kind);
+    if (projectId) qs.set("project", projectId);
+    return this.req<{ templates: Template[] }>("GET", this.ws(`team-templates/${qs.toString() ? `?${qs}` : ""}`));
+  }
+  getTemplate(id: string) {
+    return this.req<Template & { body: string }>("GET", this.ws(`team-templates/${id}/`));
+  }
+  createTemplate(body: { kind: string; name: string; description?: string; body?: string; project_id?: string }) {
+    return this.req<Template & { body: string }>("POST", this.ws("team-templates/"), body);
+  }
+  updateTemplate(id: string, body: { name?: string; description?: string; body?: string }) {
+    return this.req<Template & { body: string }>("PATCH", this.ws(`team-templates/${id}/`), body);
+  }
+
+  // 项目置顶（每人自己的）和图标（项目管理员）
+  getProjectSettings(projectId: string) {
+    return this.req<{ is_pinned: boolean; logo_props: Record<string, unknown> }>("GET", this.ws(`projects/${projectId}/team-settings/`));
+  }
+  patchProjectSettings(projectId: string, body: { is_pinned?: boolean; logo_props?: Record<string, unknown> }) {
+    return this.req<{ is_pinned: boolean; logo_props: Record<string, unknown> }>("PATCH", this.ws(`projects/${projectId}/team-settings/`), body);
   }
 
   // 收集（intake）：待分诊的工作项。status：-2 待处理、-1 已拒绝、0 稍后处理、1 已接受、2 重复

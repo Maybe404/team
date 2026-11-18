@@ -82,6 +82,16 @@ export const coreRoutes: RouteConfigEntry[] = [
           route(":workspaceSlug/drafts", "./(all)/[workspaceSlug]/(projects)/drafts/page.tsx"),
         ]),
 
+        // [team 二开] 跨项目统一搜索
+        layout("./(all)/[workspaceSlug]/(projects)/search/layout.tsx", [
+          route(":workspaceSlug/search", "./(all)/[workspaceSlug]/(projects)/search/page.tsx"),
+        ]),
+
+        // [team 二开] 团队模板
+        layout("./(all)/[workspaceSlug]/(projects)/templates/layout.tsx", [
+          route(":workspaceSlug/templates", "./(all)/[workspaceSlug]/(projects)/templates/page.tsx"),
+        ]),
+
         // Notifications
         layout("./(all)/[workspaceSlug]/(projects)/notifications/layout.tsx", [
           route(":workspaceSlug/notifications", "./(all)/[workspaceSlug]/(projects)/notifications/page.tsx"),

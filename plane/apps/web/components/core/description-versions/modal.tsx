@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { observer } from "mobx-react";
 // plane imports
 import { Avatar } from "@makeplane/propel/components/avatar";
@@ -29,11 +29,13 @@ import { Loader } from "@plane/blocks/skeleton";
 import { calculateTimeAgo, cn, getFileURL } from "@plane/utils";
 // components
 import { RichTextEditor } from "@/components/editor/rich-text";
+import { VersionDiff } from "@/components/team/version-diff";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
 import { useWorkspace } from "@/hooks/store/use-workspace";
 import { IconButton } from "@makeplane/propel/components/icon-button";
 import { Icon } from "@makeplane/propel/components/icon";
+import type { TDescriptionVersionManage } from "./root";
 
 type Props = {
   activeVersionDescription: string | undefined;
@@ -45,6 +47,8 @@ type Props = {
   isOpen: boolean;
   isPrevDisabled: boolean;
   isRestoreDisabled: boolean;
+  manage?: TDescriptionVersionManage;
+  onChanged?: () => void;
   projectId: string | undefined;
   workspaceSlug: string;
 };
@@ -60,6 +64,8 @@ export const DescriptionVersionsModal = observer(function DescriptionVersionsMod
     isPrevDisabled,
     isOpen,
     isRestoreDisabled,
+    manage,
+    onChanged,
     projectId,
     workspaceSlug,
   } = props;
@@ -74,6 +80,19 @@ export const DescriptionVersionsModal = observer(function DescriptionVersionsMod
   const versionCreator = activeVersionDetails?.owned_by ? getUserDetails(activeVersionDetails.owned_by) : null;
   // translation
   const { t } = useTranslation();
+  // [team 二开] 锁定、命名、和当前内容对比
+  const [showDiff, setShowDiff] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [labelDraft, setLabelDraft] = useState("");
+  useEffect(() => {
+    setShowDiff(false);
+    setRenaming(false);
+  }, [activeVersionId]);
+  const runManage = (fn: () => Promise<unknown>) => {
+    fn()
+      .then(() => onChanged?.())
+      .catch(() => setToast({ type: "error", title: t("loom.version.op_failed") }));
+  };
 
   const handleCopyMarkdown = useCallback(() => {
     if (!editorRef.current) return;
@@ -117,6 +136,50 @@ export const DescriptionVersionsModal = observer(function DescriptionVersionsMod
               <p className="flex-shrink-0 text-secondary">
                 {calculateTimeAgo(activeVersionDetails?.last_saved_at ?? "")}
               </p>
+              {activeVersionDetails?.is_locked && <span title={t("loom.version.locked_hint")}>🔒</span>}
+              {activeVersionDetails?.label && <span className="truncate text-secondary">{activeVersionDetails.label}</span>}
+              {manage && activeVersionId && (
+                <>
+                  <button
+                    type="button"
+                    className="text-tertiary hover:text-primary"
+                    onClick={() => runManage(() => manage.setLock(activeVersionId, !activeVersionDetails?.is_locked))}
+                  >
+                    {activeVersionDetails?.is_locked ? t("loom.version.unlock") : t("loom.version.lock")}
+                  </button>
+                  {renaming ? (
+                    <input
+                      autoFocus
+                      value={labelDraft}
+                      maxLength={100}
+                      onChange={(e) => setLabelDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          runManage(() => manage.rename(activeVersionId, labelDraft.trim()));
+                          setRenaming(false);
+                        }
+                        if (e.key === "Escape") setRenaming(false);
+                      }}
+                      placeholder={t("loom.version.name_placeholder")}
+                      className="w-40 rounded-md border border-subtle bg-layer-1 px-2 py-0.5 text-caption-md-regular text-primary outline-none"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-tertiary hover:text-primary"
+                      onClick={() => {
+                        setLabelDraft(activeVersionDetails?.label ?? "");
+                        setRenaming(true);
+                      }}
+                    >
+                      {t("loom.version.rename")}
+                    </button>
+                  )}
+                  <button type="button" className="text-tertiary hover:text-primary" onClick={() => setShowDiff((v) => !v)}>
+                    {showDiff ? t("loom.diff.back") : t("loom.diff.compare")}
+                  </button>
+                </>
+              )}
             </div>
             <div className="flex flex-shrink-0 items-center">
               <button
@@ -153,7 +216,9 @@ export const DescriptionVersionsModal = observer(function DescriptionVersionsMod
         <DialogMain>
           {/* Version description */}
           <DialogBody tabIndex={0}>
-            {activeVersionId && activeVersionDescription ? (
+            {showDiff && manage && activeVersionDescription !== undefined ? (
+              <VersionDiff oldHtml={activeVersionDescription} newHtml={manage.getCurrentHtml()} />
+            ) : activeVersionId && activeVersionDescription ? (
               <RichTextEditor
                 key={activeVersionId}
                 editable={false}

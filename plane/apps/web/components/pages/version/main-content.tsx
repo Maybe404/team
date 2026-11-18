@@ -22,6 +22,7 @@ import { renderFormattedDate, renderFormattedTime } from "@plane/utils";
 import type { EPageStoreType } from "@/hooks/store";
 import { ProjectPageVersionService } from "@/services/page/project-page-version.service";
 // local imports
+import { VersionDiff } from "@/components/team/version-diff";
 import type { TVersionEditorProps } from "./editor";
 
 type Props = {
@@ -30,6 +31,8 @@ type Props = {
   fetchVersionDetails: (pageId: string, versionId: string) => Promise<TPageVersion | undefined>;
   handleClose: () => void;
   handleRestore: (descriptionHTML: string) => Promise<void>;
+  /** 当前编辑器里的最新内容，用于版本对比 */
+  getCurrentHtml?: () => string | undefined;
   pageId: string;
   restoreEnabled: boolean;
   storeType: EPageStoreType;
@@ -42,12 +45,14 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
     fetchVersionDetails,
     handleClose,
     handleRestore,
+    getCurrentHtml,
     pageId,
     restoreEnabled,
     storeType,
   } = props;
   // states
   const [isRestoring, setIsRestoring] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
   // translation
   const { t } = useTranslation();
   const [isRetrying, setIsRetrying] = useState(false);
@@ -68,6 +73,7 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
     if (!pageId || !workspaceSlug || !projectId) return;
     await new ProjectPageVersionService().saveSnapshot(workspaceSlug.toString(), projectId.toString(), pageId, {
       label: t("loom.version.auto_save_label"),
+      source: "before-restore",
     });
   };
 
@@ -143,6 +149,17 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
                 label={t("page_navigation_pane.tabs.version_history.view_only")}
               />
             </div>
+            <div className="flex items-center gap-2">
+            {getCurrentHtml && (
+              <Button
+                variant="secondary"
+                size="sm"
+                stretch="auto"
+                label={showDiff ? t("loom.diff.back") : t("loom.diff.compare")}
+                onClick={() => setShowDiff((v) => !v)}
+                disabled={!versionDetails?.description_html}
+              />
+            )}
             {restoreEnabled && (
               <Button
                 variant="primary"
@@ -156,6 +173,7 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
                 disabled={!versionDetails?.description_html}
               />
             )}
+            </div>
           </div>
           {confirming && (
             <div className="flex flex-wrap items-center gap-2 border-b border-subtle bg-layer-2 px-5 py-3 text-body-sm-regular text-primary">
@@ -166,7 +184,11 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
             </div>
           )}
           <div className="vertical-scrollbar scrollbar-sm h-full overflow-y-scroll pt-8">
-            <VersionEditor activeVersion={activeVersion} storeType={storeType} versionDetails={versionDetails} />
+            {showDiff && getCurrentHtml ? (
+              <VersionDiff oldHtml={versionDetails?.description_html ?? undefined} newHtml={getCurrentHtml()} />
+            ) : (
+              <VersionEditor activeVersion={activeVersion} storeType={storeType} versionDetails={versionDetails} />
+            )}
           </div>
         </>
       )}

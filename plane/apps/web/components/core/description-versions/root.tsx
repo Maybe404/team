@@ -10,9 +10,18 @@ import useSWR from "swr";
 // plane imports
 import type { TDescriptionVersionDetails, TDescriptionVersionsListResponse } from "@plane/types";
 import { cn } from "@plane/utils";
+
 // local imports
 import { DescriptionVersionsDropdown } from "./dropdown";
 import { DescriptionVersionsModal } from "./modal";
+import { SaveSnapshotButton } from "./save-snapshot";
+
+export type TDescriptionVersionManage = {
+  getCurrentHtml: () => string | undefined;
+  saveSnapshot: (label: string) => Promise<unknown>;
+  setLock: (versionId: string, locked: boolean) => Promise<unknown>;
+  rename: (versionId: string, label: string) => Promise<unknown>;
+};
 
 export type TDescriptionVersionEntityInformation = {
   createdAt: Date;
@@ -29,19 +38,21 @@ type Props = {
     retrieveDescriptionVersion: (entityId: string, versionId: string) => Promise<TDescriptionVersionDetails>;
   };
   handleRestore: (descriptionHTML: string) => void;
+  /** [team 二开] 有编辑权限时传入：保存快照、命名、锁定、和当前内容对比 */
+  manage?: TDescriptionVersionManage;
   projectId?: string;
   workspaceSlug: string;
 };
 
 export const DescriptionVersionsRoot = observer(function DescriptionVersionsRoot(props: Props) {
-  const { className, entityInformation, fetchHandlers, handleRestore, projectId, workspaceSlug } = props;
+  const { className, entityInformation, fetchHandlers, handleRestore, manage, projectId, workspaceSlug } = props;
   // states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
   // derived values
   const entityId = entityInformation.id;
   // fetch versions list
-  const { data: versionsListResponse } = useSWR(
+  const { data: versionsListResponse, mutate: mutateList } = useSWR(
     entityId ? `DESCRIPTION_VERSIONS_LIST_${entityId}` : null,
     entityId ? () => fetchHandlers.listDescriptionVersions(entityId) : null
   );
@@ -83,6 +94,8 @@ export const DescriptionVersionsRoot = observer(function DescriptionVersionsRoot
         }}
         handleNavigation={handleNavigation}
         handleRestore={handleRestore}
+        manage={manage}
+        onChanged={() => void mutateList()}
         isNextDisabled={activeVersionIndex === versionsCount - 1}
         isOpen={isModalOpen}
         isPrevDisabled={activeVersionIndex === 0}
@@ -90,7 +103,8 @@ export const DescriptionVersionsRoot = observer(function DescriptionVersionsRoot
         projectId={projectId}
         workspaceSlug={workspaceSlug}
       />
-      <div className={cn(className)}>
+      <div className={cn(className, manage && "flex items-center gap-2")}>
+        {manage && <SaveSnapshotButton manage={manage} onSaved={() => void mutateList()} />}
         <DescriptionVersionsDropdown
           disabled={versionsCount === 0}
           entityInformation={entityInformation}

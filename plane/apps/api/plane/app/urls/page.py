@@ -6,6 +6,7 @@ from django.urls import path
 
 from plane.app.views.page.team_share import TeamPageShareEndpoint
 from plane.app.views.team_access import TeamAccessEndpoint, TeamAccessPendingEndpoint
+from plane.app.views.team_search import TeamSearchEndpoint, TeamTemplateEndpoint
 from plane.app.views.page.team_page_issue import TeamIssuePagesEndpoint, TeamLinkCandidatesEndpoint, TeamPageIssuesEndpoint
 
 
@@ -19,6 +20,9 @@ from plane.app.views import (
 )
 
 urlpatterns = [
+    path("workspaces/<str:slug>/team-templates/", TeamTemplateEndpoint.as_view(), name="team-templates-app"),
+    path("workspaces/<str:slug>/team-templates/<uuid:template_id>/", TeamTemplateEndpoint.as_view(), name="team-template-app"),
+    path("workspaces/<str:slug>/team-search/", TeamSearchEndpoint.as_view(), name="team-search-app"),
     path("workspaces/<str:slug>/team-access/pending/", TeamAccessPendingEndpoint.as_view(), name="team-access-pending"),
     path("workspaces/<str:slug>/team-access/<str:entity_type>/<uuid:entity_id>/", TeamAccessEndpoint.as_view(), name="team-access"),
     path(

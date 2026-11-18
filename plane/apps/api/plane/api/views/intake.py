@@ -5,6 +5,8 @@
 # Python imports
 import json
 
+from django.db import transaction
+
 # Django imports
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
@@ -170,6 +172,8 @@ class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
                 {"error": "Intake is not enabled for this project enable it through the project's api"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if intake is None:
+            intake = Intake.objects.create(name=f"{project.name} Intake", project=project, is_default=True)
 
         # Check for valid priority
         if request.data.get("issue", {}).get("priority", "none") not in [
@@ -203,22 +207,24 @@ class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
         raw_description_html = issue_data.get("description_html", "<p></p>")
         _, _, sanitized_description_html = validate_html_content(raw_description_html)
         safe_description_html = sanitized_description_html if sanitized_description_html is not None else "<p></p>"
-        issue = Issue.objects.create(
-            name=issue_data.get("name"),
-            description_json=description_json,
-            description_html=safe_description_html,
-            priority=issue_data.get("priority", "none"),
-            project_id=project_id,
-            state_id=triage_state.id,
-        )
+        # [team 二开] 工作项和收集条目放在同一个事务里，失败时不留下孤立的工作项
+        with transaction.atomic():
+            issue = Issue.objects.create(
+                name=issue_data.get("name"),
+                description_json=description_json,
+                description_html=safe_description_html,
+                priority=issue_data.get("priority", "none"),
+                project_id=project_id,
+                state_id=triage_state.id,
+            )
 
-        # create an intake issue
-        intake_issue = IntakeIssue.objects.create(
-            intake_id=intake.id,
-            project_id=project_id,
-            issue=issue,
-            source=SourceType.IN_APP,
-        )
+            # create an intake issue
+            intake_issue = IntakeIssue.objects.create(
+                intake_id=intake.id,
+                project_id=project_id,
+                issue=issue,
+                source=SourceType.IN_APP,
+            )
         # Create an Issue Activity
         issue_activity.delay(
             type="issue.activity.created",
@@ -230,6 +236,19 @@ class IntakeIssueListCreateAPIEndpoint(BaseAPIView):
             epoch=int(timezone.now().timestamp()),
             intake=str(intake_issue.id),
         )
+
+        # [team 二开] 通知项目管理员有新的收集条目待处理（网页通知 + 邮件）
+        try:
+            from plane.db.models import ProjectMember, Workspace
+            from plane.utils.team_access import notify
+
+            admins = list(ProjectMember.objects.filter(project_id=project_id, role=20, is_active=True).values_list("member_id", flat=True))
+            notify("intake_new", Workspace.objects.get(pk=project.workspace_id), "issue", issue, request.user, admins,
+                   url=f"{project.workspace.slug}/projects/{project_id}/intake")
+        except Exception as e:  # 通知失败不能让提交失败
+            from plane.utils.exception_logger import log_exception
+
+            log_exception(e)
 
         serializer = IntakeIssueSerializer(intake_issue)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -331,7 +350,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
         project = Project.objects.get(workspace__slug=slug, pk=project_id)
 
         # Intake view
-        if intake is None and not project.intake_view:
+        if not project.intake_view:
             return Response(
                 {"error": "Intake is not enabled for this project enable it through the project's api"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -482,7 +501,7 @@ class IntakeIssueDetailAPIEndpoint(BaseAPIView):
         project = Project.objects.get(workspace__slug=slug, pk=project_id)
 
         # Intake view
-        if intake is None and not project.intake_view:
+        if not project.intake_view:
             return Response(
                 {"error": "Intake is not enabled for this project enable it through the project's api"},
                 status=status.HTTP_400_BAD_REQUEST,

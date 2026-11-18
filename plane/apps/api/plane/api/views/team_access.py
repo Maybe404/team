@@ -42,3 +42,66 @@ class TeamSearchAPIEndpoint(BaseAPIView):
         # 参数存在但为空表示「没有可搜的项目」，不能当成不限范围
         pids = None if raw_pids is None else [p for p in raw_pids.split(",") if p]
         return Response(team_search(request.user, slug, q, tuple(types), pids, request.query_params.get("limit") or 20))
+
+
+class TeamProjectSettingsAPIEndpoint(BaseAPIView):
+    """项目的置顶（每人自己的）和图标（项目管理员）。PATCH {is_pinned?, logo_props?}；logo_props 传 {} 表示移除图标。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def _member(self, request, slug, project_id):
+        from plane.db.models import ProjectMember
+
+        return ProjectMember.objects.filter(
+            workspace__slug=slug, project_id=project_id, member=request.user, is_active=True
+        ).first()
+
+    def get(self, request, slug, project_id):
+        from plane.db.models import Project, ProjectUserProperty
+
+        if self._member(request, slug, project_id) is None:
+            return Response({"error": "找不到这个项目"}, status=404)
+        project = Project.objects.get(pk=project_id)
+        prop = ProjectUserProperty.objects.filter(project_id=project_id, user=request.user).first()
+        return Response({"is_pinned": bool(prop and prop.is_pinned), "logo_props": project.logo_props or {}})
+
+    def patch(self, request, slug, project_id):
+        from plane.db.models import Project, ProjectUserProperty
+
+        member = self._member(request, slug, project_id)
+        if member is None:
+            return Response({"error": "找不到这个项目"}, status=404)
+        project = Project.objects.get(pk=project_id)
+        if "is_pinned" in request.data:
+            prop, _ = ProjectUserProperty.objects.get_or_create(
+                project_id=project_id, user=request.user, defaults={"workspace_id": project.workspace_id}
+            )
+            prop.is_pinned = bool(request.data["is_pinned"])
+            prop.save(update_fields=["is_pinned", "updated_at"])
+        if "logo_props" in request.data:
+            if member.role < 20:
+                return Response({"error": "只有项目管理员能改项目图标"}, status=403)
+            logo = request.data["logo_props"] or {}
+            if logo:
+                use = logo.get("in_use")
+                if use == "emoji" and isinstance(logo.get("emoji"), dict) and logo["emoji"].get("value"):
+                    logo = {"in_use": "emoji", "emoji": {"value": str(logo["emoji"]["value"])}}
+                elif use == "icon" and isinstance(logo.get("icon"), dict) and logo["icon"].get("name"):
+                    logo = {"in_use": "icon", "icon": {"name": str(logo["icon"]["name"]), "color": str(logo["icon"].get("color") or "#6d7b8a")}}
+                else:
+                    return Response({"error": "logo_props 格式不对"}, status=400)
+            project.logo_props = logo
+            project.save(update_fields=["logo_props", "updated_at"])
+        prop = ProjectUserProperty.objects.filter(project_id=project_id, user=request.user).first()
+        return Response({"is_pinned": bool(prop and prop.is_pinned), "logo_props": project.logo_props or {}})
+
+
+class TeamTemplateAPIEndpoint(BaseAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, slug, template_id=None):
+        from plane.utils.team_template import handle_templates
+
+        return handle_templates(request, slug, template_id)
+
+    post = patch = get

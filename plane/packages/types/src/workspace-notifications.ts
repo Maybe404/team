@@ -28,7 +28,7 @@ export type TNotificationIssueLite = {
 };
 
 export type TNotificationTeamData = {
-  kind: "edit_request" | "edit_approved" | "edit_rejected" | "edit_added";
+  kind: "edit_request" | "edit_approved" | "edit_rejected" | "edit_added" | "intake_new";
   entity_type: "page" | "issue";
   title: string;
   url: string;

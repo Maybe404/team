@@ -125,7 +125,7 @@ def pending_for_user(user, slug):
     return out
 
 
-def notify(kind, ws, entity_type, obj, actor, receiver_ids, message=""):
+def notify(kind, ws, entity_type, obj, actor, receiver_ids, message="", url=None):
     """网页通知中心里的编辑权限通知。kind：edit_request / edit_approved / edit_rejected / edit_added。
     data.team 给前端渲染（文字由前端按语言生成），data.issue_activity 只是为了兼容通知列表的通用字段。"""
     pids = entity_project_ids(entity_type, obj)
@@ -134,7 +134,9 @@ def notify(kind, ws, entity_type, obj, actor, receiver_ids, message=""):
     receiver_ids = [u.id for u in User.objects.filter(id__in=list(receiver_ids)) if can_view_entity(u, entity_type, obj)]
     if not receiver_ids:
         return
-    if entity_type == "issue":
+    if url:
+        pass
+    elif entity_type == "issue":
         url = f"{ws.slug}/browse/{obj.project.identifier}-{obj.sequence_id}"
     else:
         url = f"{ws.slug}/projects/{pid}/pages/{obj.id}" if pid else ""
@@ -158,7 +160,14 @@ def notify(kind, ws, entity_type, obj, actor, receiver_ids, message=""):
         if rid and rid != actor.id
     ]
     if rows:
-        Notification.objects.bulk_create(rows)
+        created = Notification.objects.bulk_create(rows)
+        # 同时发邮件（没配邮件服务就跳过）；放到事务提交之后，避免读不到刚写的通知
+        from django.db import transaction
+
+        from plane.bgtasks.team_email_task import team_notification_email
+
+        ids = [str(n.id) for n in created]
+        transaction.on_commit(lambda: team_notification_email.delay(ids))
 
 
 def _bad(msg, code=status.HTTP_400_BAD_REQUEST):

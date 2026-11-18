@@ -215,7 +215,21 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
                 retrieveDescriptionVersion: (issueId, versionId) =>
                   workItemVersionService.retrieveDescriptionVersion(workspaceSlug, projectId, issueId, versionId),
               }}
-              handleRestore={(descriptionHTML) => editorRef.current?.setEditorValue(descriptionHTML, true)}
+              handleRestore={(descriptionHTML) => {
+                // 恢复前先把当前描述存成一个版本，随时可以回来
+                void workItemVersionService
+                  .saveSnapshot(workspaceSlug, projectId, issueId, { label: t("loom.version.auto_save_label"), source: "before-restore" })
+                  .catch(() => undefined)
+                  .finally(() => editorRef.current?.setEditorValue(descriptionHTML, true));
+              }}
+              manage={{
+                getCurrentHtml: () => editorRef.current?.getDocument()?.html ?? issue.description_html,
+                saveSnapshot: (label) => workItemVersionService.saveSnapshot(workspaceSlug, projectId, issueId, { label }),
+                setLock: (versionId, locked) =>
+                  workItemVersionService.updateDescriptionVersion(workspaceSlug, projectId, issueId, versionId, { is_locked: locked }),
+                rename: (versionId, label) =>
+                  workItemVersionService.updateDescriptionVersion(workspaceSlug, projectId, issueId, versionId, { label }),
+              }}
               projectId={projectId}
               workspaceSlug={workspaceSlug}
             />

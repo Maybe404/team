@@ -10,6 +10,9 @@ export type TDescriptionVersion = {
   id: string;
   last_saved_at: string;
   owned_by: string;
+  is_locked?: boolean;
+  label?: string;
+  source?: string;
   project: string;
   updated_at: string;
   updated_by: string | null;

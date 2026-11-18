@@ -46,7 +46,8 @@
       "notif_request": "{name} requested edit access",
       "notif_approved": "{name} approved your edit request",
       "notif_rejected": "{name} declined your edit request",
-      "notif_added": "{name} added you as a co-maintainer"
+      "notif_added": "{name} added you as a co-maintainer",
+      "notif_intake_new": "{name} submitted an intake item"
     },
     "version": {
       "source_mcp": "Agent rewrite",
@@ -68,7 +69,8 @@
       "save_before_failed": "Couldn't save the current content first; restore cancelled",
       "confirm_text": "Before restoring this version, save the current content as a version? Otherwise changes not saved as a version may be lost.",
       "save_and_restore": "Save current and restore",
-      "restore_without_saving": "Restore without saving"
+      "restore_without_saving": "Restore without saving",
+      "rename": "Rename"
     },
     "project": {
       "pin": "Pin project",
@@ -77,6 +79,46 @@
       "set_icon": "Set icon",
       "icon": "Icon",
       "remove_icon": "Remove icon"
+    },
+    "diff": {
+      "compare": "Compare with current",
+      "back": "Back to version",
+      "no_change": "No differences from the current content.",
+      "legend": "Red: only in this version. Green: only in the current content.",
+      "folded": "… {count} unchanged blocks"
+    },
+    "search": {
+      "title": "Search",
+      "placeholder": "Search pages and work items by title or content",
+      "button": "Search",
+      "type_all": "All",
+      "type_page": "Pages",
+      "type_issue": "Work items",
+      "all_projects": "All projects",
+      "hint": "Search across every project you can access. Press Enter to search.",
+      "failed": "Search failed, please try again",
+      "empty": "No results for “{q}”",
+      "untitled": "Untitled",
+      "command": "Search across projects"
+    },
+    "templates": {
+      "command": "Templates",
+      "title": "Templates",
+      "desc": "Reusable outlines for pages and work items. Agents read them with list_templates and get_template and write to the same structure.",
+      "new": "New template",
+      "kind_page": "Page",
+      "kind_issue": "Work item",
+      "scope_workspace": "Whole workspace",
+      "name": "Template name",
+      "when": "When to use it (one line)",
+      "body_placeholder": "Markdown outline, e.g. ## Summary, with <!-- hints --> for each section",
+      "save_failed": "Couldn't save the template",
+      "load_failed": "Couldn't load templates",
+      "saved": "Template saved",
+      "confirm_delete": "Delete this template? This can't be undone.",
+      "empty": "No templates yet. Create one, or let an Agent save one with save_template.",
+      "edit": "Edit",
+      "delete": "Delete"
     }
   }
 }
