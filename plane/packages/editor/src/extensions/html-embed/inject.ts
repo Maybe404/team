@@ -7,7 +7,7 @@
  *            {loom:1, t:"pick", on:true|false}  进入/退出点选元素模式（作者在原型里点一下就选中）
  *            {loom:1, t:"pickkey", key}         键盘焦点在编辑器里时，把 ArrowUp / ArrowDown / Escape 转发给点选模式
  *   子 → 父  {loom:1, t:"ready"}                页面脚本已就位
- *            {loom:1, t:"rect", found, x,y,w,h, vw,vh}  被盯元素（含浮层）在 iframe 视口里的位置
+ *            {loom:1, t:"rect", found, x,y,w,h, fb, vw,vh}  被盯元素（含浮层）在 iframe 视口里的位置；fb 是浮层的最低边（没有浮层为 0）
  *            {loom:1, t:"picked", sel, tag, text}       点选结果，sel 是生成好的唯一 CSS 选择器
  *            {loom:1, t:"pick-cancel"}                  按 Esc 取消点选
  */
@@ -56,11 +56,12 @@ function report(){
   if(!r){var m2="h";if(m2!==last){last=m2;post({t:"rect",found:false});}return;}
   if(!baseline){snapshot(t);}
   var u=r;
-  if(follow){var fl=floaters(t,r);for(var i=0;i<fl.length;i++)u=merge(u,fl[i]);}
-  var m3=[u.l,u.t,u.r,u.b,window.innerWidth,window.innerHeight].map(function(v){return Math.round(v);}).join(",");
+  var fb=0;
+  if(follow){var fl=floaters(t,r);for(var i=0;i<fl.length;i++){u=merge(u,fl[i]);if(fl[i].b>fb)fb=fl[i].b;}}
+  var m3=[u.l,u.t,u.r,u.b,fb,window.innerWidth,window.innerHeight].map(function(v){return Math.round(v);}).join(",");
   if(m3===last)return;
   last=m3;
-  post({t:"rect",found:true,x:u.l,y:u.t,w:u.r-u.l,h:u.b-u.t,vw:window.innerWidth,vh:window.innerHeight});
+  post({t:"rect",found:true,x:u.l,y:u.t,w:u.r-u.l,h:u.b-u.t,fb:fb,vw:window.innerWidth,vh:window.innerHeight});
 }
 // 不用 requestAnimationFrame：跨域 iframe 滚出视口后浏览器会暂停它的渲染，rAF 不触发，位置就一直报不上来
 function schedule(){if(!raf)raf=setTimeout(report,30);}

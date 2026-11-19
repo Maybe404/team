@@ -44,11 +44,25 @@ const downloadHtml = (html: string, name: string) => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
+// 工具栏按钮的统一样式，和代码块工具栏一致：描边圆角、浅底选中、同一高度
 const barBtn =
-  "flex size-7 items-center justify-center rounded text-secondary hover:bg-layer-transparent-hover hover:text-primary";
-const pillBtn =
-  "flex h-6 shrink-0 items-center gap-1 rounded px-2 text-caption-md-regular text-secondary hover:bg-layer-transparent-hover hover:text-primary";
-const pillOn = "flex h-6 shrink-0 items-center gap-1 rounded bg-accent-primary px-2 text-caption-md-regular text-on-color";
+  "flex size-6 shrink-0 items-center justify-center rounded-md text-tertiary hover:bg-layer-transparent-hover hover:text-primary";
+const ctlBase = "flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-subtle px-2 text-caption-md-regular";
+const ctlOff = `${ctlBase} bg-surface-1 text-tertiary hover:bg-layer-transparent-hover hover:text-primary`;
+const ctlOn = `${ctlBase} bg-layer-transparent-hover text-primary`;
+const segWrap = "flex h-6 shrink-0 overflow-hidden rounded-md border border-subtle bg-surface-1 text-caption-md-regular";
+const segItem = (on: boolean) => `px-2 ${on ? "bg-layer-transparent-hover text-primary" : "text-tertiary hover:text-primary"}`;
+
+/** 开关按钮：开着时前面有个小圆点，不靠颜色也能看出状态 */
+function Toggle(props: { on: boolean; title: string; onClick: () => void; children: ReactNode }) {
+  const { on, title, onClick, children } = props;
+  return (
+    <button type="button" aria-pressed={on} title={title} className={on ? ctlOn : ctlOff} onClick={onClick}>
+      <span className={`size-1.5 rounded-full ${on ? "bg-accent-primary" : "border border-strong"}`} />
+      {children}
+    </button>
+  );
+}
 
 // 整页放大只盖住右侧内容区（不遮挡左侧导航），左侧导航收起后自然变宽；找不到内容区时才铺满整个窗口
 const getMainArea = () => document.getElementById("app-main-content");
@@ -83,7 +97,7 @@ function Fullscreen(props: { html: string; name: string; onClose: () => void }) 
   );
 }
 
-type TRect = { x: number; y: number; w: number; h: number };
+type TRect = { x: number; y: number; w: number; h: number; fb: number };
 type TPick = "insert" | "replace" | null;
 
 export function HtmlEmbedBlock(props: NodeViewProps) {
@@ -192,7 +206,7 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
         if (d.found) {
           setFound(true);
           setGaveUp(false);
-          setRect({ x: Number(d.x), y: Number(d.y), w: Number(d.w), h: Number(d.h) });
+          setRect({ x: Number(d.x), y: Number(d.y), w: Number(d.w), h: Number(d.h), fb: Number(d.fb) || 0 });
         } else {
           setFound(false);
         }
@@ -287,9 +301,8 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
   };
 
   // 下拉等弹层可能伸到原型视口下面：只显示一块（或聚光灯）时把页面视口撑高到刚好装下。
-  // 只按真实溢出算（不含取景留白），否则吸底的操作栏会每次多撑一截、越撑越高。
-  const stageH =
-    hasFocus && !showWhole && rect && stageW ? Math.min(3000, Math.max(height, Math.ceil(rect.y + rect.h))) : height;
+  // 只为弹层溢出撑高（按弹层自己的最低边算，不含被聚焦元素和取景留白），否则吸底栏、整屏容器会每次多撑一截、越撑越高。
+  const stageH = hasFocus && !showWhole && rect && stageW ? Math.min(3000, Math.max(height, Math.ceil(rect.fb))) : height;
   // 聚焦区域：加内边距；局部（crop）再保证最小尺寸，围着元素居中向外扩，限制在页面视口内
   const R = useMemo(() => {
     if (!rect || !stageW) return null;
@@ -459,63 +472,38 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
           </Icon>
           <span className="min-w-[4rem] flex-1 truncate text-body-xs-medium text-secondary">{title}</span>
           {hasFocus && !gaveUp && (
-            <span className="flex shrink-0 overflow-hidden rounded border border-subtle">
-              <button
-                type="button"
-                className={`${!whole ? pillOn : pillBtn} rounded-none`}
-                title="只看这一块"
-                onClick={() => setWhole(false)}
-              >
+            <span className={segWrap}>
+              <button type="button" className={segItem(!whole)} title="只看这一块" onClick={() => setWhole(false)}>
                 局部
               </button>
-              <button
-                type="button"
-                className={`${whole ? pillOn : pillBtn} rounded-none`}
-                title="看完整页面，页面里的操作状态不会丢"
-                onClick={() => setWhole(true)}
-              >
+              <button type="button" className={segItem(whole)} title="看完整页面，页面里的操作状态不会丢" onClick={() => setWhole(true)}>
                 整页
               </button>
             </span>
           )}
           {editable && hasFocus && (
             <>
-              <button
-                type="button"
-                className={attrs.mode === "spot" ? pillOn : pillBtn}
-                title="整页保留，只把其余部分压暗"
-                onClick={() => updateAttributes({ mode: attrs.mode === "spot" ? "crop" : "spot" })}
-              >
+              <Toggle on={attrs.mode === "spot"} title="整页保留，只把其余部分压暗" onClick={() => updateAttributes({ mode: attrs.mode === "spot" ? "crop" : "spot" })}>
                 聚光灯
-              </button>
-              <button
-                type="button"
-                className={attrs.follow ? pillOn : pillBtn}
-                title="点开的下拉、弹出的浮层一起显示"
-                onClick={() => updateAttributes({ follow: !attrs.follow })}
-              >
+              </Toggle>
+              <Toggle on={!!attrs.follow} title="点开的下拉、弹出的浮层一起显示" onClick={() => updateAttributes({ follow: !attrs.follow })}>
                 含弹层
-              </button>
+              </Toggle>
               {attrs.mode === "spot" && (
-                <button
-                  type="button"
-                  className={attrs.lock !== false ? pillOn : pillBtn}
-                  title="变暗的区域不能点击"
-                  onClick={() => updateAttributes({ lock: attrs.lock === false })}
-                >
+                <Toggle on={attrs.lock !== false} title="变暗的区域不能点击" onClick={() => updateAttributes({ lock: attrs.lock === false })}>
                   暗区禁点
-                </button>
+                </Toggle>
               )}
-              <button type="button" className={pillBtn} title="在原型里重新点选要显示的元素" onClick={() => startPick("replace")}>
+              <button type="button" className={ctlOff} title="在原型里重新点选要显示的元素" onClick={() => startPick("replace")}>
                 重选
               </button>
-              <button type="button" className={editSel ? pillOn : pillBtn} title="手动修改选择器" onClick={() => setEditSel((v) => !v)}>
+              <button type="button" className={editSel ? ctlOn : ctlOff} title="手动修改选择器" onClick={() => setEditSel((v) => !v)}>
                 选择器
               </button>
             </>
           )}
           {editable && !empty && !attrs.focus && (
-            <button type="button" className={pillBtn} title="点选原型里的一块，在下方新建只显示它的局部块" onClick={() => startPick("insert")}>
+            <button type="button" className={ctlOff} title="点选原型里的一块，在下方新建只显示它的局部块" onClick={() => startPick("insert")}>
               拆出局部
             </button>
           )}
@@ -571,7 +559,7 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
         {pick && (
           <div className="flex items-center gap-2 border-b border-subtle bg-layer-1 px-3 py-1.5 text-caption-md-regular text-secondary">
             <span className="flex-1">{pickHint}（↑ 选上一层，Esc 取消）</span>
-            <button type="button" className={pillBtn} onClick={() => setPick(null)}>
+            <button type="button" className={ctlOff} onClick={() => setPick(null)}>
               取消
             </button>
           </div>
