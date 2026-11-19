@@ -62,7 +62,8 @@ function report(){
   last=m3;
   post({t:"rect",found:true,x:u.l,y:u.t,w:u.r-u.l,h:u.b-u.t,vw:window.innerWidth,vh:window.innerHeight});
 }
-function schedule(){if(!raf)raf=requestAnimationFrame(report);}
+// 不用 requestAnimationFrame：跨域 iframe 滚出视口后浏览器会暂停它的渲染，rAF 不触发，位置就一直报不上来
+function schedule(){if(!raf)raf=setTimeout(report,30);}
 function later(){schedule();setTimeout(schedule,80);setTimeout(schedule,320);}
 function reveal(){
   var t=q(sel);if(!t)return false;

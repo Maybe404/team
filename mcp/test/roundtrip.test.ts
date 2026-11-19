@@ -12,7 +12,10 @@ test("HTML 嵌入块和图片经 Markdown 往返不丢失", () => {
   assert.match(back, /<html-embed-component data-html="<h1 a=&quot;1&quot;>你好/);
   assert.match(back, /data-height="500" data-width="80"/);
   assert.match(back, /<image-component src="abc-1" width="363px" height="auto" alignment="center" status="uploaded">/);
-  assert.equal(htmlToMd(back), md);
+  // 第一轮会给完整原型块分配固定编号（id），之后的往返保持稳定
+  const md2 = htmlToMd(back);
+  assert.match(md2, /```html-embed name="demo.html" height=500 width=80 id="[a-z0-9-]{8}"/);
+  assert.equal(htmlToMd(mdToHtml(md2)), md2);
 });
 
 test("mermaid 代码块正常往返", () => {
@@ -103,4 +106,17 @@ test("embedProblems：找不到原型、选择器不存在、没写 focus、重�
   assert.match(embedProblems(`${src}\`\`\`html-embed ref="p.html"\n\`\`\``).join(), /没写 focus/);
   assert.match(embedProblems(`${src}${src}\`\`\`html-embed ref="p.html" focus="#x"\n\`\`\``).join(), /重名|都叫/);
   assert.deepEqual(embedProblems('```html-embed id="u1" name="a.html"\n<b id="y">1</b>\n```\n\n```html-embed ref="u1" focus="#y"\n```'), []);
+});
+
+test("html-embed：按名称写的 ref 解析成固定编号，cw 往返，无引号属性和脚本生成的元素不误拒", () => {
+  const md = '```html-embed name="v1.html"\n<button id=coupon class=btn>券</button>\n```\n\n```html-embed ref="v1.html" focus="#coupon" cw=480\n```';
+  assert.deepEqual(embedProblems(md), []);
+  const html = mdToHtml(md);
+  const uid = /data-uid="([a-z0-9]{8})"/.exec(html)?.[1];
+  assert.ok(uid);
+  assert.match(html, new RegExp(`data-ref="${uid}"`));
+  assert.match(html, /data-cw="480"/);
+  assert.match(htmlToMd(html), /ref="[a-z0-9]{8}"[^\n]* cw=480|cw=480[^\n]* ref="[a-z0-9]{8}"/);
+  assert.deepEqual(embedProblems('```html-embed name="a.html"\n<div id="app"></div><script>render()</script>\n```\n\n```html-embed ref="a.html" focus="#coupon"\n```'), []);
+  assert.match(embedProblems('```html-embed name="a.html"\n<div id="app"></div>\n```\n\n```html-embed ref="a.html" focus="#coupon"\n```').join(), /找不到对应元素/);
 });

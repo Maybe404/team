@@ -29,6 +29,8 @@ export type THtmlEmbedAttributes = {
   lock: boolean;
   /** 复用同一篇文档里另一个 HTML 块的内容（先按 uid，没有再按名称），这样原型只存一份，改一处全部生效 */
   ref: string;
+  /** 局部块（crop）显示框的宽度（px），0 表示自动；拖拽调整后保存，内容按比例缩放 */
+  cw: number;
   /** 完整原型块的固定编号：文件名重复、替换文件改了名，局部块也不会引用错 */
   uid: string;
 };
@@ -96,6 +98,11 @@ export const HtmlEmbedExtensionConfig = Node.create({
         default: true,
         parseHTML: (el: HTMLElement) => flag(el.getAttribute("data-lock"), true),
         renderHTML: (attrs: Record<string, unknown>) => (attrs.lock === false ? { "data-lock": "false" } : {}),
+      },
+      cw: {
+        default: 0,
+        parseHTML: (el: HTMLElement) => Math.max(0, Number(el.getAttribute("data-cw")) || 0),
+        renderHTML: (attrs: Record<string, unknown>) => (Number(attrs.cw) > 0 ? { "data-cw": String(Math.round(Number(attrs.cw))) } : {}),
       },
       uid: {
         default: "",

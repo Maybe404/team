@@ -30,6 +30,9 @@ const generalSelectors = [
   ".editor-callout-component",
   ".editor-embed-component",
   ".editor-drawio-component",
+  // [team 二开] 新增的块也能用左侧六个点拖动：HTML 块、页面链接卡片
+  ".html-embed",
+  ".page-link",
 ].join(", ");
 
 const maxScrollSpeed = 20;
@@ -120,6 +123,11 @@ export const nodeDOMAtCoords = (coords: { x: number; y: number }) => {
 
     // Skip elements inside .editor-embed-component
     if (elem.closest(".editor-embed-component") && !elem.matches(".editor-embed-component")) {
+      continue;
+    }
+
+    // [team 二开] HTML 块、页面链接卡片里面的元素（iframe、按钮）不单独出手柄，整块拖
+    if (elem.closest(".html-embed, .page-link") && !elem.matches(".html-embed, .page-link")) {
       continue;
     }
 

@@ -1,6 +1,6 @@
 {
   "name": "team-mcp",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "团队协作 MCP：Plane 任务与文档、经验库、定时回顾，所有写入经过统一的规范闸门",
   "private": true,
   "type": "module",

@@ -137,7 +137,7 @@ ATTRIBUTES = {
     },
     # [team 二开] HTML 嵌入块：内容放在属性里，属性值是纯文本，不会被当成标签执行
     "html-embed-component": {
-        "data-html", "data-name", "data-height", "data-width", "data-uid",
+        "data-html", "data-name", "data-height", "data-width", "data-uid", "data-cw",
         # 只讲一块：聚焦元素选择器、模式、跟随弹层、锁定其余、复用同篇文档里的另一个块
         "data-focus", "data-mode", "data-follow", "data-lock", "data-ref",
     },

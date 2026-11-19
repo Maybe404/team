@@ -16,6 +16,9 @@ import { withInject } from "./inject";
 const SANDBOX = "allow-scripts allow-popups allow-forms allow-modals";
 const PAD = 6;
 const MIN_CROP_W = 320;
+// 局部显示区域的最小尺寸：选中小按钮时也带上周围一圈，不会只剩一个小点
+const MIN_REGION_W = 360;
+const MIN_REGION_H = 160;
 
 const Icon = ({ children }: { children: ReactNode }) => (
   <svg
@@ -91,6 +94,7 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const [cwLive, setCwLive] = useState<number | null>(null);
   const [full, setFull] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [paste, setPaste] = useState("");
@@ -182,7 +186,9 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
       const win = frameRef.current?.contentWindow;
       const d = e.data as { loom?: number; t?: string } & Record<string, unknown>;
       if (!win || e.source !== win || !d || d.loom !== 1) return;
-      if (d.t === "rect") {
+      // 以页面里的脚本发出的 ready 为准：懒加载的 iframe 挂载时会先触发一次空白页的 load，那时发消息会丢
+      if (d.t === "ready") setReady((n) => n + 1);
+      else if (d.t === "rect") {
         if (d.found) {
           setFound(true);
           setGaveUp(false);
@@ -198,26 +204,28 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pick, node, attrs.name, attrs.ref, attrs.width, attrs.height]);
 
-  // 把「盯哪个元素」告诉 iframe；整页状态下仍然盯着（画出轮廓），只是不锁滚动
+  // 换了元素或页面重新加载：清掉上一次的定位结果
   useEffect(() => {
-    if (!ready) return;
     setRect(null);
     setFound(null);
     setGaveUp(false);
-    if (attrs.focus) send({ t: "focus", sel: attrs.focus, follow: attrs.follow, hold: !showWhole });
+  }, [ready, attrs.focus]);
+
+  // 把「盯哪个元素」告诉 iframe；整页状态下仍然盯着（画出轮廓），只是不锁滚动；
+  // 找不到时也继续盯（元素之后出现还能恢复），只是放开滚动锁，让长页面能滚动看完
+  useEffect(() => {
+    if (!ready) return;
+    if (attrs.focus) send({ t: "focus", sel: attrs.focus, follow: attrs.follow, hold: !showWhole && !gaveUp });
     else send({ t: "unfocus" });
-  }, [ready, attrs.focus, attrs.follow, showWhole, send]);
+  }, [ready, attrs.focus, attrs.follow, showWhole, gaveUp, send]);
 
   // 迟迟找不到元素（选择器写错了、页面里没有）：退回显示整页，并提示
   useEffect(() => {
-    if (!hasFocus || found === true) return;
+    // 从页面加载完才开始计时（iframe 是懒加载的，没滚到时不算找不到）
+    if (!hasFocus || found === true || !ready) return;
     const t = setTimeout(() => setGaveUp(true), 5000);
     return () => clearTimeout(t);
   }, [hasFocus, found, attrs.focus, ready]);
-
-  useEffect(() => {
-    if (gaveUp && ready) send({ t: "unfocus" }); // 退回整页后要能滚动看完整个页面
-  }, [gaveUp, ready, send]);
 
   useEffect(() => {
     if (!ready) return;
@@ -278,21 +286,45 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
     setPick(mode);
   };
 
-  // 聚焦区域（加内边距后限制在 iframe 视口内）
+  // 下拉等弹层可能伸到原型视口下面：只显示一块（或聚光灯）时把页面视口撑高到刚好装下。
+  // 只按真实溢出算（不含取景留白），否则吸底的操作栏会每次多撑一截、越撑越高。
+  const stageH =
+    hasFocus && !showWhole && rect && stageW ? Math.min(3000, Math.max(height, Math.ceil(rect.y + rect.h))) : height;
+  // 聚焦区域：加内边距；局部（crop）再保证最小尺寸，围着元素居中向外扩，限制在页面视口内
   const R = useMemo(() => {
     if (!rect || !stageW) return null;
-    const x = Math.max(0, rect.x - PAD);
-    const y = Math.max(0, rect.y - PAD);
-    return { x, y, w: Math.max(8, Math.min(rect.w + 2 * PAD, stageW - x)), h: Math.max(8, rect.h + 2 * PAD) };
-  }, [rect, stageW]);
-  // 下拉等弹层可能伸到原型视口下面：只露出一块（或聚光灯）时把页面视口撑高到能装下，才点得到后面的选项
-  const stageH = hasFocus && !showWhole && R ? Math.min(3000, Math.max(height, Math.ceil(R.y + R.h))) : height;
+    let x = rect.x - PAD;
+    let y = rect.y - PAD;
+    let w = rect.w + 2 * PAD;
+    let h = rect.h + 2 * PAD;
+    if (attrs.mode !== "spot") {
+      if (w < MIN_REGION_W) {
+        x -= (MIN_REGION_W - w) / 2;
+        w = MIN_REGION_W;
+      }
+      if (h < MIN_REGION_H) {
+        y -= (MIN_REGION_H - h) / 2;
+        h = MIN_REGION_H;
+      }
+    }
+    w = Math.min(w, stageW);
+    x = Math.min(Math.max(0, x), stageW - w);
+    h = Math.min(h, stageH);
+    y = Math.min(Math.max(0, y), Math.max(0, stageH - h));
+    return { x, y, w: Math.max(8, w), h: Math.max(8, h) };
+  }, [rect, stageW, stageH, attrs.mode]);
 
   const waiting = cropping && !R; // 还没量出位置：先别露出整页
-  const scale = cropping && R && stageW ? Math.min(1, stageW / R.w) : 1;
+  // 显示框宽度：自动时不超过正文宽度；手动拖过后按保存的 cw，内容按比例缩放
+  const maxBoxW = geo ? maxPx : stageW;
+  const cwNow = cwLive ?? attrs.cw;
+  const scale =
+    cropping && R && stageW
+      ? Math.max(0.2, Math.min(cwNow > 0 ? cwNow / R.w : Math.min(1, stageW / R.w), Math.max(0.2, maxBoxW / R.w)))
+      : 1;
   const cropW = cropping && R ? R.w * scale : 0;
   const cropH = cropping && R ? R.h * scale : 0;
-  const outerW = cropping ? Math.min(Math.max(cropW, MIN_CROP_W), stageW || MIN_CROP_W) : stageW;
+  const outerW = cropping ? Math.min(Math.max(cropW, MIN_CROP_W), maxBoxW || MIN_CROP_W) : stageW;
 
   const marginLeft = (() => {
     if (!geo) return 0;
@@ -357,6 +389,30 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
     target.addEventListener("pointerup", up);
   };
 
+  // 局部块的缩放：拖右边或右下角，改的是显示框宽度，高度按比例跟着变，里面的内容等比放大缩小（双击恢复自动）
+  const startCropResize = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = cropW;
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    let latest = Math.round(startW);
+    const move = (ev: PointerEvent) => {
+      // 显示框在正文里居中，边缘跟着指针走要动两倍
+      latest = Math.round(Math.min(maxBoxW || 4000, Math.max(120, startW + 2 * (ev.clientX - startX))));
+      setCwLive(latest);
+    };
+    const up = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      setCwLive(null);
+      updateAttributes({ cw: latest });
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+  };
+
   const empty = !html;
   const refMissing = empty && !!attrs.ref;
   const title = attrs.name || (attrs.ref ? `${refSrc.name || "原型"} · 局部` : "HTML 页面");
@@ -371,9 +427,9 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
 
   // iframe 的外层：crop 时是一个只露出聚焦区域的窗口，其余情况就是整页
   const viewportStyle = cropping && R
-    ? { width: cropW, height: cropH, margin: "0 auto", overflow: "hidden" as const }
+    ? { width: cropW, height: cropH, margin: "0 auto",  }
     : waiting
-      ? { width: "100%", height: 160, overflow: "hidden" as const }
+      ? { width: "100%", height: 160,  }
       : { width: "100%", height: stageH };
   const stageStyle =
     cropping && R
@@ -386,7 +442,9 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
           transformOrigin: "0 0",
           transform: `scale(${scale}) translate(${-R.x}px, ${-R.y}px)`,
         }
-      : { position: "absolute" as const, left: 0, top: 0, width: "100%", height: "100%", opacity: waiting ? 0 : 1 };
+      : waiting
+        ? { position: "absolute" as const, left: 0, top: 0, width: stageW || "100%", height, opacity: 0 }
+        : { position: "absolute" as const, left: 0, top: 0, width: "100%", height: "100%", opacity: 1 };
 
   return (
     <NodeViewWrapper className="html-embed my-3" contentEditable={false}>
@@ -565,6 +623,7 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
           </div>
         ) : (
           <div className="relative" style={viewportStyle}>
+            <div className="absolute inset-0 overflow-hidden rounded-b-lg">
             <div style={stageStyle}>
               <iframe
                 ref={frameRef}
@@ -576,7 +635,6 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
                 loading="lazy"
                 className="size-full border-0 bg-white"
                 style={{ pointerEvents: dragging ? "none" : "auto" }}
-                onLoad={() => setReady((n) => n + 1)}
               />
               {spotting && R && (
                 <>
@@ -597,7 +655,19 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
                 />
               )}
             </div>
+            </div>
             {waiting && <div className="absolute inset-0 flex items-center justify-center text-caption-md-regular text-tertiary">正在定位要展示的区域…</div>}
+            {editable && cropping && R && (
+              <>
+                <div onPointerDown={startCropResize} onDoubleClick={() => updateAttributes({ cw: 0 })} title="拖动调整大小，双击恢复自动" className="absolute top-0 -right-1.5 h-full w-3 cursor-ew-resize" />
+                <div
+                  onPointerDown={startCropResize}
+                  onDoubleClick={() => updateAttributes({ cw: 0 })}
+                  title="拖动调整大小，双击恢复自动"
+                  className="absolute -right-1.5 -bottom-1.5 size-4 cursor-nwse-resize rounded-sm border-2 border-accent-strong bg-surface-1 opacity-0 group-hover/html:opacity-100"
+                />
+              </>
+            )}
             {editable && !cropping && (
               <>
                 {/* 右边、下边、右下角三个拉伸手柄 */}

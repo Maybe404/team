@@ -28,14 +28,15 @@ const fenceStr = (info: string, key: string): string => {
   }
 };
 
-/** 只能检查简单选择器（#id、.class、[属性="值"]、标签），复杂的返回 null 表示没法判断 */
+/** 只能检查简单选择器（#id、.class、[属性="值"]、标签），复杂的返回 null 表示没法判断。属性值带不带引号都认 */
 function selectorInHtml(sel: string, html: string): boolean | null {
   const s = sel.trim();
   const esc = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const end = `(?=["'\\s>/])`;
   let m: RegExpExecArray | null;
-  if ((m = /^#([\w-]+)$/.exec(s))) return new RegExp(`\\bid=["']${esc(m[1])}["']`).test(html);
-  if ((m = /^\.([\w-]+)$/.exec(s))) return new RegExp(`\\bclass=["'](?:[^"']*\\s)?${esc(m[1])}(?=[\\s"'])`).test(html);
-  if ((m = /^\[([\w-]+)=["']?([^"'\]]*)["']?\]$/.exec(s))) return new RegExp(`\\b${esc(m[1])}=["']${esc(m[2])}["']`).test(html);
+  if ((m = /^#([\w-]+)$/.exec(s))) return new RegExp(`\\bid=["']?${esc(m[1])}${end}`).test(html);
+  if ((m = /^\.([\w-]+)$/.exec(s))) return new RegExp(`\\bclass=["']?(?:[^"'>]*\\s)?${esc(m[1])}${end}`).test(html);
+  if ((m = /^\[([\w-]+)=["']?([^"'\]]*)["']?\]$/.exec(s))) return new RegExp(`\\b${esc(m[1])}=["']?${esc(m[2])}${end}`).test(html);
   if ((m = /^\[([\w-]+)\]$/.exec(s))) return new RegExp(`\\b${esc(m[1])}\\b`).test(html);
   if ((m = /^([a-z][a-z0-9-]*)$/i.exec(s))) return new RegExp(`<${esc(m[1])}[\\s>/]`, "i").test(html);
   return null;
@@ -56,7 +57,7 @@ export function embedProblems(md: string): string[] {
       continue;
     }
     if (!b.focus) out.push(`局部块 ref="${b.ref}" 没写 focus：不写选择器就是把整个原型再显示一遍。`);
-    else if (selectorInHtml(b.focus, src.body) === false) out.push(`局部块 focus=${JSON.stringify(b.focus)} 在原型「${src.name || src.id}」里找不到对应元素。给要单独讲的块加 data-focus="名字"，focus 写 [data-focus="名字"]。`);
+    else if (selectorInHtml(b.focus, src.body) === false && !/<script[\s>]/i.test(src.body)) out.push(`局部块 focus=${JSON.stringify(b.focus)} 在原型「${src.name || src.id}」里找不到对应元素。给要单独讲的块加 data-focus="名字"，focus 写 [data-focus="名字"]。`);
   }
   const names = sources.map((s) => s.name).filter(Boolean);
   const dup = names.find((n, i) => names.indexOf(n) !== i && blocks.some((b) => b.ref === n));
@@ -118,16 +119,37 @@ export function mdToHtml(md: string, opts: { projectId?: string; members?: Perso
 
 export function mdToHtmlWith(md: string, opts: { projectId?: string; members?: Person[] } = {}): { html: string; mentioned: Person[] } {
   const embeds: string[] = [];
+  // 给每个完整原型块一个固定编号，局部块的 ref（写的是名称）解析成这个编号：
+  // 以后在网页上替换原型文件、改了文件名，局部块也不会断
+  const srcUids: string[] = [];
+  const nameToUid = new Map<string, string>();
+  const knownUids = new Set<string>();
+  for (const m of md.matchAll(EMBED_FENCE)) {
+    const info = m[2] ?? "";
+    const isSource = !!(m[3] ?? "").trim() && !fenceStr(info, "ref");
+    const uid = isSource ? fenceStr(info, "id") || randomUUID().slice(0, 8) : "";
+    srcUids.push(uid);
+    if (uid) {
+      knownUids.add(uid);
+      const nm = /name="([^"]*)"/.exec(info)?.[1] ?? "";
+      if (nm && !nameToUid.has(nm)) nameToUid.set(nm, uid);
+    }
+  }
+  let fenceNo = 0;
   md = md.replace(EMBED_FENCE, (_m, _f, info: string, bodyRaw: string | undefined) => {
     const body = bodyRaw ?? "";
+    const srcUid = srcUids[fenceNo++] ?? "";
     const name = /name="([^"]*)"/.exec(info)?.[1] ?? "";
     const height = /height=(\d+)/.exec(info)?.[1] ?? "420";
     const width = /width=(\d+)/.exec(info)?.[1] ?? "100";
     const focus = fenceStr(info, "focus");
-    const ref = fenceStr(info, "ref");
-    const uid = fenceStr(info, "id");
+    const refRaw = fenceStr(info, "ref");
+    const ref = refRaw && !knownUids.has(refRaw) ? (nameToUid.get(refRaw) ?? refRaw) : refRaw;
+    const uid = srcUid;
+    const cw = /(?:^|\s)cw=(\d+)/.exec(info)?.[1];
     const extra = [
       uid ? ` data-uid="${escAttr(uid)}"` : "",
+      focus && cw ? ` data-cw="${cw}"` : "",
       focus ? ` data-focus="${escAttr(focus)}"` : "",
       focus && /(?:^|\s)mode=spot\b/.test(info) ? ' data-mode="spot"' : "",
       focus && /(?:^|\s)follow=false\b/.test(info) ? ' data-follow="false"' : "",
@@ -197,6 +219,7 @@ td.addRule("planeHtmlEmbed", {
     const uid = el.getAttribute("data-uid") ?? "";
     const extra = [
       uid ? ` id=${q(uid)}` : "",
+      focus && el.getAttribute("data-cw") ? ` cw=${el.getAttribute("data-cw")}` : "",
       focus ? ` focus=${q(focus)}` : "",
       focus && el.getAttribute("data-mode") === "spot" ? " mode=spot" : "",
       focus && el.getAttribute("data-follow") === "false" ? " follow=false" : "",
