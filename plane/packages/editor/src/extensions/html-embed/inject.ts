@@ -82,7 +82,8 @@ function clampScroll(){
   var vh=window.innerHeight,el=t.parentElement;
   // 从里到外：每个真正在滚动的祖先容器，最后是窗口。保证看得见的区域里，被选元素上方、下方都没有别的内容
   while(true){
-    var isWin=!el||el===document.body||el===document.documentElement;
+    // body 也可能自己滚动（html 禁滚、body 100% 高且 overflow:auto）：按普通容器处理，不满足滚动条件时会跳过，最后仍由窗口兜底
+    var isWin=!el||el===document.documentElement;
     var vt=0,vb=vh;
     if(!isWin){
       var oy=getComputedStyle(el).overflowY;
