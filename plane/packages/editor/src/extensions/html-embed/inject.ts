@@ -32,20 +32,22 @@ function floaters(target,rect){
     var el=all[i];
     if(el===target||el.contains(target)||!floating(el))continue;
     var inside=target.contains(el);
-    if(!inside&&baseline&&baseline.has(el))continue;
+    // fresh：开始盯之后才出现的（点开的下拉、弹出的浮层）；一直在那的定位元素（吸底栏、容器里固定位置的按钮）不是 fresh
+    var fresh=!(baseline&&baseline.has(el));
+    if(!inside&&!fresh)continue;
     var b=box(el);
     if(!b)continue;
     // 铺满整个视口的遮罩层不算：它不是被讲的那一块
     if((b.r-b.l)>=vw*0.9&&(b.b-b.t)>=vh*0.9)continue;
     if(!near(b,rect,360))continue;
-    out.push(b);
+    out.push({b:b,fresh:fresh});
   }
   return out;
 }
 function snapshot(target){
   baseline=new WeakSet();
   var all=document.body?document.body.getElementsByTagName("*"):[],n=Math.min(all.length,4000);
-  for(var i=0;i<n;i++){var el=all[i];if(!target.contains(el)&&el!==target&&!el.contains(target)&&floating(el)&&box(el))baseline.add(el);}
+  for(var i=0;i<n;i++){var el=all[i];if(el!==target&&!el.contains(target)&&floating(el)&&box(el))baseline.add(el);}
 }
 function report(){
   raf=0;
@@ -57,7 +59,7 @@ function report(){
   if(!baseline){snapshot(t);}
   var u=r;
   var fb=0;
-  if(follow){var fl=floaters(t,r);for(var i=0;i<fl.length;i++){u=merge(u,fl[i]);if(fl[i].b>fb)fb=fl[i].b;}}
+  if(follow){var fl=floaters(t,r);for(var i=0;i<fl.length;i++){u=merge(u,fl[i].b);if(fl[i].fresh&&fl[i].b.b>fb)fb=fl[i].b.b;}}
   var m3=[u.l,u.t,u.r,u.b,fb,window.innerWidth,window.innerHeight].map(function(v){return Math.round(v);}).join(",");
   if(m3===last)return;
   last=m3;

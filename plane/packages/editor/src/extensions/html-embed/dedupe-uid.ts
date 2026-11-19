@@ -1,6 +1,9 @@
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 
+// 粘贴，或拖放（Mac 上按住 Option 拖动六点手柄是复制）。拖动移动不受影响：原块在同一次事务里被删掉，不会重号
+const isCopyLike = (t: Transaction) => !!t.getMeta("paste") || t.getMeta("uiEvent") === "paste" || t.getMeta("uiEvent") === "drop";
+
 const rand = () => Math.random().toString(36).slice(2, 10);
 
 /**
@@ -8,11 +11,11 @@ const rand = () => Math.random().toString(36).slice(2, 10);
  * 同批粘贴进来、引用它的局部块一起改引用；否则从副本拆出的局部会指向原件。
  */
 export function dedupeEmbedUids(trs: readonly Transaction[], state: EditorState, typeName: string): Transaction | null {
-          if (!trs.some((t) => t.getMeta("paste") || t.getMeta("uiEvent") === "paste")) return null;
+          if (!trs.some((t) => isCopyLike(t))) return null;
           // 粘贴插入的范围（映射到最新文档）
           const ranges: [number, number][] = [];
           for (const tr of trs) {
-            if (!(tr.getMeta("paste") || tr.getMeta("uiEvent") === "paste")) continue;
+            if (!isCopyLike(tr)) continue;
             tr.steps.forEach((step, i) => {
               step.getMap().forEach((_os, _oe, ns, ne) => {
                 const rest = tr.mapping.slice(i + 1);

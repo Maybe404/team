@@ -44,14 +44,15 @@ const downloadHtml = (html: string, name: string) => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
-// 工具栏按钮的统一样式，和代码块工具栏一致：描边圆角、浅底选中、同一高度
+// 工具栏按钮的统一样式，和产品里的标签页一致：默认没有底色和边框，只有选中、鼠标指向时才出现
 const barBtn =
   "flex size-6 shrink-0 items-center justify-center rounded-md text-tertiary hover:bg-layer-transparent-hover hover:text-primary";
-const ctlBase = "flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-subtle px-2 text-caption-md-regular";
-const ctlOff = `${ctlBase} bg-surface-1 text-tertiary hover:bg-layer-transparent-hover hover:text-primary`;
-const ctlOn = `${ctlBase} bg-layer-transparent-hover text-primary`;
-const segWrap = "flex h-6 shrink-0 overflow-hidden rounded-md border border-subtle bg-surface-1 text-caption-md-regular";
-const segItem = (on: boolean) => `px-2 ${on ? "bg-layer-transparent-hover text-primary" : "text-tertiary hover:text-primary"}`;
+const ctlBase = "flex h-6 shrink-0 items-center gap-1.5 rounded-md border px-2 text-caption-md-regular";
+const ctlOff = `${ctlBase} border-transparent text-tertiary hover:border-subtle hover:bg-layer-transparent-hover hover:text-primary`;
+const ctlOn = `${ctlBase} border-subtle bg-layer-transparent-hover text-primary`;
+const segWrap = "flex shrink-0 items-center gap-0.5";
+const segItem = (on: boolean) =>
+  `h-6 rounded-md border px-2 text-caption-md-regular ${on ? "border-subtle bg-layer-transparent-hover text-primary" : "border-transparent text-tertiary hover:border-subtle hover:bg-layer-transparent-hover hover:text-primary"}`;
 
 /** 开关按钮：开着时前面有个小圆点，不靠颜色也能看出状态 */
 function Toggle(props: { on: boolean; title: string; onClick: () => void; children: ReactNode }) {
@@ -181,6 +182,8 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
   const [ready, setReady] = useState(0);
   const [rect, setRect] = useState<TRect | null>(null);
   const [found, setFound] = useState<boolean | null>(null);
+  // 选中的元素比预览视口还高（长表单）：不锁文档滚动，读者可以在局部里滚到下面的内容
+  const tall = !!rect && rect.h > height + 2;
   const [gaveUp, setGaveUp] = useState(false);
   const [whole, setWhole] = useState(false); // 读者点了「看整页」：同一个 iframe，只换呈现方式，页面里的操作状态不丢
   const [pick, setPick] = useState<TPick>(null);
@@ -229,9 +232,9 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
   // 找不到时也继续盯（元素之后出现还能恢复），只是放开滚动锁，让长页面能滚动看完
   useEffect(() => {
     if (!ready) return;
-    if (attrs.focus) send({ t: "focus", sel: attrs.focus, follow: attrs.follow, hold: !showWhole && !gaveUp });
+    if (attrs.focus) send({ t: "focus", sel: attrs.focus, follow: attrs.follow, hold: !showWhole && !gaveUp && !tall });
     else send({ t: "unfocus" });
-  }, [ready, attrs.focus, attrs.follow, showWhole, gaveUp, send]);
+  }, [ready, attrs.focus, attrs.follow, showWhole, gaveUp, tall, send]);
 
   // 迟迟找不到元素（选择器写错了、页面里没有）：退回显示整页，并提示
   useEffect(() => {
