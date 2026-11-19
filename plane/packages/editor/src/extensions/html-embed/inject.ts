@@ -79,10 +79,23 @@ function reveal(){
 function clampScroll(){
   if(!on||!limit)return;
   var t=q(sel);if(!t)return;
-  var r=t.getBoundingClientRect(),y=window.pageYOffset||0,vh=window.innerHeight;
-  var top=r.top+y,bot=r.bottom+y,max=Math.max(top,bot-vh);
-  var ny=Math.min(Math.max(y,top),max);
-  if(Math.abs(ny-y)>0.5)window.scrollTo(window.pageXOffset||0,ny);
+  var vh=window.innerHeight,el=t.parentElement;
+  // 从里到外：每个真正在滚动的祖先容器，最后是窗口。保证看得见的区域里，被选元素上方、下方都没有别的内容
+  while(true){
+    var isWin=!el||el===document.body||el===document.documentElement;
+    var vt=0,vb=vh;
+    if(!isWin){
+      var oy=getComputedStyle(el).overflowY;
+      if(!(oy==="auto"||oy==="scroll"||oy==="overlay")||el.scrollHeight<=el.clientHeight+1){el=el.parentElement;continue;}
+      var cr=el.getBoundingClientRect();vt=Math.max(cr.top,0);vb=Math.min(cr.bottom,vh);
+    }
+    var r=t.getBoundingClientRect(),d=0;
+    if(r.top>vt+0.5&&r.bottom>vb-0.5)d=r.top-vt;
+    else if(r.bottom<vb-0.5&&r.top<vt+0.5)d=-(vb-r.bottom);
+    if(d){if(isWin)window.scrollBy(0,d);else el.scrollTop+=d;}
+    if(isWin)break;
+    el=el.parentElement;
+  }
 }
 function start(){
   on=true;last="";baseline=null;found0=0;
