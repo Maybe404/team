@@ -136,7 +136,11 @@ ATTRIBUTES = {
         "title",
     },
     # [team 二开] HTML 嵌入块：内容放在属性里，属性值是纯文本，不会被当成标签执行
-    "html-embed-component": {"data-html", "data-name", "data-height", "data-width"},
+    "html-embed-component": {
+        "data-html", "data-name", "data-height", "data-width", "data-uid",
+        # 只讲一块：聚焦元素选择器、模式、跟随弹层、锁定其余、复用同篇文档里的另一个块
+        "data-focus", "data-mode", "data-follow", "data-lock", "data-ref",
+    },
     # [team 二开] 页面链接卡片（子页面、引用）
     "page-link-component": {"data-page-id", "data-project-id", "data-title"},
     "mention-component": {"id", "entity_identifier", "entity_name"},

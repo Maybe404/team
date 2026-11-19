@@ -11,8 +11,8 @@ export const TASK_STATES: StateDef[] = [
   { name: "待审查", group: "started", color: "#8B5CF6", agentCanSet: true },
   { name: "阻塞", group: "started", color: "#EF4444", agentCanSet: true },
   { name: "待决定", group: "started", color: "#EC4899", agentCanSet: true },
-  { name: "已完成", group: "completed", color: "#16A34A", agentCanSet: false },
-  { name: "已取消", group: "cancelled", color: "#9CA3AF", agentCanSet: false },
+  { name: "已完成", group: "completed", color: "#16A34A", agentCanSet: true },
+  { name: "已取消", group: "cancelled", color: "#9CA3AF", agentCanSet: true },
 ];
 
 // 经验库项目的状态：Agent 只能提交到“待审核”，采纳和驳回只能由人在网页上操作。

@@ -86,9 +86,16 @@ def render_public_html(html, share):
     out = _IMG.sub(img, out)
     out = _MENTION.sub(mention, out)
     out = nh3.clean(out, tags=_TAGS, attributes=_ATTRS, url_schemes={"http", "https", "mailto"}, link_rel="noopener noreferrer nofollow")
+    # 引用同篇文档里同名完整块的局部块：公开页没有聚焦脚本，直接显示被引用的完整原型
+    named = {}
+    for a in embeds:
+        if a.get("data-html"):
+            for k in (a.get("data-uid"), a.get("data-name")):
+                if k:
+                    named.setdefault(k, a["data-html"])
     for i, a in enumerate(embeds):
         # 属性值在 description_html 里已是转义过的，直接作为 srcdoc 属性值使用
-        src = a.get("data-html", "")
+        src = a.get("data-html", "") or named.get(a.get("data-ref", ""), "")
         height = a.get("data-height", "420")
         height = int(height) if height.isdigit() else 420
         width = a.get("data-width", "100")

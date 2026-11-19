@@ -12,7 +12,57 @@ const escAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
 // 编辑器里的 HTML 嵌入块在 Markdown 里写成 ```html-embed name="x.html" height=420 width=100 的围栏代码块，
 // 围栏内是完整 HTML。往返时靠它保住嵌入块，全文改写不会把它删掉。
-const EMBED_FENCE = /^(`{3,}|~{3,})html-embed([^\n]*)\n([\s\S]*?)\n\1[ \t]*$/gm;
+// 只讲原型里的一块：加 focus="选择器"（引号和反斜杠按 JSON 转义），可选 mode=spot（整页压暗其余，默认 crop 只露出这块）、
+// follow=false（不把附近弹出的下拉算进去）、lock=false（压暗区域仍可点）；
+// ref="名称" 表示复用同一篇文档里同名的完整块，此时围栏内留空，原型只存一份。
+// 围栏里可以什么都不写（局部块），所以「开围栏后立刻闭合」要单独识别；否则两个空局部块之间的正文会被吞进第一个块。
+const EMBED_FENCE = /^(`{3,}|~{3,})html-embed([^\n]*)\n(?:\1[ \t]*$|([\s\S]*?)\n\1[ \t]*$)/gm;
+
+const fenceStr = (info: string, key: string): string => {
+  const m = new RegExp(`(?:^|\\s)${key}="((?:[^"\\\\]|\\\\.)*)"`).exec(info);
+  if (!m) return "";
+  try {
+    return JSON.parse(`"${m[1]}"`) as string;
+  } catch {
+    return m[1];
+  }
+};
+
+/** 只能检查简单选择器（#id、.class、[属性="值"]、标签），复杂的返回 null 表示没法判断 */
+function selectorInHtml(sel: string, html: string): boolean | null {
+  const s = sel.trim();
+  const esc = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let m: RegExpExecArray | null;
+  if ((m = /^#([\w-]+)$/.exec(s))) return new RegExp(`\\bid=["']${esc(m[1])}["']`).test(html);
+  if ((m = /^\.([\w-]+)$/.exec(s))) return new RegExp(`\\bclass=["'](?:[^"']*\\s)?${esc(m[1])}(?=[\\s"'])`).test(html);
+  if ((m = /^\[([\w-]+)=["']?([^"'\]]*)["']?\]$/.exec(s))) return new RegExp(`\\b${esc(m[1])}=["']${esc(m[2])}["']`).test(html);
+  if ((m = /^\[([\w-]+)\]$/.exec(s))) return new RegExp(`\\b${esc(m[1])}\\b`).test(html);
+  if ((m = /^([a-z][a-z0-9-]*)$/i.exec(s))) return new RegExp(`<${esc(m[1])}[\\s>/]`, "i").test(html);
+  return null;
+}
+
+/** 写文档前检查 html-embed 局部块的引用：找不到原型、选择器在原型里不存在，都在写入前退回，免得页面上显示一片空白 */
+export function embedProblems(md: string): string[] {
+  const blocks = [...md.matchAll(EMBED_FENCE)].map((m) => {
+    const info = m[2] ?? "";
+    return { name: /name="([^"]*)"/.exec(info)?.[1] ?? "", id: fenceStr(info, "id"), ref: fenceStr(info, "ref"), focus: fenceStr(info, "focus"), body: m[3] ?? "" };
+  });
+  const out: string[] = [];
+  const sources = blocks.filter((b) => b.body.trim() && !b.ref);
+  for (const b of blocks.filter((x) => x.ref)) {
+    const src = sources.find((s) => s.id === b.ref) ?? sources.find((s) => s.name === b.ref);
+    if (!src) {
+      out.push(`局部块 ref="${b.ref}" 找不到原型：同一篇文档里要有一个完整的 html-embed 块，name 写成 "${b.ref}"（围栏里是完整 HTML）。`);
+      continue;
+    }
+    if (!b.focus) out.push(`局部块 ref="${b.ref}" 没写 focus：不写选择器就是把整个原型再显示一遍。`);
+    else if (selectorInHtml(b.focus, src.body) === false) out.push(`局部块 focus=${JSON.stringify(b.focus)} 在原型「${src.name || src.id}」里找不到对应元素。给要单独讲的块加 data-focus="名字"，focus 写 [data-focus="名字"]。`);
+  }
+  const names = sources.map((s) => s.name).filter(Boolean);
+  const dup = names.find((n, i) => names.indexOf(n) !== i && blocks.some((b) => b.ref === n));
+  if (dup) out.push(`有两个完整原型都叫「${dup}」，局部块分不清引用哪个：改成不同的 name。`);
+  return out;
+}
 
 export type Person = { id: string; name: string };
 
@@ -68,12 +118,24 @@ export function mdToHtml(md: string, opts: { projectId?: string; members?: Perso
 
 export function mdToHtmlWith(md: string, opts: { projectId?: string; members?: Person[] } = {}): { html: string; mentioned: Person[] } {
   const embeds: string[] = [];
-  md = md.replace(EMBED_FENCE, (_m, _f, info: string, body: string) => {
+  md = md.replace(EMBED_FENCE, (_m, _f, info: string, bodyRaw: string | undefined) => {
+    const body = bodyRaw ?? "";
     const name = /name="([^"]*)"/.exec(info)?.[1] ?? "";
     const height = /height=(\d+)/.exec(info)?.[1] ?? "420";
     const width = /width=(\d+)/.exec(info)?.[1] ?? "100";
+    const focus = fenceStr(info, "focus");
+    const ref = fenceStr(info, "ref");
+    const uid = fenceStr(info, "id");
+    const extra = [
+      uid ? ` data-uid="${escAttr(uid)}"` : "",
+      focus ? ` data-focus="${escAttr(focus)}"` : "",
+      focus && /(?:^|\s)mode=spot\b/.test(info) ? ' data-mode="spot"' : "",
+      focus && /(?:^|\s)follow=false\b/.test(info) ? ' data-follow="false"' : "",
+      focus && /(?:^|\s)lock=false\b/.test(info) ? ' data-lock="false"' : "",
+      ref ? ` data-ref="${escAttr(ref)}"` : "",
+    ].join("");
     embeds.push(
-      `<html-embed-component data-html="${escAttr(body)}" data-name="${escAttr(name)}" data-height="${height}" data-width="${width}"></html-embed-component>`,
+      `<html-embed-component data-html="${escAttr(body)}" data-name="${escAttr(name)}" data-height="${height}" data-width="${width}"${extra}></html-embed-component>`,
     );
     return `\n\nHTMLEMBEDSLOT${embeds.length - 1}END\n\n`;
   });
@@ -129,7 +191,19 @@ td.addRule("planeHtmlEmbed", {
     const fence = "`".repeat(Math.max(3, ...(html.match(/`+/g) ?? []).map((m) => m.length + 1)));
     const h = el.getAttribute("data-height") ?? "420";
     const w = el.getAttribute("data-width") ?? "100";
-    return `\n\n${fence}html-embed name="${name}" height=${h} width=${w}\n${html}\n${fence}\n\n`;
+    const q = (v: string) => JSON.stringify(v);
+    const focus = el.getAttribute("data-focus") ?? "";
+    const ref = el.getAttribute("data-ref") ?? "";
+    const uid = el.getAttribute("data-uid") ?? "";
+    const extra = [
+      uid ? ` id=${q(uid)}` : "",
+      focus ? ` focus=${q(focus)}` : "",
+      focus && el.getAttribute("data-mode") === "spot" ? " mode=spot" : "",
+      focus && el.getAttribute("data-follow") === "false" ? " follow=false" : "",
+      focus && el.getAttribute("data-lock") === "false" ? " lock=false" : "",
+      ref ? ` ref=${q(ref)}` : "",
+    ].join("");
+    return `\n\n${fence}html-embed name="${name}" height=${h} width=${w}${extra}\n${html ? `${html}\n` : ""}${fence}\n\n`;
   },
 });
 td.addRule("planeCallout", {

@@ -13,7 +13,7 @@ import { parseTaskKey } from "./taskKey.ts";
 import { formatDocTree } from "./doctree.ts";
 import { buildInbox, reminderLine } from "./inbox.ts";
 import { docHints, findSimilar, formatHints, taskHints } from "./hints.ts";
-import { htmlToMd, importInlineImages, mdToHtml, mdToHtmlWith, type Person } from "./markdown.ts";
+import { embedProblems, htmlToMd, importInlineImages, mdToHtml, mdToHtmlWith, type Person } from "./markdown.ts";
 import { COMMENT_KINDS, formatGate, gate, gatePlain, LESSON_GUIDE, SELF_CHECK, TEMPLATES, templateGuide, WRITING_GUIDE, type DocType } from "./norms/index.ts";
 import { Loom, PlaneError, type Member, type Module, type Project, type SearchHit, type View, type WorkItem } from "./plane.ts";
 import { fullToneReport, SKILL_DIR } from "./norms/tone.ts";
@@ -43,7 +43,7 @@ const REPO_PARAM = z
   .optional()
   .describe("当前仓库 git remote get-url origin 的输出，每次都带");
 const NO_REPO = new Set(["get_guide", "check_text"]);
-const WRITE_TOOLS = new Set(["create_task", "update_task", "comment_task", "write_doc", "propose_lesson", "save_module", "save_view", "doc_versions", "task_versions", "project_settings", "save_template", "doc_access", "intake_submit", "intake_decide"]);
+const WRITE_TOOLS = new Set(["archive", "create_task", "update_task", "comment_task", "write_doc", "propose_lesson", "save_module", "save_view", "doc_versions", "task_versions", "project_settings", "save_template", "doc_access", "intake_submit", "intake_decide"]);
 
 const lastRemind = new Map<string, number>();
 
@@ -71,9 +71,9 @@ const server = new McpServer(
 2. 去 AI 味：页面、任务描述、评论、经验这四类写入，落笔前都要按「去 AI 味」的规则写，写完先用 check_text 预检，按提示改；整篇 500 汉字以上的页面再用 analyze_tone 出整篇报告，按报告改写后再写入。写入时服务端还会再检查一遍，被退回时逐条改完重交，不要换个说法绕过检查。
 3. 只做团队工作时使用。每次调用工具都要把当前仓库的 git remote 地址（git remote get-url origin 的输出）填进 repo 参数，不在 git 仓库里就省略。项目分两类：登记了代码仓库的项目（项目管理员在 Loom「项目设置 → 关联代码仓库」登记），只能在对应仓库里读写；没登记仓库的项目（文档、运营、设计等不对应代码的项目），在任何目录里都能读写，用 project 参数指定。读写不了时按提示办，不要换项目或填别的仓库地址来蒙混。
 4. 团队任务动手前先 search_lessons 查相关经验，结束后经用户同意用 propose_lesson 提交新经验，团队经验需要人审核才会生效。
-5. 状态“已完成”“已取消”只能由人设置；Agent 做完后用 update_task 改成“待审查”，同时在 comment 里写带证据的结论。
+5. 状态“已完成”“已取消”Agent 也可以设（update_task），必须在 comment 里写依据：完成要写做了什么、怎么验证的，取消要写原因；拿不准验收标准时先改“待审查”让人看。已完成、已取消的任务和不用的文档可以用 archive 归档。
 6. 只写团队工作。个人笔记、密钥和个人信息不要写进来。
-7. 没有删除、成员管理、项目设置类工具，这些由人在网页上做；不再需要的内容由人在网页上归档。
+7. 没有删除、成员管理、项目设置类工具，这些由人在网页上做；
 8. 这里的内容由 Agent 写、人来看：写法以人能一眼看懂、能核验为准，标题讲结论，结构清楚，证据写全。提交经验前先读 get_guide（topic=lessons），只提值得沉淀的，宁缺毋滥。
 9. 别人的工作项和文档只能评论，不能改（创建人、指派人、作者、管理员才能改）；别人建的模块只能查看（创建人、负责人、管理员才能改），但可以把任务放进模块；被拒绝时用 comment_task 提建议，不要换个办法硬改。写交付文档时用 write_doc 的 task 参数或 link_doc 把它关联到任务。
 10. 项目里按版本或需求整理任务用模块：建任务前先 list_modules，有合适的放进去（create_task、update_task 的 modules 参数），没有再 save_module 新建；用户想经常看某种筛选时用 save_view 建视图。
@@ -153,7 +153,7 @@ async function signature(role?: string) {
   return [role?.trim(), `${me.display_name} 的 ${client}`].filter(Boolean).join(" · ");
 }
 
-const STATE_COMMENT_KIND: Record<string, (typeof COMMENT_KINDS)[number]> = { 待审查: "结论", 阻塞: "阻塞", 待决定: "决策" };
+const STATE_COMMENT_KIND: Record<string, (typeof COMMENT_KINDS)[number]> = { 待审查: "结论", 阻塞: "阻塞", 待决定: "决策", 已完成: "结论", 已取消: "决策" };
 
 /** 对人展示的名字：优先姓名，其次显示名；不显示编号和邮箱 */
 const personName = (m: Pick<Member, "display_name" | "first_name" | "last_name">) =>
@@ -229,7 +229,6 @@ const MODULE_STATUS: Record<string, string> = {
 };
 const MODULE_STATUS_BY_NAME = Object.fromEntries(Object.entries(MODULE_STATUS).map(([k, v]) => [v, k]));
 // 和任务一样，“已完成”“已取消”是人的决定
-const HUMAN_ONLY_MODULE_STATUS = new Set(["已完成", "已取消"]);
 
 /** 按 ID、名称（忽略大小写）或唯一的名称片段找一项，找不到或有歧义时报出现有的名字。 */
 function pickByName<T extends { id: string; name: string }>(list: T[], ref: string, what: string, hint = ""): T {
@@ -725,6 +724,7 @@ server.registerTool(
       const st = await plane.listStates(p.id);
       const target = state ?? "待开始";
       if (!agentCanSet(target)) return fail(HUMAN_ONLY_HINT);
+      if (target === "已完成" || target === "已取消") return fail(`新建任务不能直接设成「${target}」：先建成待开始，做完后用 update_task 改状态，并在 comment 里写依据。`);
       const people = await resolveMembers(p.id, assignees ?? []);
       const parentTask = parent ? await resolveTask(parent, "write") : undefined;
       const allModules = modules?.length ? await plane.listModules(p.id) : [];
@@ -769,7 +769,7 @@ server.registerTool(
   "update_task",
   {
     title: "更新任务",
-    description: `改任务的状态、标题、描述、优先级、指派人、父任务，或把任务放进、移出模块。Agent 可设的状态：${TASK_STATES.filter((s) => s.agentCanSet).map((s) => s.name).join("、")}；“已完成”“已取消”只能由人设置。改成“待审查”“阻塞”“待决定”时必须在 comment 里说明（分别写成结论、阻塞、决策评论；结论要带验证证据）。`,
+    description: `改任务的状态、标题、描述、优先级、指派人、父任务，或把任务放进、移出模块。Agent 可设的状态：${TASK_STATES.filter((s) => s.agentCanSet).map((s) => s.name).join("、")}。改成“待审查”“阻塞”“待决定”“已完成”“已取消”时必须在 comment 里说明（分别写成结论、阻塞、决策、结论、决策评论；结论要带验证证据，取消要写原因）。已完成、已取消的任务可以用 archive 归档。`,
     inputSchema: {
       task: z.string(),
       state: z.string().optional(),
@@ -784,7 +784,7 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          "改状态时的说明，会写成一条评论。改成待审查/阻塞/待决定时必填。格式：第一行是一句话结论（不要用标题、不要写“结论：”这类提示语），空一行后写细节；待审查要写跑了什么命令、结果如何，没跑的写“未运行”。",
+          "改状态时的说明，会写成一条评论。改成待审查/阻塞/待决定/已完成/已取消时必填。格式：第一行是一句话结论（不要用标题、不要写“结论：”这类提示语），空一行后写细节；待审查要写跑了什么命令、结果如何，没跑的写“未运行”。",
         ),
       role: z.string().optional().describe("你在这个任务里的角色，用于评论署名"),
     },
@@ -905,7 +905,7 @@ server.registerTool(
   {
     title: "新建或修改模块",
     description:
-      "新建模块，或修改已有模块（module 传现有模块名或 ID 就是修改）。模块用来把同一个版本或同一个需求的任务归在一起，名称写成“版本号 需求名”，例如“v1.2 登录改版”。状态“已完成”“已取消”只能由人在网页上设置。没有删除，不用的模块由人在网页上归档。把任务放进或移出模块用 create_task、update_task 的 modules 参数。",
+      "新建模块，或修改已有模块（module 传现有模块名或 ID 就是修改）。模块用来把同一个版本或同一个需求的任务归在一起，名称写成“版本号 需求名”，例如“v1.2 登录改版”。状态“已完成”“已取消”Agent 也能设。没有删除，不用的模块由人在网页上归档。把任务放进或移出模块用 create_task、update_task 的 modules 参数。",
     inputSchema: {
       project: z.string().optional().describe("项目标识，默认当前仓库关联的项目"),
       module: z.string().optional().describe("要修改的模块名或 ID；不传就是新建"),
@@ -925,7 +925,6 @@ server.registerTool(
         const r = gatePlain(v);
         if (!r.ok) return fail(`模块${label}${formatGate(r)}\n\n${SELF_CHECK}`);
       }
-      if (status && HUMAN_ONLY_MODULE_STATUS.has(status)) return fail(HUMAN_ONLY_HINT);
       const body: Record<string, unknown> = {};
       if (name) body.name = name;
       if (description !== undefined) body.description = description;
@@ -1067,7 +1066,7 @@ server.registerTool(
   {
     title: "写文档",
     description:
-      "新建或整篇更新一篇文档。不传 doc_id 是新建，传了是更新（按段落做增量合并，正在网页上打开的人会实时看到）。正文必须符合对应 type 的模板，写之前先读 get_guide（topic=writing）。",
+      "新建或整篇更新一篇文档。不传 doc_id 是新建，传了是更新（按段落做增量合并，正在网页上打开的人会实时看到）。正文必须符合对应 type 的模板，写之前先读 get_guide（topic=writing）。写 PRD 时可以先放一个完整的 html-embed 原型块，再在每段需求描述前后放「局部块」只展示原型里对应的那一块（围栏里留空，写 ref 和 focus，写法见 get_guide topic=writing 的“图和页面”一节）。",
     inputSchema: {
       project: z.string().optional().describe("默认当前仓库关联的项目"),
       type: z.enum(DOC_TYPES).describe("文档类型，决定检查哪个模板"),
@@ -1082,6 +1081,8 @@ server.registerTool(
     run(async () => {
       const g = checkOrReject(markdown.replace(/\(data:image\/[^)]{0,}\)/g, "(data:image)"), type, { title });
       if (!g.ok) return fail(g.report);
+      const ep = embedProblems(markdown);
+      if (ep.length) return fail(`HTML 局部块有问题，没有写入：\n${ep.map((x) => `- ${x}`).join("\n")}`);
       const p = await projectFor(project, "write");
       const t = task ? await resolveTask(task, "write") : undefined;
       const imported = await importInlineImages(markdown, (name, type, b64) => plane.uploadPageImage(p.id, name, type, b64));
@@ -1512,6 +1513,37 @@ server.registerTool(
     run(async () => {
       const t = await resolveTask(task, rest.action === "list" || rest.action === "read" ? "read" : "write");
       return versionsHandler("issues", t.project, t.item.id, rest);
+    }),
+);
+
+server.registerTool(
+  "archive",
+  {
+    title: "归档",
+    description:
+      "归档或取消归档任务、文档。任务只能归档状态为已完成或已取消的；归档后默认从列表里隐藏，可以用 action=unarchive 恢复。文档归档会带着子文档一起归档。需要编辑权限（创建人、指派人、作者、共同维护人、管理员），没有时用 doc_access 申请。",
+    inputSchema: {
+      type: z.enum(["task", "doc"]),
+      id: z.string().describe("任务编号（如 ABC-12），或文档 ID"),
+      action: z.enum(["archive", "unarchive"]).default("archive"),
+      project: z.string().optional().describe("默认当前仓库关联的项目；归档文档时用"),
+    },
+  },
+  async ({ type, id, action, project }) =>
+    run(async () => {
+      const archive = action !== "unarchive";
+      if (type === "task") {
+        // 已归档的任务按编号查不到（列表默认不含归档），取消归档时直接让后端按「项目 + 序号」找
+        const km = parseTaskKey(id);
+        if (!km) throw new Error(`任务编号格式是「项目标识-序号」，例如 DEMO-12，收到「${id}」。`);
+        const p = await projectFor(km.identifier, "write");
+        const key = `${p.identifier}-${km.seq}`;
+        const r = await plane.archiveEntity(p.id, "issue", String(km.seq), archive);
+        return text(archive ? (r.archived_at ? `已归档 ${key}。` : `${key} 没归档成功`) : `已取消归档 ${key}。`);
+      }
+      const p = await projectFor(project, "write");
+      const r = await plane.archiveEntity(p.id, "page", id, archive);
+      return text(archive ? `已归档文档 ${id}（子文档一并归档）。${r.archived_at ? "" : ""}` : `已取消归档文档 ${id}。`);
     }),
 );
 

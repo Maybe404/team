@@ -1,16 +1,21 @@
 /**
- * [team 二开] HTML 嵌入块的编辑器视图：沙箱渲染、拖拽缩放、整页放大、下载。
- * 安全：iframe 不给 allow-same-origin，页面里的脚本拿不到我们站点的 cookie 和接口。
+ * [team 二开] HTML 嵌入块的编辑器视图：沙箱渲染、拖拽缩放、整页放大、下载，
+ * 以及「只讲一块」：把原型里的某个元素单独露出来（crop），或整页保留、其余压暗（spot）。
+ * 安全：iframe 不给 allow-same-origin，页面里的脚本拿不到我们站点的 cookie 和接口；
+ * 量元素位置靠注入脚本（inject.ts）在 iframe 里完成，用 postMessage 回传。
  */
 import { NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { HTML_EMBED_MAX_BYTES } from "./extension-config";
 import type { THtmlEmbedAttributes } from "./extension-config";
+import { withInject } from "./inject";
 
 const SANDBOX = "allow-scripts allow-popups allow-forms allow-modals";
+const PAD = 6;
+const MIN_CROP_W = 320;
 
 const Icon = ({ children }: { children: ReactNode }) => (
   <svg
@@ -27,17 +32,6 @@ const Icon = ({ children }: { children: ReactNode }) => (
   </svg>
 );
 
-// srcDoc 页面里的 <a href="#/xx"> 会按父页面地址解析，点了会让 iframe 跳去加载 Loom 本身而被拒绝（refused to connect）。
-// 注入一段脚本，把页内锚点改成只改自己的 location.hash，单页应用的 tab、路由就能正常切换。
-const HASH_FIX =
-  "<script>document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;var h=a.getAttribute('href');if(h&&h.charAt(0)==='#'&&!e.defaultPrevented){e.preventDefault();if(h.length>1){location.hash=h.slice(1);var t=document.getElementById(decodeURIComponent(h.slice(1)));if(t&&t.scrollIntoView)t.scrollIntoView();}else{location.hash='';}}},true);</script>";
-const withHashFix = (html: string) => {
-  const m = /<head[^>]*>/i.exec(html) ?? /<html[^>]*>/i.exec(html) ?? /<!doctype[^>]*>/i.exec(html);
-  if (!m) return HASH_FIX + html;
-  const i = m.index + m[0].length;
-  return html.slice(0, i) + HASH_FIX + html.slice(i);
-};
-
 const downloadHtml = (html: string, name: string) => {
   const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
   const a = document.createElement("a");
@@ -49,6 +43,9 @@ const downloadHtml = (html: string, name: string) => {
 
 const barBtn =
   "flex size-7 items-center justify-center rounded text-secondary hover:bg-layer-transparent-hover hover:text-primary";
+const pillBtn =
+  "flex h-6 shrink-0 items-center gap-1 rounded px-2 text-caption-md-regular text-secondary hover:bg-layer-transparent-hover hover:text-primary";
+const pillOn = "flex h-6 shrink-0 items-center gap-1 rounded bg-accent-primary px-2 text-caption-md-regular text-on-color";
 
 // 整页放大只盖住右侧内容区（不遮挡左侧导航），左侧导航收起后自然变宽；找不到内容区时才铺满整个窗口
 const getMainArea = () => document.getElementById("app-main-content");
@@ -56,6 +53,7 @@ const getMainArea = () => document.getElementById("app-main-content");
 function Fullscreen(props: { html: string; name: string; onClose: () => void }) {
   const { html, name, onClose } = props;
   const main = getMainArea();
+  const srcDoc = useMemo(() => withInject(html), [html]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -76,18 +74,22 @@ function Fullscreen(props: { html: string; name: string; onClose: () => void }) 
           </Icon>
         </button>
       </div>
-      <iframe title={name || "html"} sandbox={SANDBOX} srcDoc={withHashFix(html)} referrerPolicy="no-referrer" className="w-full flex-1 border-0 bg-white" />
+      <iframe title={name || "html"} sandbox={SANDBOX} srcDoc={srcDoc} referrerPolicy="no-referrer" className="w-full flex-1 border-0 bg-white" />
     </div>,
     main ?? document.body
   );
 }
 
+type TRect = { x: number; y: number; w: number; h: number };
+type TPick = "insert" | "replace" | null;
+
 export function HtmlEmbedBlock(props: NodeViewProps) {
-  const { node, editor, updateAttributes, selected, deleteNode } = props;
+  const { node, editor, updateAttributes, selected, deleteNode, getPos } = props;
   const attrs = node.attrs as THtmlEmbedAttributes;
   const editable = editor.isEditable;
   const wrapRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const [full, setFull] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -96,7 +98,39 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
   const dragging = size !== null;
   const width = size?.width ?? attrs.width;
   const height = size?.height ?? attrs.height;
-  // 宽度是正文栏宽的百分比，可以超过 100%：超出的部分向两侧居中延伸，但不会超出右侧内容区
+
+  // ---- 内容：自己的，或引用同一篇文档里另一个完整块的（先按 uid，没有再按名称） ----
+  const [refSrc, setRefSrc] = useState<{ html: string; name: string }>({ html: "", name: "" });
+  useEffect(() => {
+    if (!attrs.ref) {
+      setRefSrc((v) => (v.html || v.name ? { html: "", name: "" } : v));
+      return;
+    }
+    const find = () => {
+      let byUid: { html: string; name: string } | null = null;
+      let byName: { html: string; name: string } | null = null;
+      editor.state.doc.descendants((n) => {
+        if (n.type === node.type && n !== node && n.attrs.html) {
+          const hit = { html: n.attrs.html as string, name: (n.attrs.name as string) ?? "" };
+          if (!byUid && n.attrs.uid && n.attrs.uid === attrs.ref) byUid = hit;
+          if (!byName && n.attrs.name === attrs.ref) byName = hit;
+        }
+        return true;
+      });
+      const hit = byUid ?? byName ?? { html: "", name: "" };
+      setRefSrc((v) => (v.html === hit.html && v.name === hit.name ? v : hit));
+    };
+    find();
+    editor.on("update", find);
+    return () => {
+      editor.off("update", find);
+    };
+  }, [editor, attrs.ref, node]);
+  const refHtml = refSrc.html;
+  const html = attrs.html || refHtml;
+  const srcDoc = useMemo(() => withInject(html), [html]);
+
+  // ---- 版面：宽度是正文栏宽的百分比，可以超过 100%，超出的部分向两侧居中延伸，但不会超出右侧内容区 ----
   const [geo, setGeo] = useState<{ parentW: number; left: number; right: number } | null>(null);
   const measure = useCallback(() => {
     const parent = wrapRef.current?.parentElement;
@@ -105,7 +139,6 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
     const pr = parent.getBoundingClientRect();
     const ar = area ? area.getBoundingClientRect() : { left: 0, right: window.innerWidth };
     const margin = 24;
-    // 正文栏左右两侧还能延伸多少
     setGeo({
       parentW: pr.width,
       left: Math.max(0, pr.left - ar.left - margin),
@@ -124,19 +157,158 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
     };
   }, [measure]);
   const maxPx = geo ? geo.parentW + geo.left + geo.right : 0;
-  const widthPx = geo ? Math.min((width / 100) * geo.parentW, maxPx) : undefined;
-  const extra = geo && widthPx ? Math.max(0, widthPx - geo.parentW) : 0;
-  const marginLeft = geo ? -Math.max(extra - geo.right, Math.min(extra / 2, geo.left)) : 0;
-  const wrapStyle =
-    widthPx !== undefined ? { width: widthPx, marginLeft } : { width: `${Math.min(width, 100)}%` };
+  const stageW = geo ? Math.min((width / 100) * geo.parentW, maxPx) : 0;
+
+  // ---- 只讲一块 ----
+  const [ready, setReady] = useState(0);
+  const [rect, setRect] = useState<TRect | null>(null);
+  const [found, setFound] = useState<boolean | null>(null);
+  const [gaveUp, setGaveUp] = useState(false);
+  const [whole, setWhole] = useState(false); // 读者点了「看整页」：同一个 iframe，只换呈现方式，页面里的操作状态不丢
+  const [pick, setPick] = useState<TPick>(null);
+  const [pickHint, setPickHint] = useState("");
+  const [editSel, setEditSel] = useState(false);
+  const hasFocus = !!attrs.focus && !!html;
+  const showWhole = whole || pick !== null; // 点选元素时必须看到整页
+  const cropping = hasFocus && !showWhole && attrs.mode === "crop" && !gaveUp;
+  const spotting = hasFocus && !showWhole && attrs.mode === "spot" && !gaveUp;
+
+  const send = useCallback((m: Record<string, unknown>) => {
+    frameRef.current?.contentWindow?.postMessage({ loom: 1, ...m }, "*");
+  }, []);
+
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const win = frameRef.current?.contentWindow;
+      const d = e.data as { loom?: number; t?: string } & Record<string, unknown>;
+      if (!win || e.source !== win || !d || d.loom !== 1) return;
+      if (d.t === "rect") {
+        if (d.found) {
+          setFound(true);
+          setGaveUp(false);
+          setRect({ x: Number(d.x), y: Number(d.y), w: Number(d.w), h: Number(d.h) });
+        } else {
+          setFound(false);
+        }
+      } else if (d.t === "picked") setPicked(String(d.sel ?? ""), String(d.text ?? ""));
+      else if (d.t === "pick-cancel") setPick(null);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pick, node, attrs.name, attrs.ref, attrs.width, attrs.height]);
+
+  // 把「盯哪个元素」告诉 iframe；整页状态下仍然盯着（画出轮廓），只是不锁滚动
+  useEffect(() => {
+    if (!ready) return;
+    setRect(null);
+    setFound(null);
+    setGaveUp(false);
+    if (attrs.focus) send({ t: "focus", sel: attrs.focus, follow: attrs.follow, hold: !showWhole });
+    else send({ t: "unfocus" });
+  }, [ready, attrs.focus, attrs.follow, showWhole, send]);
+
+  // 迟迟找不到元素（选择器写错了、页面里没有）：退回显示整页，并提示
+  useEffect(() => {
+    if (!hasFocus || found === true) return;
+    const t = setTimeout(() => setGaveUp(true), 5000);
+    return () => clearTimeout(t);
+  }, [hasFocus, found, attrs.focus, ready]);
+
+  useEffect(() => {
+    if (gaveUp && ready) send({ t: "unfocus" }); // 退回整页后要能滚动看完整个页面
+  }, [gaveUp, ready, send]);
+
+  useEffect(() => {
+    if (!ready) return;
+    send({ t: "pick", on: pick !== null });
+    if (pick === null) return;
+    // 键盘焦点在编辑器里时，iframe 收不到按键，转发过去
+    const onKey = (e: KeyboardEvent) => {
+      if (!["ArrowUp", "ArrowDown", "Escape"].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") setPick(null);
+      else send({ t: "pickkey", key: e.key });
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [pick, ready, send]);
+
+  const setPicked = (sel: string, text: string) => {
+    if (!sel) return;
+    if (pick === "replace") {
+      updateAttributes({ focus: sel });
+    } else if (pick === "insert") {
+      // 局部块用固定编号引用这个原型：文件名重复或以后换了文件，引用都不会断
+      const uid = attrs.uid || Math.random().toString(36).slice(2, 10);
+      if (!attrs.uid) updateAttributes({ uid, ...(attrs.name ? {} : { name: "原型" }) });
+      const pos = getPos();
+      if (typeof pos === "number") {
+        const { doc } = editor.state;
+        // 新块放在这个原型后面已有的局部块之后，前后各留一个空行，方便写说明文字
+        let at = pos + node.nodeSize;
+        for (;;) {
+          const next = doc.resolve(at).nodeAfter;
+          if (next && next.type === node.type && next.attrs.ref === uid) at += next.nodeSize;
+          else if (next && next.type.name === "paragraph" && next.content.size === 0 && doc.resolve(at + next.nodeSize).nodeAfter?.type === node.type && doc.resolve(at + next.nodeSize).nodeAfter?.attrs.ref === uid) at += next.nodeSize;
+          else break;
+        }
+        const before = doc.resolve(at).nodeBefore;
+        const after = doc.resolve(at).nodeAfter;
+        const needBefore = !(before && before.type.name === "paragraph" && before.content.size === 0);
+        const needAfter = !after || after.type.name !== "paragraph";
+        const content = [
+          ...(needBefore ? [{ type: "paragraph" }] : []),
+          {
+            type: node.type.name,
+            attrs: { ref: uid, focus: sel, mode: "crop", follow: true, lock: true, width: attrs.width, height: attrs.height, name: text },
+          },
+          ...(needAfter ? [{ type: "paragraph" }] : []),
+        ];
+        const caret = needBefore ? at + 1 : at - 1;
+        editor.chain().insertContentAt(at, content).setTextSelection(Math.max(1, caret)).focus().run();
+      }
+    }
+    setPick(null);
+  };
+
+  const startPick = (mode: Exclude<TPick, null>) => {
+    setPickHint(mode === "insert" ? "点一下原型里要单独讲的那一块，下方会新建只显示它的局部块" : "点一下原型里要显示的新元素");
+    setPick(mode);
+  };
+
+  // 聚焦区域（加内边距后限制在 iframe 视口内）
+  const R = useMemo(() => {
+    if (!rect || !stageW) return null;
+    const x = Math.max(0, rect.x - PAD);
+    const y = Math.max(0, rect.y - PAD);
+    return { x, y, w: Math.max(8, Math.min(rect.w + 2 * PAD, stageW - x)), h: Math.max(8, rect.h + 2 * PAD) };
+  }, [rect, stageW]);
+  // 下拉等弹层可能伸到原型视口下面：只露出一块（或聚光灯）时把页面视口撑高到能装下，才点得到后面的选项
+  const stageH = hasFocus && !showWhole && R ? Math.min(3000, Math.max(height, Math.ceil(R.y + R.h))) : height;
+
+  const waiting = cropping && !R; // 还没量出位置：先别露出整页
+  const scale = cropping && R && stageW ? Math.min(1, stageW / R.w) : 1;
+  const cropW = cropping && R ? R.w * scale : 0;
+  const cropH = cropping && R ? R.h * scale : 0;
+  const outerW = cropping ? Math.min(Math.max(cropW, MIN_CROP_W), stageW || MIN_CROP_W) : stageW;
+
+  const marginLeft = (() => {
+    if (!geo) return 0;
+    if (cropping && outerW <= geo.parentW) return (geo.parentW - outerW) / 2;
+    const extra = Math.max(0, outerW - geo.parentW);
+    return -Math.max(extra - geo.right, Math.min(extra / 2, geo.left));
+  })();
+  const wrapStyle = geo ? { width: outerW, marginLeft } : { width: `${Math.min(width, 100)}%` };
 
   const load = useCallback(
-    (html: string, name: string) => {
-      if (new Blob([html]).size > HTML_EMBED_MAX_BYTES) {
+    (nextHtml: string, name: string) => {
+      if (new Blob([nextHtml]).size > HTML_EMBED_MAX_BYTES) {
         alert("HTML 超过 2MB，请精简后再试（图片建议用外链）。");
         return;
       }
-      updateAttributes({ html, name });
+      updateAttributes({ html: nextHtml, name });
     },
     [updateAttributes]
   );
@@ -169,7 +341,7 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
       if (mode !== "y") {
         const edge = startEdge + ev.clientX - startX;
         const px = edge <= P ? edge : P + 2 * (edge - P);
-        w = Math.min(maxW, Math.max(0.2 * P, px)) / P * 100;
+        w = (Math.min(maxW, Math.max(0.2 * P, px)) / P) * 100;
       }
       const h = mode === "x" ? attrs.height : Math.min(2000, Math.max(120, startH + ev.clientY - startY));
       latest = { width: Math.round(w), height: Math.round(h) };
@@ -185,7 +357,36 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
     target.addEventListener("pointerup", up);
   };
 
-  const empty = !attrs.html;
+  const empty = !html;
+  const refMissing = empty && !!attrs.ref;
+  const title = attrs.name || (attrs.ref ? `${refSrc.name || "原型"} · 局部` : "HTML 页面");
+  const dim = "rgba(15,23,42,0.55)";
+  const blockPointer = attrs.lock !== false;
+  const dimStyle = (s: { left: number; top: number; width: number; height: number }) => ({
+    position: "absolute" as const,
+    ...s,
+    background: dim,
+    pointerEvents: blockPointer ? ("auto" as const) : ("none" as const),
+  });
+
+  // iframe 的外层：crop 时是一个只露出聚焦区域的窗口，其余情况就是整页
+  const viewportStyle = cropping && R
+    ? { width: cropW, height: cropH, margin: "0 auto", overflow: "hidden" as const }
+    : waiting
+      ? { width: "100%", height: 160, overflow: "hidden" as const }
+      : { width: "100%", height: stageH };
+  const stageStyle =
+    cropping && R
+      ? {
+          position: "absolute" as const,
+          left: 0,
+          top: 0,
+          width: stageW,
+          height: stageH,
+          transformOrigin: "0 0",
+          transform: `scale(${scale}) translate(${-R.x}px, ${-R.y}px)`,
+        }
+      : { position: "absolute" as const, left: 0, top: 0, width: "100%", height: "100%", opacity: waiting ? 0 : 1 };
 
   return (
     <NodeViewWrapper className="html-embed my-3" contentEditable={false}>
@@ -194,14 +395,75 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
         className={`group/html relative overflow-visible rounded-lg border bg-surface-1 ${selected ? "border-accent-strong" : "border-subtle"}`}
         style={wrapStyle}
       >
-        <div className="flex h-9 items-center gap-2 border-b border-subtle px-3">
+        <div className="flex min-h-9 flex-wrap items-center gap-1.5 border-b border-subtle px-3 py-1">
           <Icon>
             <path d="m8 8-4 4 4 4m8-8 4 4-4 4M14 5l-4 14" />
           </Icon>
-          <span className="flex-1 truncate text-body-xs-medium text-secondary">{attrs.name || "HTML 页面"}</span>
+          <span className="min-w-[4rem] flex-1 truncate text-body-xs-medium text-secondary">{title}</span>
+          {hasFocus && !gaveUp && (
+            <span className="flex shrink-0 overflow-hidden rounded border border-subtle">
+              <button
+                type="button"
+                className={`${!whole ? pillOn : pillBtn} rounded-none`}
+                title="只看这一块"
+                onClick={() => setWhole(false)}
+              >
+                局部
+              </button>
+              <button
+                type="button"
+                className={`${whole ? pillOn : pillBtn} rounded-none`}
+                title="看完整页面，页面里的操作状态不会丢"
+                onClick={() => setWhole(true)}
+              >
+                整页
+              </button>
+            </span>
+          )}
+          {editable && hasFocus && (
+            <>
+              <button
+                type="button"
+                className={attrs.mode === "spot" ? pillOn : pillBtn}
+                title="整页保留，只把其余部分压暗"
+                onClick={() => updateAttributes({ mode: attrs.mode === "spot" ? "crop" : "spot" })}
+              >
+                聚光灯
+              </button>
+              <button
+                type="button"
+                className={attrs.follow ? pillOn : pillBtn}
+                title="点开的下拉、弹出的浮层一起显示"
+                onClick={() => updateAttributes({ follow: !attrs.follow })}
+              >
+                含弹层
+              </button>
+              {attrs.mode === "spot" && (
+                <button
+                  type="button"
+                  className={attrs.lock !== false ? pillOn : pillBtn}
+                  title="变暗的区域不能点击"
+                  onClick={() => updateAttributes({ lock: attrs.lock === false })}
+                >
+                  暗区禁点
+                </button>
+              )}
+              <button type="button" className={pillBtn} title="在原型里重新点选要显示的元素" onClick={() => startPick("replace")}>
+                重选
+              </button>
+              <button type="button" className={editSel ? pillOn : pillBtn} title="手动修改选择器" onClick={() => setEditSel((v) => !v)}>
+                选择器
+              </button>
+            </>
+          )}
+          {editable && !empty && !attrs.focus && (
+            <button type="button" className={pillBtn} title="点选原型里的一块，在下方新建只显示它的局部块" onClick={() => startPick("insert")}>
+              拆出局部
+            </button>
+          )}
           {!empty && (
             <>
-              <button type="button" className={barBtn} title="下载 HTML" onClick={() => downloadHtml(attrs.html, attrs.name)}>
+              <button type="button" className={barBtn} title="下载 HTML" onClick={() => downloadHtml(html, attrs.name || refSrc.name)}>
                 <Icon>
                   <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
                 </Icon>
@@ -211,16 +473,14 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
                   <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
                 </Icon>
               </button>
+              <button type="button" className={barBtn} title="刷新（重新加载页面）" onClick={() => setReloadKey((k) => k + 1)}>
+                <Icon>
+                  <path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5" />
+                </Icon>
+              </button>
             </>
           )}
-          {!empty && (
-            <button type="button" className={barBtn} title="刷新（重新加载页面）" onClick={() => setReloadKey((k) => k + 1)}>
-              <Icon>
-                <path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5" />
-              </Icon>
-            </button>
-          )}
-          {editable && !empty && (
+          {editable && !empty && !attrs.ref && (
             <button type="button" className={barBtn} title="替换为另一个 HTML 文件" onClick={() => fileRef.current?.click()}>
               <Icon>
                 <path d="M12 16V4m0 0-4 4m4-4 4 4M5 20h14" />
@@ -236,9 +496,40 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
           )}
         </div>
 
+        {editable && editSel && hasFocus && (
+          <div className="flex items-center gap-2 border-b border-subtle px-3 py-1.5">
+            <span className="shrink-0 text-caption-md-regular text-tertiary">CSS 选择器</span>
+            <input
+              defaultValue={attrs.focus}
+              className="min-w-0 flex-1 rounded border border-subtle bg-layer-1 px-2 py-1 font-mono text-caption-md-regular text-primary"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") updateAttributes({ focus: (e.target as HTMLInputElement).value.trim() });
+              }}
+              onBlur={(e) => updateAttributes({ focus: e.target.value.trim() })}
+            />
+          </div>
+        )}
+
+        {pick && (
+          <div className="flex items-center gap-2 border-b border-subtle bg-layer-1 px-3 py-1.5 text-caption-md-regular text-secondary">
+            <span className="flex-1">{pickHint}（↑ 选上一层，Esc 取消）</span>
+            <button type="button" className={pillBtn} onClick={() => setPick(null)}>
+              取消
+            </button>
+          </div>
+        )}
+
+        {hasFocus && gaveUp && (
+          <div className="border-b border-subtle bg-layer-1 px-3 py-1.5 text-caption-md-regular text-secondary">
+            原型里找不到这个元素（{attrs.focus}），先显示整页。{editable ? "可以点「重选」。" : ""}
+          </div>
+        )}
+
         {empty ? (
           <div className="flex flex-col items-center gap-3 p-8 text-center text-body-sm-regular text-secondary">
-            {editable ? (
+            {refMissing ? (
+              <div>找不到这个局部引用的完整原型。它可能被删除了，或不在这篇文档里。</div>
+            ) : editable ? (
               <>
                 <div>选择一个 .html 文件，会在文档里独立渲染（上限 2MB）</div>
                 <div className="flex gap-2">
@@ -273,18 +564,41 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
             )}
           </div>
         ) : (
-          <div className="relative" style={{ height }}>
-            <iframe
-              title={attrs.name || "html"}
-              sandbox={SANDBOX}
-              srcDoc={withHashFix(attrs.html)}
-              key={reloadKey}
-              referrerPolicy="no-referrer"
-              loading="lazy"
-              className="size-full border-0 bg-white"
-              style={{ pointerEvents: dragging ? "none" : "auto" }}
-            />
-            {editable && (
+          <div className="relative" style={viewportStyle}>
+            <div style={stageStyle}>
+              <iframe
+                ref={frameRef}
+                title={title}
+                sandbox={SANDBOX}
+                srcDoc={srcDoc}
+                key={reloadKey}
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                className="size-full border-0 bg-white"
+                style={{ pointerEvents: dragging ? "none" : "auto" }}
+                onLoad={() => setReady((n) => n + 1)}
+              />
+              {spotting && R && (
+                <>
+                  <div style={dimStyle({ left: 0, top: 0, width: stageW, height: R.y })} />
+                  <div style={dimStyle({ left: 0, top: R.y + R.h, width: stageW, height: Math.max(0, stageH - R.y - R.h) })} />
+                  <div style={dimStyle({ left: 0, top: R.y, width: R.x, height: R.h })} />
+                  <div style={dimStyle({ left: R.x + R.w, top: R.y, width: Math.max(0, stageW - R.x - R.w), height: R.h })} />
+                  <div
+                    className="pointer-events-none absolute rounded-md border-2 border-accent-strong"
+                    style={{ left: R.x, top: R.y, width: R.w, height: R.h }}
+                  />
+                </>
+              )}
+              {hasFocus && showWhole && R && pick === null && (
+                <div
+                  className="pointer-events-none absolute rounded-md border-2 border-dashed border-accent-strong"
+                  style={{ left: R.x, top: R.y, width: R.w, height: R.h }}
+                />
+              )}
+            </div>
+            {waiting && <div className="absolute inset-0 flex items-center justify-center text-caption-md-regular text-tertiary">正在定位要展示的区域…</div>}
+            {editable && !cropping && (
               <>
                 {/* 右边、下边、右下角三个拉伸手柄 */}
                 <div onPointerDown={startResize("x")} className="absolute top-0 -right-1.5 h-full w-3 cursor-ew-resize" />
@@ -300,7 +614,7 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
         )}
       </div>
       <input ref={fileRef} type="file" accept=".html,.htm,text/html" hidden onChange={(e) => { void onFile(e.target.files?.[0]); e.target.value = ""; }} />
-      {full && <Fullscreen html={attrs.html} name={attrs.name} onClose={() => setFull(false)} />}
+      {full && <Fullscreen html={html} name={title} onClose={() => setFull(false)} />}
     </NodeViewWrapper>
   );
 }

@@ -16,9 +16,14 @@ from plane.api.views.team_page import (
     TeamPageListCreateAPIEndpoint,
     TeamPageVersionsAPIEndpoint,
 )
-from plane.api.views.team_access import TeamAccessAPIEndpoint, TeamAccessPendingAPIEndpoint, TeamProjectSettingsAPIEndpoint, TeamSearchAPIEndpoint, TeamTemplateAPIEndpoint
+from plane.api.views.team_access import TeamAccessAPIEndpoint, TeamAccessPendingAPIEndpoint, TeamArchiveAPIEndpoint, TeamProjectSettingsAPIEndpoint, TeamSearchAPIEndpoint, TeamTemplateAPIEndpoint
 
 urlpatterns = [
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/team-archive/<str:entity_type>/<str:entity_id>/",
+        TeamArchiveAPIEndpoint.as_view(http_method_names=["post"]),
+        name="team-archive",
+    ),
     path(
         "workspaces/<str:slug>/team-templates/",
         TeamTemplateAPIEndpoint.as_view(http_method_names=["get", "post"]),

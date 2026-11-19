@@ -35,7 +35,8 @@
 }
 /* end ai handle */
 
-.ProseMirror:not(.dragging) .ProseMirror-selectednode:not(.node-imageComponent):not(.node-image):not(.table-wrapper) {
+/* [team 二开] HTML 块被整块选中时（刚插入、刚导入都会）自己画边框，不再盖这层蓝色遮罩 */
+.ProseMirror:not(.dragging) .ProseMirror-selectednode:not(.node-imageComponent):not(.node-image):not(.node-htmlEmbedComponent):not(.table-wrapper) {
   position: relative;
   cursor: grab;
   outline: none !important;

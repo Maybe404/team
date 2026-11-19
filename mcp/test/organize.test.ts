@@ -40,6 +40,7 @@ const plane = {
   listModules: async () => modules,
   listModuleIssueIds: async (_p: string, m: string) => [...(members[m] ?? [])],
   addModuleIssues: async (_p: string, m: string, ids: string[]) => { calls.push(`add ${m} ${ids}`); ids.forEach((i) => members[m].add(i)); },
+  archiveEntity: async (_p: string, t: string, id: string, a: boolean) => { calls.push(`archive ${t} ${id} ${a}`); return { archived_at: a ? "2026-11-18" : null }; },
   removeModuleIssue: async (_p: string, m: string, id: string) => { calls.push(`remove ${m} ${id}`); members[m].delete(id); },
   createModule: async (_p: string, b: Record<string, unknown>) => { calls.push(`createModule ${JSON.stringify(b)}`); return { id: "m3", ...b }; },
   updateModule: async (_p: string, id: string, b: unknown) => { calls.push(`updateModule ${id} ${JSON.stringify(b)}`); return { id }; },
@@ -125,15 +126,15 @@ test("create_task 可以直接放进模块", async () => {
   assert.ok(calls.includes("add m2 i4"));
 });
 
-test("save_module：新建、改名、已完成只能人设置", async () => {
+test("save_module：新建、改名、可设已完成", async () => {
   const c = await call("save_module", { name: "v1.3 权限管理", description: "上线角色和权限配置，管理员能给成员分配角色。", status: "已计划" });
   assert.match(c.text, /已新建模块/);
   assert.ok(calls.some((x) => x.startsWith("createModule") && x.includes('"status":"planned"')));
   const dup = await call("save_module", { name: "v1.2 登录改版" });
   assert.ok(dup.error);
   const done = await call("save_module", { module: "v1.2 登录改版", status: "已完成" });
-  assert.ok(done.error);
-  assert.match(done.text, /只能由人/);
+  assert.ok(!done.error, done.text);
+  assert.ok(calls.some((x) => x.startsWith("updateModule") && x.includes("completed")));
   const up = await call("save_module", { module: "登录改版", target_date: "2026-12-01" });
   assert.match(up.text, /已更新模块/);
 });
@@ -332,4 +333,29 @@ test("project_settings：置顶、设置表情图标、移除", async () => {
   assert.match(r.text, /图标：无/);
   const bad = await call("project_settings", { project: "DEMO", action: "set_icon" });
   assert.ok(bad.error);
+});
+
+test("update_task：已完成、已取消要写依据；archive 归档和恢复", async () => {
+  const noc = await call("update_task", { task: "DEMO-3", state: "已完成" });
+  assert.ok(noc.error);
+  assert.match(noc.text, /comment/);
+  const ok = await call("update_task", { task: "DEMO-3", state: "已完成", comment: "导出筛选已实现。\n\n跑了 `npm test`，12 项全过。" });
+  assert.ok(!ok.error, ok.text);
+  const a = await call("archive", { type: "task", id: "DEMO-3" });
+  assert.match(a.text, /已归档/);
+  assert.ok(calls.some((x) => x.startsWith("archive issue") && x.endsWith("true")));
+  const u = await call("archive", { type: "task", id: "DEMO-3", action: "unarchive" });
+  assert.match(u.text, /已取消归档/);
+  const d = await call("archive", { type: "doc", id: "11111111-1111-1111-1111-111111111111" });
+  assert.match(d.text, /已归档文档/);
+  assert.ok(calls.some((x) => x.startsWith("archive page") && x.endsWith("true")));
+});
+
+test("create_task 不能直接建成已完成或已取消；write_doc 退回有问题的局部块", async () => {
+  const c = await call("create_task", { title: "导出筛选", description: "## 目标\n\n订单导出页支持按状态筛选。\n\n## 验收标准\n\n- [ ] 选择状态后导出的文件只含该状态的订单", state: "已完成" });
+  assert.ok(c.error);
+  assert.match(c.text, /update_task/);
+  const w = await call("write_doc", { type: "note", title: "测试", markdown: "## 背景\n\n```html-embed ref=\"没有的原型\" focus=\"#a\"\n```\n" });
+  assert.ok(w.error);
+  assert.match(w.text, /局部块有问题/);
 });

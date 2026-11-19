@@ -302,9 +302,9 @@ await step("不存在的状态给出可选列表，而不是误报“只能由�
   expect(r.isError && r.text.includes("可选状态：待办、待开始、进行中"), r.text);
 });
 
-await step("Agent 不能把任务设成已完成", async () => {
+await step("已完成必须写依据评论", async () => {
   const r = await call("update_task", { task: taskKey, state: "已完成" });
-  expect(r.isError && r.text.includes("只能由人"), r.text);
+  expect(r.isError && r.text.includes("comment"), r.text);
 });
 
 await step("Agent 可以改成进行中", async () => {

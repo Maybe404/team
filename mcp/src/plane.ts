@@ -304,6 +304,9 @@ export class Loom {
   accessAction(type: "page" | "issue", id: string, body: Record<string, unknown>) {
     return this.req<Access>("POST", this.ws(`team-access/${type}/${id}/`), body);
   }
+  archiveEntity(projectId: string, type: "issue" | "page", id: string, archive: boolean) {
+    return this.req<{ archived_at: string | null }>("POST", this.ws(`projects/${projectId}/team-archive/${type}/${id}/`), { archive });
+  }
   pendingAccess() {
     return this.req<PendingAccess[]>("GET", this.ws("team-access/pending/"));
   }
