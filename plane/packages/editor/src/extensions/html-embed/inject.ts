@@ -2,7 +2,7 @@
  * [team 二开] 注入到 HTML 嵌入块 srcDoc 里的脚本。
  * iframe 是沙箱（没有 allow-same-origin），父页面读不到里面的 DOM，所以量元素位置的事只能在 iframe 里做，
  * 再用 postMessage 把结果告诉父页面：
- *   父 → 子  {loom:1, t:"focus", sel, follow, hold}   开始盯住某个元素（follow=true 时把它附近弹出的下拉、浮层也算进去；hold=true 时锁住文档滚动，免得看到的区域漂走）
+ *   父 → 子  {loom:1, t:"focus", sel, follow, hold, limit}   开始盯住某个元素（follow=true 时把它附近弹出的下拉、浮层也算进去；hold=true 时锁住文档滚动，免得看到的区域漂走）
  *            {loom:1, t:"unfocus"}              不再盯
  *            {loom:1, t:"pick", on:true|false}  进入/退出点选元素模式（作者在原型里点一下就选中）
  *            {loom:1, t:"pickkey", key}         键盘焦点在编辑器里时，把 ArrowUp / ArrowDown / Escape 转发给点选模式
@@ -18,7 +18,7 @@ const HASH_FIX = String.raw`document.addEventListener('click',function(e){var a=
 
 const FOCUS = String.raw`
 (function(){
-var P=window.parent,sel="",follow=true,hold=true,on=false,baseline=null,last="",raf=0,timer=0,found0=0,mo=null,ro=null;
+var P=window.parent,sel="",follow=true,hold=true,limit=false,on=false,baseline=null,last="",raf=0,timer=0,found0=0,mo=null,ro=null;
 function post(m){m.loom=1;try{P.postMessage(m,"*");}catch(e){}}
 function q(s){try{return s?document.querySelector(s):null;}catch(e){return null;}}
 function visible(el){var s=getComputedStyle(el);return s.display!=="none"&&s.visibility!=="hidden"&&parseFloat(s.opacity)>0;}
@@ -60,10 +60,11 @@ function report(){
   var u=r;
   var fb=0;
   if(follow){var fl=floaters(t,r);for(var i=0;i<fl.length;i++){u=merge(u,fl[i].b);if(fl[i].fresh&&fl[i].b.b>fb)fb=fl[i].b.b;}}
-  var m3=[u.l,u.t,u.r,u.b,fb,window.innerWidth,window.innerHeight].map(function(v){return Math.round(v);}).join(",");
+  var th=Math.round(r.b-r.t);
+  var m3=[th,u.l,u.t,u.r,u.b,fb,window.innerWidth,window.innerHeight].map(function(v){return Math.round(v);}).join(",");
   if(m3===last)return;
   last=m3;
-  post({t:"rect",found:true,x:u.l,y:u.t,w:u.r-u.l,h:u.b-u.t,fb:fb,vw:window.innerWidth,vh:window.innerHeight});
+  post({t:"rect",found:true,x:u.l,y:u.t,w:u.r-u.l,h:u.b-u.t,fb:fb,th:th,vw:window.innerWidth,vh:window.innerHeight});
 }
 // 不用 requestAnimationFrame：跨域 iframe 滚出视口后浏览器会暂停它的渲染，rAF 不触发，位置就一直报不上来
 function schedule(){if(!raf)raf=setTimeout(report,30);}
@@ -74,6 +75,15 @@ function reveal(){
   if(r.top<0||r.bottom>vh){try{t.scrollIntoView({block:r.height>vh?"start":"nearest",inline:"nearest"});}catch(e){}}
   return true;
 }
+// 选中的元素比视口还高：允许在它自己的上下边界之间滚动，到头就停住，不滚进相邻的区块
+function clampScroll(){
+  if(!on||!limit)return;
+  var t=q(sel);if(!t)return;
+  var r=t.getBoundingClientRect(),y=window.pageYOffset||0,vh=window.innerHeight;
+  var top=r.top+y,bot=r.bottom+y,max=Math.max(top,bot-vh);
+  var ny=Math.min(Math.max(y,top),max);
+  if(Math.abs(ny-y)>0.5)window.scrollTo(window.pageXOffset||0,ny);
+}
 function start(){
   on=true;last="";baseline=null;found0=0;
   // 只看一块时不要让整个文档自己滚走，否则看到的区域会跟着漂
@@ -83,6 +93,7 @@ function start(){
     mo.observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});
     if(window.ResizeObserver){ro=new ResizeObserver(schedule);ro.observe(document.documentElement);}
     ["click","input","change","focus","transitionend","animationend","scroll","resize","keyup","mouseup"].forEach(function(n){window.addEventListener(n,later,true);});
+    window.addEventListener("scroll",clampScroll,true);
     timer=setInterval(function(){if(on){if(!found0&&reveal())found0=1;schedule();}},400);
   }
   reveal();later();
@@ -177,7 +188,7 @@ function endPick(){
 window.addEventListener("message",function(e){
   var d=e.data;
   if(e.source!==P||!d||d.loom!==1)return;
-  if(d.t==="focus"){sel=String(d.sel||"");follow=d.follow!==false;hold=d.hold!==false;if(sel)start();else stop();}
+  if(d.t==="focus"){sel=String(d.sel||"");follow=d.follow!==false;hold=d.hold!==false;limit=!!d.limit;if(sel)start();else stop();}
   else if(d.t==="unfocus"){stop();}
   else if(d.t==="pick"){if(d.on)beginPick();else endPick();}
   else if(d.t==="pickkey"&&pk){var nop=function(){};onKey({key:String(d.key||""),preventDefault:nop,stopPropagation:nop,stopImmediatePropagation:nop});}

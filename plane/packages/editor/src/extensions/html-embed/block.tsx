@@ -98,7 +98,7 @@ function Fullscreen(props: { html: string; name: string; onClose: () => void }) 
   );
 }
 
-type TRect = { x: number; y: number; w: number; h: number; fb: number };
+type TRect = { x: number; y: number; w: number; h: number; fb: number; th: number };
 type TPick = "insert" | "replace" | null;
 
 export function HtmlEmbedBlock(props: NodeViewProps) {
@@ -183,7 +183,8 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
   const [rect, setRect] = useState<TRect | null>(null);
   const [found, setFound] = useState<boolean | null>(null);
   // 选中的元素比预览视口还高（长表单）：不锁文档滚动，读者可以在局部里滚到下面的内容
-  const tall = !!rect && rect.h > height + 2;
+  // 只看被选元素自己的高度：下拉、弹层撑高并集不能让它翻成“长选区”（会重新开始盯，把刚打开的菜单当成原有元素）
+  const tall = !!rect && rect.th > height + 2;
   const [gaveUp, setGaveUp] = useState(false);
   const [whole, setWhole] = useState(false); // 读者点了「看整页」：同一个 iframe，只换呈现方式，页面里的操作状态不丢
   const [pick, setPick] = useState<TPick>(null);
@@ -209,7 +210,7 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
         if (d.found) {
           setFound(true);
           setGaveUp(false);
-          setRect({ x: Number(d.x), y: Number(d.y), w: Number(d.w), h: Number(d.h), fb: Number(d.fb) || 0 });
+          setRect({ x: Number(d.x), y: Number(d.y), w: Number(d.w), h: Number(d.h), fb: Number(d.fb) || 0, th: Number(d.th) || Number(d.h) });
         } else {
           setFound(false);
         }
@@ -232,7 +233,7 @@ export function HtmlEmbedBlock(props: NodeViewProps) {
   // 找不到时也继续盯（元素之后出现还能恢复），只是放开滚动锁，让长页面能滚动看完
   useEffect(() => {
     if (!ready) return;
-    if (attrs.focus) send({ t: "focus", sel: attrs.focus, follow: attrs.follow, hold: !showWhole && !gaveUp && !tall });
+    if (attrs.focus) send({ t: "focus", sel: attrs.focus, follow: attrs.follow, hold: !showWhole && !gaveUp && !tall, limit: !showWhole && !gaveUp && tall });
     else send({ t: "unfocus" });
   }, [ready, attrs.focus, attrs.follow, showWhole, gaveUp, tall, send]);
 
